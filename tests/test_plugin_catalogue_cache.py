@@ -12,6 +12,26 @@ APP = QApplication.instance() or QApplication([])
 PLUGIN = dict(name='Example', version='v1', description='Example plugin', repository='owner/example')
 
 class CatalogueCacheTests(unittest.TestCase):
+    def test_installed_plugins_hidden_and_reappear_after_deletion(self):
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
+            cache = catalogue_cache()
+            old = (cache.plugins, cache.loaded, cache.loading, cache.error)
+            cache.complete([PLUGIN])
+            installed = dict(id='Example', name='Example', version='1', enabled=False,
+                             repository='owner/source', distribution_repository='owner/example')
+            try:
+                with patch('playlite.plugin_manager.installed_plugins', return_value=[installed]):
+                    dialog = SettingsDialog(QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat))
+                    self.assertEqual(dialog.available_plugins.rowCount(), 0)
+                    self.assertEqual(dialog.available_status.text(), '0 available plugins')
+                with patch('playlite.plugin_manager.installed_plugins', return_value=[]):
+                    dialog.refresh_installed_plugins()
+                    self.assertEqual(dialog.available_plugins.rowCount(), 1)
+                    self.assertEqual(dialog.available_status.text(), '1 available plugins')
+                dialog.reject()
+            finally:
+                cache.plugins, cache.loaded, cache.loading, cache.error = old
+
     def test_refresh_coalesces_and_keeps_previous_list_on_error(self):
         cache = PluginCatalogueCache()
         pool = Mock()

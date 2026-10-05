@@ -451,10 +451,17 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.available_cache.refresh()
 
     def render_available_plugins(self):
+        from .plugin_manager import installed_plugins
+        installed = installed_plugins()
+        identities = {plugin['id'] for plugin in installed}
+        repositories = {plugin.get(field, '').casefold() for plugin in installed
+                        for field in ('repository', 'distribution_repository')}
         cache = self.available_cache
         self.available_plugins.setRowCount(0)
         self.available_refresh_button.setEnabled(not cache.loading)
         for plugin in sorted(cache.plugins, key=lambda plugin: plugin['name'].casefold()):
+            if plugin.get('id') in identities or plugin['repository'].casefold() in repositories:
+                continue
             row = self.available_plugins.rowCount()
             self.available_plugins.insertRow(row)
             for column, key in enumerate(('name', 'version', 'description')):
@@ -676,6 +683,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                     (plugin.get('description', ''), plugin.get('repository', ''), plugin.get('manifest_path', '')) if value))
                 self.installed_plugins.setItem(row, column, item)
         self.update_installed_status()
+        if hasattr(self, 'available_cache'):
+            self.render_available_plugins()
 
     def install_plugin(self, checked=False, selected_repository=None):
         if getattr(self, 'deleting_plugins', False) or getattr(self, 'installing_plugins', False):
