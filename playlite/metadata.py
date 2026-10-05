@@ -89,7 +89,7 @@ def merge_links(existing, incoming):
 def download_artwork(url, target):
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != 'https' or not parsed.hostname or not (
-            parsed.hostname == 'images.igdb.com' or parsed.hostname in ('cdn.steamgriddb.com', 'shared.fastly.steamstatic.com') or parsed.hostname.endswith('.steamstatic.com') or parsed.hostname.endswith('.akamaihd.net')):
+            parsed.hostname == 'images.igdb.com' or parsed.hostname in ('cdn.steamgriddb.com', 'cdn2.steamgriddb.com', 'shared.fastly.steamstatic.com') or parsed.hostname.endswith('.steamstatic.com') or parsed.hostname.endswith('.akamaihd.net')):
         raise MetadataError('The source returned an unsupported artwork address.')
     from PyQt6.QtGui import QImageReader
     content = request(url, limit=20 * 1024 * 1024)
