@@ -1003,7 +1003,8 @@ class LibraryList(QListWidget):
         super().leaveEvent(event)
 
     def hideEvent(self, event):
-        self.hide_hover_immediately()
+        if hasattr(self, 'title_timer') and hasattr(self, 'expansion_layer'):
+            self.hide_hover_immediately()
         super().hideEvent(event)
 
     def viewportEvent(self, event):
