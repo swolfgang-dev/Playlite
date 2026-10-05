@@ -42,6 +42,8 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual([widget.values() for widget in picker.filters['Icon']],
                              [['Icon'], ['square', 'portrait', 'landscape', 'wide', '2:3', '16:9', '96:31'], [0, 256, 512, 1024, 1920]])
             picker.tabs.setCurrentIndex(1)
+            self.assertEqual(picker.filters['CoverImage'][1].values(), ['wide'])
+            picker.reset_filters('CoverImage')
             self.assertEqual(picker.filters['CoverImage'][1].values(), ['square', 'portrait'])
             picker.reject()
 

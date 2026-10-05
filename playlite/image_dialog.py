@@ -186,7 +186,7 @@ class ImageDownloader(QDialog):
 
     def activate_tab(self, *_):
         self.update_load_more()
-        self.reset_filters(self.active_key)
+        self.filter_images(self.active_key)
         provider = self.providers.get(self.source.currentData())
         query = self.query.text().strip()
         identity = (self.source.currentData(), query)
