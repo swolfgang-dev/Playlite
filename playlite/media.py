@@ -25,6 +25,7 @@ class MediaCard(QFrame):
         set_style(heading, 'font-weight: bold;')
         layout.addWidget(heading)
         actions = QHBoxLayout()
+        self.actions = actions
         for text, tooltip, handler in [('+', 'Choose image file', self.browse),
                                         ('↗', 'Download image from URL', self.from_url),
                                         ('×', 'Remove image', self.clear),

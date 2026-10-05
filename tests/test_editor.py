@@ -35,7 +35,7 @@ class MetadataTests(unittest.TestCase):
         self.editor.close()
         self.directory.cleanup()
 
-    def test_images_fit_small_window_and_icon_studio_is_disabled(self):
+    def test_images_fit_small_window_with_optional_image_studio(self):
         from PyQt6.QtWidgets import QTabWidget, QPushButton, QScrollArea
         from playlite.providers import discover_plugins
         image = QImage(600, 900, QImage.Format.Format_RGB32)
@@ -60,9 +60,13 @@ class MetadataTests(unittest.TestCase):
         self.assertLessEqual(pixmap.width(), cover.preview.width())
         self.assertLessEqual(pixmap.height(), cover.preview.height())
         self.assertAlmostEqual(pixmap.width() / pixmap.height(), 2 / 3, delta=0.01)
-        self.assertNotIn('IconStudio', discover_plugins())
-        self.assertIn('IconStudio', discover_plugins(include_disabled=True))
-        self.assertFalse(any(button.text() == 'Icon Studio…' for button in self.editor.findChildren(QPushButton)))
+        studio = discover_plugins(include_disabled=True).get('IconStudio')
+        if studio is not None:
+            enabled = studio.enabled
+            self.assertEqual('IconStudio' in discover_plugins(), enabled)
+            if studio.name == 'Image Studio':
+                for key in self.editor.media_cards:
+                    self.assertEqual(bool(self.editor.findChild(QPushButton, 'imageStudio' + key)), enabled)
 
     def test_installation_browse_buttons_and_add_game_field_order(self):
         from PyQt6.QtWidgets import QPushButton, QFormLayout

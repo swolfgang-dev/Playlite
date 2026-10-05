@@ -254,6 +254,7 @@ class MetadataEditor(QDialog):
         grid = QGridLayout(cards)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(12)
+        self.media_cards = {}
         for key, title, row, column, row_span, column_span, height in [
                 ('CoverImage', 'Cover', 0, 0, 2, 1, 440),
                 ('Icon', 'Icon', 0, 1, 1, 1, 150),
@@ -261,6 +262,7 @@ class MetadataEditor(QDialog):
                 ('BackgroundImage', 'Background', 1, 1, 1, 2, 320)]:
             panel = MediaCard(title, str(data / game[key]) if game.get(key) else '', self, height)
             self.media[key] = panel.path
+            self.media_cards[key] = panel
             grid.addWidget(panel, row, column, row_span, column_span)
         grid.setColumnStretch(0, 3)
         grid.setColumnStretch(1, 2)
@@ -438,8 +440,7 @@ class MetadataEditor(QDialog):
                 cache.cleanup()
             self.download_caches.clear()
 
-    def download_images(self):
-        from .image_dialog import ImageDownloader
+    def image_download_context(self):
         current = copy.deepcopy(self.game)
         current['Name'] = self.fields['Name'].text()
         current['Links'] = self.current_links()
@@ -447,7 +448,11 @@ class MetadataEditor(QDialog):
             ids = dict(current.get('MetadataIds') or {})
             ids['Steam'] = self.fields['SteamId'].text().strip()
             current['MetadataIds'] = ids
-        dialog = ImageDownloader(current, self, settings_path=self.data / 'ui.ini')
+        return current
+
+    def download_images(self):
+        from .image_dialog import ImageDownloader
+        dialog = ImageDownloader(self.image_download_context(), self, settings_path=self.data / 'ui.ini')
         if run_dialog(dialog) == QDialog.DialogCode.Accepted:
             self.download_caches.append(dialog.cache)
             for key, path in dialog.applied.items():

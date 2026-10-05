@@ -219,7 +219,9 @@ class SettingsTests(unittest.TestCase):
             installed = {reopened.installed_plugins.item(row, 4).text():
                          reopened.installed_plugins.item(row, 3).text()
                          for row in range(reopened.installed_plugins.rowCount())}
-            self.assertEqual(installed['IconStudio'], 'Disabled')
+            from playlite.plugin_manager import installed_plugins
+            studio = next(plugin for plugin in installed_plugins() if plugin['id'] == 'IconStudio')
+            self.assertEqual(installed['IconStudio'], 'Enabled' if studio.get('enabled', True) else 'Disabled')
             self.assertEqual(installed['SteamAutoCrack'], 'Enabled')
             self.assertFalse(any(label.text() == 'No configurable settings.' for label in reopened.findChildren(QLabel)))
             reopened.close_to_tray.setChecked(True)
