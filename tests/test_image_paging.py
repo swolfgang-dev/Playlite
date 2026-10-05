@@ -14,6 +14,12 @@ class PagedProvider(MetadataProvider):
     def image_page(self, game_id, image_type, page=0):
         return ([{'url': f'https://example.com/{page}.png', 'label': str(page)}], page == 0)
 
+    def is_exact_query(self, query, result_id=None):
+        return query.isdigit()
+
+    def search(self, query):
+        return [{'id': int(query), 'name': 'Example'}]
+
 
 class ImagePagingTests(unittest.TestCase):
     @classmethod
@@ -46,6 +52,45 @@ class ImagePagingTests(unittest.TestCase):
         provider.images = lambda game, kind: [{'url': 'legacy'}]
         self.assertEqual(provider.image_page(1, 'Icon'), ([{'url': 'legacy'}], False))
         self.assertEqual(provider.image_page(1, 'Icon', 1), ([], False))
+
+    def test_open_preloads_distinct_selected_providers_and_search_refreshes(self):
+        first, second = PagedProvider(), PagedProvider()
+        second.id, second.name = 'Other', 'Other artwork'
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': first, 'Other': second}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1, 'Other': 2}})
+        dialog.controls['CoverImage'][0].setCurrentIndex(1)
+        dialog.run = lambda function, complete: (complete(function()), dialog.update_load_more())
+        def download(url, path):
+            pixmap = QPixmap(16, 16)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch.object(first, 'search', wraps=first.search) as first_search, patch.object(second, 'search', wraps=second.search) as second_search, patch('playlite.image_dialog.download_artwork', side_effect=download) as artwork:
+            dialog.preload_images()
+            dialog.process_pending_searches()
+            self.assertEqual(first_search.call_count, 1)
+            self.assertEqual(second_search.call_count, 1)
+            self.assertEqual(len(dialog.catalogues), 2)
+            self.assertEqual(dialog.image_lists['CoverImage'].count(), 1)
+            before = artwork.call_count
+            dialog.tabs.setCurrentIndex(1)
+            self.assertEqual(artwork.call_count, before)
+            dialog.search()
+            self.assertEqual(second_search.call_count, 2)
+            self.assertEqual(artwork.call_count, before + 1)
+            self.assertEqual(len(dialog.image_pixmaps), 3)
+        dialog.finish(0)
+
+    def test_new_provider_with_id_searches_when_selected(self):
+        first, second = PagedProvider(), PagedProvider()
+        second.id, second.name = 'Other', 'Other artwork'
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': first, 'Other': second}):
+            dialog = ImageDownloader({'MetadataIds': {'Other': 2}})
+        dialog.initial_search_scheduled = True
+        with patch.object(dialog, 'search') as search:
+            dialog.source.setCurrentIndex(1)
+            search.assert_called_once_with(key='Icon', refresh=False)
+        dialog.finish(0)
 
     def test_provider_switch_restores_other_tab_artwork_without_requests(self):
         other = PagedProvider()

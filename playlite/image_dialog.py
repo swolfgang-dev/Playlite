@@ -85,6 +85,9 @@ class ImageDownloader(QDialog):
         self.loaded_searches = {}
         self.catalogues = {}
         self.catalogue_games = {}
+        self.pending_searches = []
+        self.automatic_searches = set()
+        self.image_pixmaps = {}
         self.catalogue_pages = {}
         self.catalogue_urls = {}
         self.filters = {}
@@ -179,7 +182,7 @@ class ImageDownloader(QDialog):
         super().showEvent(event)
         if not self.initial_search_scheduled:
             self.initial_search_scheduled = True
-            QTimer.singleShot(0, self.activate_tab)
+            QTimer.singleShot(0, self.preload_images)
 
     @property
     def active_key(self):
@@ -188,15 +191,39 @@ class ImageDownloader(QDialog):
     def activate_tab(self, *_):
         self.update_load_more()
         self.filter_images(self.active_key)
-        provider = self.providers.get(self.source.currentData())
-        query = self.query.text().strip()
-        identity = (self.source.currentData(), query)
-        if self.restore_catalogue(self.active_key):
+        if not self.restore_catalogue(self.active_key):
+            self.queue_search(self.active_key)
+
+    def preload_images(self):
+        for key in self.image_keys:
+            self.queue_search(key, start=False)
+        self.process_pending_searches()
+
+    def queue_search(self, key, *, start=True):
+        source, query, _, _ = self.controls[key]
+        identity = (source.currentData(), query.text().strip())
+        provider = self.providers.get(identity[0])
+        if (provider and identity[1] and provider.is_exact_query(identity[1])
+                and identity not in self.automatic_searches
+                and identity not in self.catalogue_games):
+            self.automatic_searches.add(identity)
+            self.pending_searches.append((key, identity))
+        if start:
+            self.process_pending_searches()
+
+    def process_pending_searches(self):
+        if self.busy or self.closed:
             return
-        if (not self.busy and not self.closed and provider and query
-                and provider.is_exact_query(query)
-                and self.loaded_searches.get(self.active_key) != identity):
-            self.search()
+        while self.pending_searches:
+            key, identity = self.pending_searches.pop(0)
+            source, query, _, _ = self.controls[key]
+            if identity != (source.currentData(), query.text().strip()):
+                self.automatic_searches.discard(identity)
+                continue
+            if self.restore_catalogue(key):
+                continue
+            self.search(key=key, refresh=False)
+            return
 
     @property
     def source(self):
@@ -236,7 +263,8 @@ class ImageDownloader(QDialog):
         if provider:
             query.setPlaceholderText(provider.query_hint)
         search.setEnabled(provider is not None)
-        self.restore_catalogue(key)
+        if not self.restore_catalogue(key) and self.initial_search_scheduled:
+            self.queue_search(key)
 
     def restore_catalogue(self, key):
         source, query, _, label = self.controls[key]
@@ -292,20 +320,27 @@ class ImageDownloader(QDialog):
             if not error:
                 complete(value)
             self.update_load_more()
+            QTimer.singleShot(0, self.process_pending_searches)
         self.task.signals.succeeded.connect(lambda value: done(value))
         self.task.signals.failed.connect(lambda error: done(error, True))
         QThreadPool.globalInstance().start(self.task)
 
-    def search(self):
-        provider = self.providers.get(self.source.currentData())
+    def search(self, *_, key=None, refresh=True):
+        key = key or self.active_key
+        source, query, _, _ = self.controls[key]
+        provider = self.providers.get(source.currentData())
         if not provider or self.busy:
             return
-        query = self.query.text()
-        self.run(lambda: provider.search(query), self.show_games)
+        text = query.text()
+        self.run(lambda: provider.search(text),
+                 lambda results: self.show_games(results, key=key, refresh=refresh))
+        if self.busy:
+            self.status.setText(f'Downloading from {source.currentText()}…')
 
-    def show_games(self, results):
+    def show_games(self, results, *, key=None, refresh=False):
+        key = key or self.active_key
         if not results:
-            self.status.setText('No games found. Try a Steam app ID or another title.')
+            self.status.setText('No games found. Try a game ID or another title.')
             return
         if len(results) == 1:
             selected = results[0]
@@ -315,9 +350,10 @@ class ImageDownloader(QDialog):
                 return
             selected = picker.selected_game
         if selected:
-            self.selected_game = selected
-            self.game_label.setText(f"{self.source.currentText()} — {selected['name']}")
-            self.load_images()
+            self.selected_games[key] = selected
+            source, _, _, label = self.controls[key]
+            label.setText(f"{source.currentText()} — {selected['name']}")
+            self.load_images(key=key, refresh=refresh)
 
     def update_load_more(self):
         game = self.selected_game
@@ -325,18 +361,19 @@ class ImageDownloader(QDialog):
         self.load_more_button.setVisible(any(more for _, more in self.catalogue_pages.get(key, {}).values()))
         self.load_more_button.setEnabled(not self.busy)
 
-    def load_images(self, *_, more=False):
-        if not self.selected_game or self.busy or self.closed:
+    def load_images(self, *_, more=False, key=None, refresh=False):
+        kind = key or self.active_key
+        selected = self.selected_games.get(kind)
+        if not selected or self.busy or self.closed:
             return
         if not more:
-            self.images.clear()
-        provider = self.providers[self.source.currentData()]
-        game_id = self.selected_game['id']
-        kind = self.active_key
-        identity = (self.source.currentData(), self.query.text().strip())
-        catalogue_key = (self.source.currentData(), str(game_id))
-        selected = self.selected_game
-        if catalogue_key in self.catalogues and not more:
+            self.image_lists[kind].clear()
+        source, query, _, _ = self.controls[kind]
+        provider = self.providers[source.currentData()]
+        game_id = selected['id']
+        identity = (source.currentData(), query.text().strip())
+        catalogue_key = (source.currentData(), str(game_id))
+        if catalogue_key in self.catalogues and not more and not refresh:
             self.loaded_searches[kind] = identity
             self.show_images({kind: self.catalogues[catalogue_key]})
             self.update_load_more()
@@ -344,8 +381,8 @@ class ImageDownloader(QDialog):
         self.serial += 1
         destination = Path(self.cache.name) / str(self.serial)
         destination.mkdir()
-        previous_pages = self.catalogue_pages.get(catalogue_key, {})
-        previous_urls = self.catalogue_urls.get(catalogue_key, set())
+        previous_pages = {} if refresh else self.catalogue_pages.get(catalogue_key, {})
+        previous_urls = set() if refresh else self.catalogue_urls.get(catalogue_key, set())
         scroll = self.images.verticalScrollBar().value()
         def fetch():
             result, errors, candidates = [], [], {}
@@ -386,7 +423,13 @@ class ImageDownloader(QDialog):
             self.catalogue_pages[catalogue_key] = pages
             self.catalogue_urls[catalogue_key] = previous_urls | urls
             self.loaded_searches[kind] = identity
-            self.show_images({kind: result})
+            for tab, (tab_source, tab_query, _, label) in self.controls.items():
+                if (tab_source.currentData(), tab_query.text().strip()) == identity:
+                    self.selected_games[tab] = selected
+                    self.loaded_searches[tab] = identity
+                    label.setText(f"{tab_source.currentText()} — {selected['name']}")
+                    self.show_images({tab: result})
+            self.filter_images(self.active_key)
             if more:
                 self.images.verticalScrollBar().setValue(scroll)
         self.run(fetch, complete)
@@ -399,7 +442,10 @@ class ImageDownloader(QDialog):
             for entry in results:
                 label, path = entry[:2]
                 types = entry[2] if len(entry) > 2 else {key}
-                pixmap = QPixmap(path)
+                pixmap = self.image_pixmaps.get(path)
+                if pixmap is None:
+                    pixmap = QPixmap(path)
+                    self.image_pixmaps[path] = pixmap
                 caption = label
                 if not pixmap.isNull():
                     width, height = pixmap.width(), pixmap.height()
@@ -471,5 +517,9 @@ class ImageDownloader(QDialog):
 
     def finish(self, result):
         self.closed = True
+        self.pending_searches.clear()
+        self.image_pixmaps.clear()
+        for images in self.image_lists.values():
+            images.clear()
         if result != QDialog.DialogCode.Accepted and not self.busy:
             self.cache.cleanup()
