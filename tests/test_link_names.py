@@ -25,6 +25,20 @@ class LinkNamesTests(unittest.TestCase):
         self.assertEqual(friendly_name('https://unrelated.example', 'Custom label', DEFAULT_NAMES, 'Blasphemous 2'), 'Custom label')
         self.assertEqual(friendly_name('https://shadowsoverloathing.com', '', [('shadowsoverloathing.com', 'My label')], 'Shadows Over Loathing'), 'My label')
 
+    def test_wiki_detection_precedes_game_name_detection(self):
+        from playlite.link_names import DEFAULT_NAMES
+        for url in ('https://graveyardkeeper.fandom.com/wiki/Graveyard_Keeper_Wiki',
+                    'https://graveyardkeeper.wikia.com', 'https://graveyardkeeper.wiki.gg',
+                    'https://graveyardkeeper.wikidot.com', 'https://graveyardkeeper.gamepedia.com',
+                    'https://wiki.graveyardkeeper.com', 'https://graveyardkeeperwiki.com',
+                    'https://graveyardkeeper.com/wiki/Guide'):
+            self.assertEqual(friendly_name(url, url, DEFAULT_NAMES, 'Graveyard Keeper'), 'Wiki')
+        official = 'http://graveyardkeeper.com'
+        self.assertEqual(friendly_name(official, official, DEFAULT_NAMES, 'Graveyard Keeper'), 'Official Website')
+        wiki = 'https://graveyardkeeper.fandom.com/wiki/Graveyard_Keeper_Wiki'
+        self.assertEqual(friendly_name(wiki, '', [('fandom.com', 'Community guide')], 'Graveyard Keeper'), 'Community guide')
+        self.assertEqual(friendly_name('https://en.wikipedia.org/wiki/Graveyard_Keeper', '', DEFAULT_NAMES, 'Graveyard Keeper'), 'Wikipedia')
+
     def test_metadata_downloader_preserves_stored_link_names(self):
         from playlite.metadata_dialog import MetadataDownloader
         links = [{'Name': 'store.steampowered.com', 'Url': 'https://store.steampowered.com/app/42/'},

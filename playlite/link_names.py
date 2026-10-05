@@ -41,6 +41,14 @@ def friendly_name(url, fallback, names, game_name=''):
     for match, name in sorted(names, key=lambda item: len(item[0]), reverse=True):
         if host == match or host.endswith('.' + match):
             return name
+    parts = urlsplit(url.strip() if '://' in url else '//' + url.strip())
+    wiki_hosts = ('fandom.com', 'wikia.com', 'wiki.gg', 'wikidot.com', 'gamepedia.com')
+    host_labels = host.split('.')
+    path_segments = [unquote(segment).casefold() for segment in parts.path.split('/') if segment]
+    if (any(host == site or host.endswith('.' + site) for site in wiki_hosts)
+            or any(label in ('wiki', 'wikis') or label.endswith('wiki') for label in host_labels[:-1])
+            or any(segment in ('wiki', 'wikis') for segment in path_segments)):
+        return 'Wiki'
     if game_name:
         def normalized(value):
             return ''.join(character for character in unicodedata.normalize('NFKD', value).casefold()
@@ -49,7 +57,6 @@ def friendly_name(url, fallback, names, game_name=''):
         variants = {title}
         if game_name.casefold().startswith('the '):
             variants.add(normalized(game_name[4:]))
-        parts = urlsplit(url.strip() if '://' in url else '//' + url.strip())
         candidates = [normalized(unquote(part)) for part in [host, *parts.path.split('/')]]
         if any(variant and (variant == candidate or len(variant) >= 4 and variant in candidate)
                for variant in variants for candidate in candidates):
