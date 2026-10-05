@@ -276,7 +276,8 @@ class MetadataDownloader(QDialog):
                     toggle = QCheckBox()
                     supported = key in self.table_providers[provider].fields
                     toggle.setEnabled(supported)
-                    toggle.setChecked(supported)
+                    preferred = self.settings.value(f'metadata/sources/{key}/{provider}', True, type=bool) if self.settings else True
+                    toggle.setChecked(supported and preferred)
                     cell = QWidget()
                     set_style(cell, 'background: transparent;')
                     cell_layout = QHBoxLayout(cell)
@@ -307,6 +308,8 @@ class MetadataDownloader(QDialog):
                 self.fields.setCellWidget(0, column, cell)
                 for toggles in self.source_toggles.values():
                     toggles[provider].toggled.connect(lambda checked, provider=provider: self.sync_source_column(provider))
+            for provider in self.column_toggles:
+                self.sync_source_column(provider)
             self.fields.setRowHeight(0, 28)
             self.fields.insertRow(0)
             self.fields.setItem(0, 0, QTableWidgetItem('Metadata ID'))
@@ -338,10 +341,19 @@ class MetadataDownloader(QDialog):
             options_layout.addWidget(self.fields)
         else:
             options_layout.addWidget(self.download_tabs)
+        defaults_row = QHBoxLayout()
         if self.id_fields:
             save_ids_button = QPushButton('Save metadata IDs')
             save_ids_button.clicked.connect(self.save_metadata_ids)
-            options_layout.addWidget(save_ids_button, 0, Qt.AlignmentFlag.AlignLeft)
+            defaults_row.addWidget(save_ids_button)
+        if mode == 'metadata':
+            self.save_field_defaults_button = QPushButton('Save defaults')
+            self.save_field_defaults_button.setEnabled(self.settings is not None)
+            self.save_field_defaults_button.setToolTip('Use these field and source selections for future metadata downloads. Metadata IDs are not saved.')
+            self.save_field_defaults_button.clicked.connect(self.save_field_defaults)
+            defaults_row.addWidget(self.save_field_defaults_button)
+        defaults_row.addStretch()
+        options_layout.addLayout(defaults_row)
         self.skip_existing = QCheckBox('Only download missing images' if mode == 'images' else 'Only download missing metadata')
         options_layout.addWidget(self.skip_existing)
         self.save_defaults = QCheckBox('Save selected fields as default')
@@ -536,6 +548,19 @@ class MetadataDownloader(QDialog):
             self.previous_image.setEnabled(index > 0)
             self.next_image.setEnabled(index < self.image_tabs.count() - 1)
 
+    def save_field_defaults(self):
+        if self.settings is None:
+            return
+        checked = [item.data(Qt.ItemDataRole.UserRole) for item in self.field_items()
+                   if (any(toggle.isChecked() for toggle in self.source_toggles[item.data(Qt.ItemDataRole.UserRole)].values())
+                       if self.mode == 'metadata' else item.checkState() == Qt.CheckState.Checked)]
+        self.settings.setValue(self.settings_key, checked)
+        for key, toggles in self.source_toggles.items():
+            for provider, toggle in toggles.items():
+                self.settings.setValue(f'metadata/sources/{key}/{provider}', toggle.isChecked())
+        self.settings.sync()
+        self.status.setText('Default fields and sources saved.')
+
     def next_step(self):
         if self.pages.currentIndex() == 1:
             if self.results.currentItem():
@@ -554,8 +579,7 @@ class MetadataDownloader(QDialog):
             return
         self.selected_fields = selected
         if self.save_defaults.isChecked() and self.settings:
-            self.settings.setValue(self.settings_key, checked)
-            self.settings.sync()
+            self.save_field_defaults()
         self.provider_payloads = {}
         self.provider_queue = [provider for provider in self.provider_ids if any(
             key in selected and toggles[provider].isChecked() for key, toggles in self.source_toggles.items())]
@@ -564,10 +588,6 @@ class MetadataDownloader(QDialog):
         if not self.provider_queue:
             self.status.setText('Enable at least one source for a selected field.')
             return
-        if self.save_defaults.isChecked() and self.settings:
-            for key, toggles in self.source_toggles.items():
-                for provider, toggle in toggles.items():
-                    self.settings.setValue(f'metadata/sources/{key}/{provider}', toggle.isChecked())
         if self.provider_queue:
             self.start_next_provider()
         else:
