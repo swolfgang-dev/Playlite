@@ -53,6 +53,28 @@ class ImagePagingTests(unittest.TestCase):
         self.assertEqual(provider.image_page(1, 'Icon'), ([{'url': 'legacy'}], False))
         self.assertEqual(provider.image_page(1, 'Icon', 1), ([], False))
 
+    def test_images_are_revealed_before_batch_finishes(self):
+        provider = PagedProvider()
+        provider.image_types = frozenset(('Icon',))
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        dialog.run = lambda function, complete: complete(function())
+        counts = []
+        def download(url, path):
+            counts.append(dialog.images.count())
+            self.assertIn('downloading image', dialog.download_status.text())
+            pixmap = QPixmap(16, 16)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        candidates = [{'url': 'https://example.com/one.png'}, {'url': 'https://example.com/two.png'}]
+        with patch.object(provider, 'image_page', return_value=(candidates, False)), patch('playlite.image_dialog.download_artwork', side_effect=download):
+            dialog.search()
+        self.assertEqual(counts, [0, 1])
+        self.assertEqual(dialog.images.count(), 2)
+        self.assertIn('2 of 2 images shown', dialog.status.text())
+        dialog.finish(0)
+
     def test_open_preloads_distinct_selected_providers_and_search_refreshes(self):
         first, second = PagedProvider(), PagedProvider()
         second.id, second.name = 'Other', 'Other artwork'

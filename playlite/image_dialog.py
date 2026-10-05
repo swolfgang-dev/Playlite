@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from math import gcd
 
-from PyQt6.QtCore import Qt, QThreadPool, QSize, QSettings, QTimer
+from PyQt6.QtCore import Qt, QThreadPool, QSize, QSettings, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap, QColor, QPen
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
                             QComboBox, QListWidget, QListWidgetItem, QLabel, QDialogButtonBox, QTabWidget,
@@ -70,6 +70,9 @@ class GameSearchResults(QDialog):
 
 
 class ImageDownloader(QDialog):
+    artwork_ready = pyqtSignal(object, object, object)
+    download_progress = pyqtSignal(str)
+
     def __init__(self, game, parent=None, settings_path=None):
         super().__init__(parent)
         self.setWindowTitle('Download images')
@@ -160,6 +163,11 @@ class ImageDownloader(QDialog):
         self.status = QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.download_status = QLabel()
+        self.download_status.setWordWrap(True)
+        layout.addWidget(self.download_status)
+        self.download_progress.connect(self.download_status.setText)
+        self.artwork_ready.connect(self.reveal_artwork)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
         self.load_more_button = buttons.addButton('Load more', QDialogButtonBox.ButtonRole.ActionRole)
         self.load_more_button.hide()
@@ -305,7 +313,7 @@ class ImageDownloader(QDialog):
         self.apply_button.setEnabled(False)
         for widget in (self.source, self.query, self.search_button):
             widget.setEnabled(False)
-        self.status.setText(f'Downloading from {self.source.currentText()}…')
+        self.download_status.setText(f'Downloading from {self.source.currentText()}…')
         self.task = Task(function)
         def done(value, error=False):
             self.busy = False
@@ -317,7 +325,7 @@ class ImageDownloader(QDialog):
             self.apply_button.setEnabled(bool(self.applied))
             for widget in (self.source, self.query, self.search_button):
                 widget.setEnabled(True)
-            self.status.setText(str(value) if error else '')
+            self.download_status.setText(str(value) if error else 'Download complete.')
             if not error:
                 complete(value)
             self.update_load_more()
@@ -336,7 +344,7 @@ class ImageDownloader(QDialog):
         self.run(lambda: provider.search(text),
                  lambda results: self.show_games(results, key=key, refresh=refresh))
         if self.busy:
-            self.status.setText(f'Downloading from {source.currentText()}…')
+            self.download_status.setText(f'Downloading from {source.currentText()}…')
 
     def show_games(self, results, *, key=None, refresh=False):
         key = key or self.active_key
@@ -411,22 +419,20 @@ class ImageDownloader(QDialog):
                 except Exception as error:
                     errors.append(str(error))
             downloaded = set()
-            for index, (candidate, types) in enumerate(candidates.values()):
+            matching = [(candidate, types) for candidate, types in candidates.values()
+                        if self.candidate_matches(candidate, types, filter_sets)]
+            for index, (candidate, types) in enumerate(matching):
                 if self.closed:
                     break
-                width, height = candidate.get('width', 0), candidate.get('height', 0)
-                known_size = isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0
-                if not any(set(artwork).intersection(types) and
-                           (not known_size or (matches_shape(width, height, shape) and
-                                               matches_resolution(max(width, height), resolution)))
-                           for artwork, shape, resolution in filter_sets):
-                    continue
+                self.download_progress.emit(f'{provider.name}: downloading image {index + 1}/{len(matching)}…')
                 try:
                     path = self.downloaded_urls.get(candidate['url'])
                     if path is None:
                         path = download_artwork(candidate['url'], destination / f'artwork-{index}.img')
                         self.downloaded_urls[candidate['url']] = path
-                    result.append((candidate.get('label', 'Artwork'), path, types))
+                    entry = (candidate.get('label', 'Artwork'), path, types)
+                    result.append(entry)
+                    self.artwork_ready.emit(catalogue_key, identity, entry)
                     downloaded.add(candidate['url'])
                 except Exception as error:
                     errors.append(f"{candidate.get('label', 'Artwork')}: {error}")
@@ -456,6 +462,28 @@ class ImageDownloader(QDialog):
             if more:
                 self.images.verticalScrollBar().setValue(scroll)
         self.run(fetch, complete)
+
+    @staticmethod
+    def candidate_matches(candidate, types, filter_sets):
+        width, height = candidate.get('width', 0), candidate.get('height', 0)
+        known_size = isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0
+        return any(set(artwork).intersection(types) and
+                   (not known_size or (matches_shape(width, height, shape) and
+                                       matches_resolution(max(width, height), resolution)))
+                   for artwork, shape, resolution in filter_sets)
+
+    def reveal_artwork(self, catalogue_key, identity, entry):
+        if self.closed:
+            return
+        results, errors = self.catalogues.setdefault(catalogue_key, ([], []))
+        existing = next((item for item in results if item[1] == entry[1]), None)
+        if existing:
+            existing[2].update(entry[2])
+        else:
+            results.append((entry[0], entry[1], set(entry[2])))
+        for tab, (source, query, _, _) in self.controls.items():
+            if (source.currentData(), query.text().strip()) == identity:
+                self.show_images({tab: (results, errors)})
 
     def show_images(self, payload):
         total, warnings = 0, []
