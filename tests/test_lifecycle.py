@@ -33,7 +33,7 @@ class LifecycleTests(unittest.TestCase):
                 choose_directory(None, 'Empty')
             self.assertEqual(starts, [str(games), str(prefixes), str(games), str(Path.home())])
 
-    def test_pickers_allow_native_desktop_dialogs(self):
+    def test_pickers_use_consistent_qt_dialogs(self):
         from playlite.lifecycle import choose_directory, choose_file
         from PyQt6.QtWidgets import QFileDialog
         with patch('playlite.lifecycle.QFileDialog') as picker, \
@@ -41,14 +41,14 @@ class LifecycleTests(unittest.TestCase):
             picker.return_value.selectedFiles.return_value = ['/games/Example']
             self.assertEqual(choose_directory(None, 'Folder', '/games'), '/games/Example')
             picker.assert_called_with(None, 'Folder', '/games')
-            self.assertNotIn(unittest.mock.call(QFileDialog.Option.DontUseNativeDialog, True),
+            self.assertIn(unittest.mock.call(QFileDialog.Option.DontUseNativeDialog, True),
                              picker.return_value.setOption.call_args_list)
             picker.return_value.selectedFiles.return_value = ['/games/Example/game.exe']
             picker.return_value.selectedNameFilter.return_value = 'All files (*)'
             self.assertEqual(choose_file(None, 'Executable', '/games', 'All files (*)')[0],
                              '/games/Example/game.exe')
             picker.assert_called_with(None, 'Executable', '/games', 'All files (*)')
-            self.assertNotIn(unittest.mock.call(QFileDialog.Option.DontUseNativeDialog, True),
+            self.assertIn(unittest.mock.call(QFileDialog.Option.DontUseNativeDialog, True),
                              picker.return_value.setOption.call_args_list)
 
     def test_second_instance_activates_first_and_lock_is_released(self):
