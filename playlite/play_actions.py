@@ -71,9 +71,9 @@ class LaunchSettings(QWidget):
             browse.setFixedHeight(40)
             def select(checked=False, key=key, field=field):
                 if key == 'Executable':
-                    value, _ = choose_file(self, 'Select game executable', field.text() or directory_defaults.get('InstallDirectory', ''), 'All files (*)')
+                    value, _ = choose_file(self, 'Select game executable', directory_defaults.get('InstallDirectory', '') or field.text(), 'All files (*)')
                 else:
-                    value = choose_directory(self, 'Select folder', field.text() or directory_defaults.get(key, ''))
+                    value = choose_directory(self, 'Select folder', directory_defaults.get(key, '') or field.text())
                 if value:
                     field.setText(value)
             browse.clicked.connect(select)

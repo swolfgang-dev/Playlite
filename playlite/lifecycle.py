@@ -24,7 +24,6 @@ def run_dialog(dialog):
 
 def choose_file(parent, title, directory='', file_filter=''):
     dialog = QFileDialog(parent, title, directory, file_filter)
-    dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
     dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
     if run_dialog(dialog) == QDialog.DialogCode.Accepted:
         files = dialog.selectedFiles()
@@ -34,7 +33,6 @@ def choose_file(parent, title, directory='', file_filter=''):
 
 def choose_directory(parent, title, directory=''):
     dialog = QFileDialog(parent, title, directory)
-    dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
     dialog.setFileMode(QFileDialog.FileMode.Directory)
     dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
     if run_dialog(dialog) == QDialog.DialogCode.Accepted:
