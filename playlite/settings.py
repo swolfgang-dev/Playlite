@@ -345,21 +345,26 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 self.plugin_sections[plugin.id] = (header, content)
                 sections.addWidget(content)
                 for method in add_methods:
-                    checkbox = QCheckBox('Use as default installation method' if len(add_methods) == 1 else f'Use {method.name} as default installation method')
+                    checkbox = QCheckBox('Use as default installation method')
                     checkbox.setObjectName('defaultInstallationMethod' + method.id)
                     self.default_method_group.addButton(checkbox)
                     checkbox.setChecked(method.id == default_method)
                     self.default_method_checks[method.id] = checkbox
                     self.default_method_owners[method.id] = plugin.id
-                    content_layout.addWidget(checkbox)
                 if widget is not None:
                     self.plugin_widgets[plugin.id] = widget
                     content_layout.addWidget(widget)
-                for contributor, target, extra in contributions:
-                    if target is not plugin:
+                for target in targets:
+                    target_contributions = [(contributor, extra) for contributor, owner, extra in contributions
+                                            if owner is target]
+                    checkbox = self.default_method_checks.get(target.id) if target in add_methods else None
+                    if target is not plugin and (checkbox is not None or target_contributions):
                         content_layout.addWidget(QLabel(target.name))
-                    content_layout.addWidget(extra)
-                    self.plugin_contributions.append((contributor, target, extra))
+                    if checkbox is not None:
+                        content_layout.addWidget(checkbox)
+                    for contributor, extra in target_contributions:
+                        content_layout.addWidget(extra)
+                        self.plugin_contributions.append((contributor, target, extra))
             sections.addStretch()
             area.setWidget(page)
             self.plugin_tabs.addTab(area, kind_title)
