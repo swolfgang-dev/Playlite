@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "Steam",
+      "name": "Steam Metadata",
+      "repository": "swolfgang-dev/playlite-plugin-steam-metadata"
+    },
+    {
+      "id": "IGDB",
+      "name": "IGDB",
+      "repository": "swolfgang-dev/playlite-plugin-igdb"
+    },
+    {
+      "id": "SteamGridDB",
+      "name": "SteamGridDB",
+      "repository": "swolfgang-dev/playlite-plugin-steamgriddb"
+    },
+    {
+      "id": "Lutris",
+      "name": "Lutris Integration",
+      "repository": "swolfgang-dev/playlite-plugin-lutris"
+    },
+    {
+      "id": "PlayliteArchiver",
+      "name": "Game Archiver",
+      "repository": "swolfgang-dev/playlite-plugin-game-archiver"
+    },
+    {
+      "id": "SteamAutoCrack",
+      "name": "SteamAutoCrack",
+      "repository": "swolfgang-dev/playlite-plugin-steamautocrack"
+    },
+    {
+      "id": "IconStudio",
+      "name": "Icon Studio",
+      "repository": "swolfgang-dev/playlite-plugin-icon-studio"
+    }
+  ]
+}

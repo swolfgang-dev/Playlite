@@ -12,7 +12,7 @@ import uuid
 from zipfile import ZipFile
 from .storage import atomic_json
 
-CATALOGUE_REPOSITORY = 'swolfgang-dev/playlite-plugin-catalogue'
+CATALOGUE_REPOSITORY = 'swolfgang-dev/Playlite'
 
 def plugin_catalogue():
     import base64

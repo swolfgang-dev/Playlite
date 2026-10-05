@@ -18,7 +18,7 @@ This installs the core application into a private environment at
 It includes the built-in Manual installation method and no plugin files.
 An authenticated GitHub release download is used instead of public raw-file URLs.
 
-Browse optional plugins through Settings → Plugins → Available. The [public catalogue](https://github.com/swolfgang-dev/playlite-plugin-catalogue) points to individual distribution repositories. Plugin packages and metadata are public while development repositories stay private. Changing a distribution repository to private hides it from anonymous clients and blocks future anonymous downloads; installed copies continue working. The available list loads once in the background at startup and is cached for the session. Update list fetches it again when needed; opening settings or switching tabs does not make network requests. Only repositories accessible to this installation are listed. Repository builds offer Authenticate GitHub with browser sign-in and a one-time code, or a personal access token with read access to the plugin repositories; credentials are stored with owner-only permissions in that installation’s data directory, independently of your normal GitHub CLI login. Release builds always browse and download anonymously, so private plugins remain hidden.
+Browse optional plugins through Settings → Plugins → Available. The [plugin catalogue](https://github.com/swolfgang-dev/Playlite/blob/main/catalogue.json) lives in this repository and points directly to plugin source repositories and their releases. The available list loads once in the background at startup and is cached for the session. Update list fetches it again when needed; opening settings or switching tabs does not make network requests. Only repositories accessible to this installation are listed. Repository builds offer Authenticate GitHub with browser sign-in and a one-time code, or a personal access token with read access to the plugin repositories; credentials are stored with owner-only permissions in that installation’s data directory, independently of your normal GitHub CLI login. Release builds always browse and download anonymously, so private plugins remain hidden.
 
 You can also use Settings → Plugins → Installed → Install / update
 from GitHub, or use `playlite-plugins install OWNER/REPOSITORY`. Each plugin is
@@ -26,12 +26,12 @@ fetched from its own checksummed release, and must be followed by a restart.
 
 | Plugin | Distribution repository |
 | --- | --- |
-| Steam Metadata | [playlite-plugin-steam-metadata](https://github.com/swolfgang-dev/playlite-plugin-steam-metadata-releases) |
-| IGDB | [playlite-plugin-igdb](https://github.com/swolfgang-dev/playlite-plugin-igdb-releases) |
-| Lutris Integration | [playlite-plugin-lutris](https://github.com/swolfgang-dev/playlite-plugin-lutris-releases) |
-| Game Archiver | [playlite-plugin-game-archiver](https://github.com/swolfgang-dev/playlite-plugin-game-archiver-releases) |
-| SteamAutoCrack | [playlite-plugin-steamautocrack](https://github.com/swolfgang-dev/playlite-plugin-steamautocrack-releases) |
-| Icon Studio | [playlite-plugin-icon-studio](https://github.com/swolfgang-dev/playlite-plugin-icon-studio-releases) |
+| Steam Metadata | [playlite-plugin-steam-metadata](https://github.com/swolfgang-dev/playlite-plugin-steam-metadata) |
+| IGDB | [playlite-plugin-igdb](https://github.com/swolfgang-dev/playlite-plugin-igdb) |
+| Lutris Integration | [playlite-plugin-lutris](https://github.com/swolfgang-dev/playlite-plugin-lutris) |
+| Game Archiver | [playlite-plugin-game-archiver](https://github.com/swolfgang-dev/playlite-plugin-game-archiver) |
+| SteamAutoCrack | [playlite-plugin-steamautocrack](https://github.com/swolfgang-dev/playlite-plugin-steamautocrack) |
+| Icon Studio | [playlite-plugin-icon-studio](https://github.com/swolfgang-dev/playlite-plugin-icon-studio) |
 
 Plugin implementations and integration tests belong to those repositories. Core
 release builds check that no optional plugin implementation enters the wheel.
