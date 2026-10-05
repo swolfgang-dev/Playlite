@@ -880,7 +880,7 @@ class LibraryList(QListWidget):
 
     def compact_width(self):
         # 64px icon tile plus 8px on each side; a scrollbar replaces the right pad.
-        return 72 + self.scrollbar_padding if self.scrollbar_padding else 80
+        return (72 + self.scrollbar_padding if self.scrollbar_padding else 80) + 2 * self.spacing()
 
     def update_animation_scrollbar(self, *_):
         window = self.window()
@@ -1486,7 +1486,7 @@ class LibraryWindow(QMainWindow):
         self.list.verticalScrollBar().setSingleStep(96 if self.is_grid else 24)
         self.list.setWrapping(self.is_grid)
         self.list.setWordWrap(self.is_grid)
-        self.list.setSpacing(0)
+        self.list.setSpacing(0 if self.is_grid else 3)
         self.list.setIconSize(QSize(160, 240) if self.is_grid else QSize(48, 48))
         self.list.setGridSize(QSize(180, 285) if self.is_grid else QSize())
         self.restore_library_width()
@@ -1688,7 +1688,7 @@ class LibraryWindow(QMainWindow):
             link_content.setLayout(flow)
             names = load_names(self.settings)
             for link in game['Links']:
-                name = friendly_name(link['Url'], link.get('Name') or link['Url'], names)
+                name = friendly_name(link['Url'], link.get('Name') or link['Url'], names, game.get('Name', ''))
                 button = QLabel(f'<a href="{html.escape(link["Url"], quote=True)}" '
                                 f'style="color: {colour("text")}; text-decoration: none;">{html.escape(name)}</a>')
                 button.setObjectName('link')

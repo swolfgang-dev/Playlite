@@ -13,6 +13,18 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LinkNamesTests(unittest.TestCase):
+    def test_game_name_variants_resolve_to_official_website(self):
+        from playlite.link_names import DEFAULT_NAMES
+        for url, name in [('https://shadowsoverloathing.com', 'Shadows Over Loathing'),
+                          ('https://www.the-witcher-3.com', 'The Witcher 3'),
+                          ('https://witcher3.com', 'The Witcher 3'),
+                          ('https://developer.example/games/blasphemous-2', 'Blasphemous 2'),
+                          ('https://pokemon.example', 'Pokémon')]:
+            self.assertEqual(friendly_name(url, 'Original label', DEFAULT_NAMES, name), 'Official Website')
+        self.assertEqual(friendly_name('https://store.steampowered.com/app/1/Blasphemous_2', '', DEFAULT_NAMES, 'Blasphemous 2'), 'Steam')
+        self.assertEqual(friendly_name('https://unrelated.example', 'Custom label', DEFAULT_NAMES, 'Blasphemous 2'), 'Custom label')
+        self.assertEqual(friendly_name('https://shadowsoverloathing.com', '', [('shadowsoverloathing.com', 'My label')], 'Shadows Over Loathing'), 'My label')
+
     def test_metadata_downloader_preserves_stored_link_names(self):
         from playlite.metadata_dialog import MetadataDownloader
         links = [{'Name': 'store.steampowered.com', 'Url': 'https://store.steampowered.com/app/42/'},

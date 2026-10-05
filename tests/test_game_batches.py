@@ -38,6 +38,19 @@ class GameBatchTests(unittest.TestCase):
         QTest.qWait(30)
         self.addCleanup(self.window.close)
 
+    def test_archive_information_is_only_shown_when_editing(self):
+        from playlite.add_game import AddGameEditor
+        from PyQt6.QtWidgets import QLabel, QPushButton
+        added = AddGameEditor(None, self.data, installation_method='Manual')
+        self.addCleanup(added.reject)
+        self.assertFalse(hasattr(added, 'archived'))
+        self.assertFalse(any(label.text() == 'Archive information' for label in added.findChildren(QLabel)))
+        edited = MetadataEditor(self.games[0], self.data)
+        self.addCleanup(edited.reject)
+        self.assertTrue(hasattr(edited, 'archived'))
+        self.assertTrue(any(button.text() == 'Browse…' and button.height() == 40 for button in edited.findChildren(QPushButton)))
+        self.assertEqual(self.window.list.spacing(), 3)
+
     def test_grid_and_list_support_control_click_and_preserve_selection_on_view_switch(self):
         window = self.window
         self.assertEqual(window.list.selectionMode(), QAbstractItemView.SelectionMode.ExtendedSelection)

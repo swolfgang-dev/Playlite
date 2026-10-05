@@ -314,26 +314,30 @@ class MetadataEditor(QDialog):
             explanation.setWordWrap(True)
             set_style(explanation, 'color: #999a9d;')
             installation.addRow(explanation)
-        installation.addRow(QLabel('Archive information'))
-        self.archived = QCheckBox('Archived')
-        self.archived.setChecked(bool(game.get('ArchivePath')))
-        self.archive_path = QLineEdit(game.get('ArchivePath') or '')
-        self.archive_path.setPlaceholderText('Folder containing this archived game')
-        archive_row = QHBoxLayout()
-        archive_row.addWidget(self.archive_path)
-        archive_browse = QPushButton('Browse…')
-        def choose_archive():
-            from .lifecycle import choose_directory
-            path = choose_directory(self, 'Archived game folder', self.archive_path.text())
-            if path:
-                self.archive_path.setText(path)
-        archive_browse.clicked.connect(choose_archive)
-        archive_row.addWidget(archive_browse)
-        installation.addRow(self.archived)
-        installation.addRow('Archive folder', archive_row)
-        note = QLabel('This records archive information. Changing these fields does not move files. Restore returns the game to its installation folder.')
-        note.setWordWrap(True)
-        installation.addRow(note)
+        if not hasattr(self, 'installation_plugin'):
+            installation.addRow(QLabel('Archive information'))
+            self.archived = QCheckBox('Archived')
+            self.archived.setChecked(bool(game.get('ArchivePath')))
+            self.archive_path = QLineEdit(game.get('ArchivePath') or '')
+            self.archive_path.setPlaceholderText('Folder containing this archived game')
+            archive_row = QHBoxLayout()
+            archive_row.setContentsMargins(0, 0, 0, 0)
+            archive_row.setSpacing(8)
+            archive_row.addWidget(self.archive_path)
+            archive_browse = QPushButton('Browse…')
+            archive_browse.setFixedHeight(40)
+            def choose_archive():
+                from .lifecycle import choose_directory
+                path = choose_directory(self, 'Archived game folder', self.archive_path.text())
+                if path:
+                    self.archive_path.setText(path)
+            archive_browse.clicked.connect(choose_archive)
+            archive_row.addWidget(archive_browse)
+            installation.addRow(self.archived)
+            installation.addRow('Archive folder', archive_row)
+            note = QLabel('This records archive information. Changing these fields does not move files. Restore returns the game to its installation folder.')
+            note.setWordWrap(True)
+            installation.addRow(note)
         installation_page = tabs.widget(2)
         tabs.removeTab(2)
         tabs.insertTab(0, installation_page, 'Installation')
@@ -577,25 +581,26 @@ class MetadataEditor(QDialog):
             if value and not Path(value).is_absolute():
                 raise ValueError(f'{key} must be an absolute Linux path.')
             result[key] = value
-        if self.archived.isChecked():
-            archive = self.archive_path.text().strip()
-            original = result.get('InstallDirectory') or ''
-            if not archive or not Path(archive).is_absolute() or not original or not Path(original).is_absolute():
-                raise ValueError('Archived games need absolute archive and original installation folders.')
-            source, target = Path(original).resolve(), Path(archive).resolve()
-            if source == target or source in target.parents or target in source.parents:
-                raise ValueError('Archive and installation folders must be separate.')
-            result.update(ArchivePath=archive, ArchiveOriginalDirectory=original, IsInstalled=False)
-            result['Tags'] = list(dict.fromkeys((result.get('Tags') or []) + ['Archived']))
-        else:
-            result.pop('ArchivePath', None)
-            result.pop('ArchiveOriginalDirectory', None)
-            result['Tags'] = [tag for tag in result.get('Tags') or [] if tag != 'Archived']
-            if self.game.get('ArchivePath'):
-                result['IsInstalled'] = True
-        archive_keys = ('ArchivePath', 'ArchiveOriginalDirectory')
-        if any(result.get(key) != self.game.get(key) for key in archive_keys):
-            result['_ArchiveEditBase'] = {key: self.game.get(key) for key in archive_keys}
+        if hasattr(self, 'archived'):
+            if self.archived.isChecked():
+                archive = self.archive_path.text().strip()
+                original = result.get('InstallDirectory') or ''
+                if not archive or not Path(archive).is_absolute() or not original or not Path(original).is_absolute():
+                    raise ValueError('Archived games need absolute archive and original installation folders.')
+                source, target = Path(original).resolve(), Path(archive).resolve()
+                if source == target or source in target.parents or target in source.parents:
+                    raise ValueError('Archive and installation folders must be separate.')
+                result.update(ArchivePath=archive, ArchiveOriginalDirectory=original, IsInstalled=False)
+                result['Tags'] = list(dict.fromkeys((result.get('Tags') or []) + ['Archived']))
+            else:
+                result.pop('ArchivePath', None)
+                result.pop('ArchiveOriginalDirectory', None)
+                result['Tags'] = [tag for tag in result.get('Tags') or [] if tag != 'Archived']
+                if self.game.get('ArchivePath'):
+                    result['IsInstalled'] = True
+            archive_keys = ('ArchivePath', 'ArchiveOriginalDirectory')
+            if any(result.get(key) != self.game.get(key) for key in archive_keys):
+                result['_ArchiveEditBase'] = {key: self.game.get(key) for key in archive_keys}
         lutris = self.fields['LutrisId'].text().strip() if 'LutrisId' in self.fields else str(result.get('LutrisId') or '')
         if lutris and (not lutris.isascii() or not lutris.isdigit() or int(lutris) < 1):
             raise ValueError('Lutris game ID must be a positive whole number.')

@@ -1,6 +1,7 @@
 """Editable domain names for links displayed in the game view."""
 import json
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, unquote
+import unicodedata
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
                             QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox)
 
@@ -32,7 +33,7 @@ def load_names(settings):
     return list(DEFAULT_NAMES)
 
 
-def friendly_name(url, fallback, names):
+def friendly_name(url, fallback, names, game_name=''):
     try:
         host = domain(url)
     except ValueError:
@@ -40,6 +41,19 @@ def friendly_name(url, fallback, names):
     for match, name in sorted(names, key=lambda item: len(item[0]), reverse=True):
         if host == match or host.endswith('.' + match):
             return name
+    if game_name:
+        def normalized(value):
+            return ''.join(character for character in unicodedata.normalize('NFKD', value).casefold()
+                           if character.isalnum())
+        title = normalized(game_name)
+        variants = {title}
+        if game_name.casefold().startswith('the '):
+            variants.add(normalized(game_name[4:]))
+        parts = urlsplit(url.strip() if '://' in url else '//' + url.strip())
+        candidates = [normalized(unquote(part)) for part in [host, *parts.path.split('/')]]
+        if any(variant and (variant == candidate or len(variant) >= 4 and variant in candidate)
+               for variant in variants for candidate in candidates):
+            return 'Official Website'
     return fallback
 
 
