@@ -11,7 +11,7 @@ class ManualInstallation(InstallationPlugin):
     type = "installation"
     version = "0.2.0"
     description = 'Creates only a Playlite entry. Installation details are optional.'
-    def create_editor(self, editor, game, field_keys=None):
+    def create_editor(self, editor, game, field_keys=None, directory_defaults=None):
         widget = QWidget()
         form = QFormLayout(widget)
         form.setContentsMargins(0, 0, 0, 0)
@@ -20,6 +20,7 @@ class ManualInstallation(InstallationPlugin):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         widget.fields = {}
+        directory_defaults = directory_defaults or {}
         for key, label in [('Executable', 'Executable'), ('InstallDirectory', 'Installation folder'),
                            ('Prefix', 'Wine prefix'), ('LaunchArguments', 'Launch arguments'),
                            ('LutrisId', 'Lutris game ID'), ('SteamId', 'Steam ID')]:
@@ -42,12 +43,12 @@ class ManualInstallation(InstallationPlugin):
                 browse.setObjectName('browse' + key)
                 def select_executable():
                     filename, _ = choose_file(editor, 'Select game executable',
-                                             widget.fields['Executable'].text() or widget.fields['InstallDirectory'].text(), 'All files (*)')
+                                             widget.fields['Executable'].text() or widget.fields['InstallDirectory'].text() or directory_defaults.get('InstallDirectory', ''), 'All files (*)')
                     if filename:
                         widget.fields['Executable'].setText(filename)
                 def select_folder(checked=False, folder_key=key):
                     folder = choose_directory(editor, 'Select Wine prefix' if folder_key == 'Prefix' else 'Select installation folder',
-                                              widget.fields[folder_key].text())
+                                              widget.fields[folder_key].text() or directory_defaults.get(folder_key, ''))
                     if folder:
                         widget.fields[folder_key].setText(folder)
                 browse.clicked.connect(select_executable if key == 'Executable' else select_folder)

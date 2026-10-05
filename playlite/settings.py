@@ -217,8 +217,9 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.installed_plugins.currentCellChanged.connect(show_plugin_details)
         if self.installed_plugins.rowCount():
             self.installed_plugins.setCurrentCell(0, 0)
-        install_plugin = QPushButton('Install / update from GitHub…')
-        install_plugin.clicked.connect(self.install_plugin)
+        install_plugin = QPushButton('Install / update selected')
+        self.update_selected_button = install_plugin
+        install_plugin.clicked.connect(self.update_selected_plugins)
         installed_actions = QHBoxLayout()
         installed_actions.addWidget(install_plugin)
         self.delete_plugin_button = QPushButton('Delete selected')
@@ -472,6 +473,11 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
 
     def update_installed_status(self):
         self.set_plugin_selection_status(self.installed_plugins, self.installed_status, 'installed')
+        if hasattr(self, 'update_selected_button'):
+            idle = not getattr(self, 'installing_plugins', False) and not getattr(self, 'deleting_plugins', False)
+            selected = bool(self.installed_plugins.selectionModel().selectedRows())
+            self.update_selected_button.setEnabled(selected and idle)
+            self.delete_plugin_button.setEnabled(selected and idle)
 
     @staticmethod
     def set_plugin_selection_status(table, label, kind):
@@ -612,6 +618,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         if not identities:
             return
         self.deleting_plugins = True
+        self.update_installed_status()
         self.install_selected_button.setEnabled(False)
         self.delete_plugin_button.setEnabled(False)
         self.plugin_operation_status.clear()
@@ -639,36 +646,57 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         task.signals.failed.connect(failed)
         QThreadPool.globalInstance().start(task)
 
+    def update_selected_plugins(self):
+        if getattr(self, 'installing_plugins', False) or getattr(self, 'deleting_plugins', False):
+            return
+        self.plugin_operation_status.clear()
+        repositories = []
+        for index in self.installed_plugins.selectionModel().selectedRows():
+            plugin = self.installed_plugins.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
+            catalogue = next((entry for entry in self.available_cache.plugins
+                              if entry.get('id') == plugin['id'] or entry['name'] == plugin['name']), {})
+            repository = (plugin.get('distribution_repository') or catalogue.get('repository')
+                          or plugin.get('repository'))
+            if repository:
+                repositories.append(repository)
+            else:
+                self.plugin_operation_status.appendPlainText(f"No GitHub repository configured for {plugin['name']}.")
+        self.start_plugin_install(repositories, self.plugin_operation_status)
+
     def install_selected_plugins(self):
+        repositories = [self.available_plugins.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
+                        for index in self.available_plugins.selectionModel().selectedRows()]
+        self.start_plugin_install(repositories, self.available_operation_log)
+
+    def start_plugin_install(self, repositories, log):
         from .plugin_manager import install_plugins
         from .metadata_dialog import Task
         from PyQt6.QtCore import QThreadPool
-        if getattr(self, 'installing_plugins', False) or getattr(self, 'deleting_plugins', False):
-            return
-        repositories = [self.available_plugins.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
-                        for index in self.available_plugins.selectionModel().selectedRows()]
-        if not repositories:
+        if getattr(self, 'installing_plugins', False) or getattr(self, 'deleting_plugins', False) or not repositories:
             return
         self.installing_plugins = True
-        self.delete_plugin_button.setEnabled(False)
+        self.update_installed_status()
         self.install_selected_button.setEnabled(False)
-        self.available_operation_log.setPlainText(f'Installing {len(repositories)} plugins…')
+        if log is self.available_operation_log:
+            log.clear()
+        log.appendPlainText(f'Installing {len(repositories)} plugins…')
         task = Task(lambda: install_plugins(repositories, task.signals.progress.emit))
         self.batch_install_task = task
-        task.signals.progress.connect(self.available_operation_log.appendPlainText)
+        task.signals.progress.connect(log.appendPlainText)
         def complete(results):
             self.installing_plugins = False
             self.refresh_installed_plugins()
             if any(manifest for _, manifest, _ in results):
-                self.available_operation_log.appendPlainText('Restart Playlite to load installed plugins.')
+                log.appendPlainText('Restart Playlite to load installed plugins.')
             self.install_selected_button.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()))
         def failed(error):
             self.installing_plugins = False
-            self.available_operation_log.appendPlainText(str(error))
+            log.appendPlainText(str(error))
+            self.update_installed_status()
             self.install_selected_button.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()))
-        self.batch_install_task.signals.succeeded.connect(complete)
-        self.batch_install_task.signals.failed.connect(failed)
-        QThreadPool.globalInstance().start(self.batch_install_task)
+        task.signals.succeeded.connect(complete)
+        task.signals.failed.connect(failed)
+        QThreadPool.globalInstance().start(task)
 
     def refresh_installed_plugins(self):
         from .plugin_manager import installed_plugins
@@ -679,6 +707,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             for column, value in enumerate((plugin['name'], plugin['version'], plugin.get('type', 'metadata').capitalize(),
                                              'Enabled' if plugin.get('enabled', True) else 'Disabled', plugin['id'])):
                 item = QTableWidgetItem(str(value))
+                item.setData(Qt.ItemDataRole.UserRole, plugin)
                 item.setToolTip('\n'.join(str(value) for value in
                     (plugin.get('description', ''), plugin.get('repository', ''), plugin.get('manifest_path', '')) if value))
                 self.installed_plugins.setItem(row, column, item)

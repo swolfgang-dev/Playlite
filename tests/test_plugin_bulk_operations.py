@@ -77,30 +77,40 @@ class BulkPluginTests(unittest.TestCase):
                 window.reject()
                 cache.plugins,cache.loaded,cache.loading,cache.error=old
 
-    def test_installed_button_opens_a_populated_working_download_dialog(self):
-        from PyQt6.QtWidgets import QComboBox, QPushButton
-        with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME':directory}):
-            root=Path(directory)
-            plugin=root/'playlite/plugins/example';plugin.mkdir(parents=True)
-            (plugin/'manifest.json').write_text(json.dumps(dict(id='Example',name='Example',version='1',type='generic',enabled=False,repository='owner/private-source')))
-            cache=catalogue_cache()
-            old=(cache.plugins,cache.loaded,cache.loading,cache.error)
-            cache.complete([dict(name='Example',version='v1',description='',repository='owner/example-releases')])
-            def run(dialog):
-                combo=dialog.findChild(QComboBox)
-                self.assertEqual(combo.currentText(),'owner/example-releases')
-                button=next(button for button in dialog.findChildren(QPushButton) if button.text()=='Install / update')
-                self.assertTrue(button.isEnabled())
-                button.click()
-                dialog.install_task.run()
-                dialog.reject()
+    def test_installed_button_updates_selected_plugins_directly(self):
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
+            root = Path(directory)
+            for identity in ('First', 'Second'):
+                plugin = root / 'playlite/plugins' / identity.lower()
+                plugin.mkdir(parents=True)
+                manifest = dict(id=identity, name=identity, version='1', type='generic',
+                                enabled=False, repository='owner/' + identity.lower() + '-source')
+                if identity == 'First':
+                    manifest['distribution_repository'] = 'owner/first-releases'
+                (plugin / 'manifest.json').write_text(json.dumps(manifest))
+            cache = catalogue_cache()
+            old = (cache.plugins, cache.loaded, cache.loading, cache.error)
+            cache.complete([dict(name='Second', version='2', description='', repository='owner/second-releases')])
+            window = SettingsDialog(QSettings(str(root / 'ui.ini'), QSettings.Format.IniFormat))
             try:
-                window=SettingsDialog(QSettings(str(root/'ui.ini'),QSettings.Format.IniFormat))
-                with patch('playlite.settings.run_dialog',side_effect=run) as opened, patch('PyQt6.QtCore.QThreadPool.globalInstance',return_value=Mock()), patch('playlite.plugin_manager.install_github',return_value={'name':'Example','version':'1'}) as install:
-                    button=next(button for button in window.findChildren(QPushButton) if button.text()=='Install / update from GitHub…')
-                    button.click()
-                    opened.assert_called_once()
-                    install.assert_called_once_with('owner/example-releases')
-                window.reject()
+                window.installed_plugins.selectAll()
+                with patch('playlite.settings.run_dialog') as dialog, \
+                        patch('PyQt6.QtCore.QThreadPool.globalInstance', return_value=Mock()), \
+                        patch('playlite.plugin_manager.install_github', side_effect=[
+                            ValueError('denied'), {'name': 'Second', 'version': '2'}]) as install:
+                    window.update_selected_button.click()
+                    self.assertFalse(window.update_selected_button.isEnabled())
+                    self.assertFalse(window.delete_plugin_button.isEnabled())
+                    window.batch_install_task.run()
+                    self.assertEqual([call.args[0] for call in install.call_args_list],
+                                     ['owner/first-releases', 'owner/second-releases'])
+                    dialog.assert_not_called()
+                    log = window.plugin_operation_status.toPlainText()
+                    self.assertIn('denied', log)
+                    self.assertIn('Installed Second 2', log)
+                    self.assertIn('Restart Playlite', log)
+                window.installed_plugins.clearSelection()
+                self.assertFalse(window.update_selected_button.isEnabled())
             finally:
-                cache.plugins,cache.loaded,cache.loading,cache.error=old
+                window.reject()
+                cache.plugins, cache.loaded, cache.loading, cache.error = old

@@ -42,7 +42,7 @@ def action_game(game, action, provider):
 
 class LaunchSettings(QWidget):
     """Default integration launch fields; integrations can supply their own editor."""
-    def __init__(self, action, parent=None):
+    def __init__(self, action, parent=None, directory_defaults=None):
         super().__init__(parent)
         self.setObjectName('actionLaunchSettings')
         from .lifecycle import choose_file, choose_directory
@@ -53,6 +53,7 @@ class LaunchSettings(QWidget):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.fields = {}
+        directory_defaults = directory_defaults or {}
         for key, title in [('Executable', 'Executable'), ('Prefix', 'Wine prefix'),
                            ('Arguments', 'Arguments'), ('InstallDirectory', 'Folder override')]:
             field = QLineEdit(str(action.get(key) or ''))
@@ -70,9 +71,9 @@ class LaunchSettings(QWidget):
             browse.setFixedHeight(40)
             def select(checked=False, key=key, field=field):
                 if key == 'Executable':
-                    value, _ = choose_file(self, 'Select game executable', field.text(), 'All files (*)')
+                    value, _ = choose_file(self, 'Select game executable', field.text() or directory_defaults.get('InstallDirectory', ''), 'All files (*)')
                 else:
-                    value = choose_directory(self, 'Select folder', field.text())
+                    value = choose_directory(self, 'Select folder', field.text() or directory_defaults.get(key, ''))
                 if value:
                     field.setText(value)
             browse.clicked.connect(select)
