@@ -394,7 +394,7 @@ class ImageDownloader(QDialog):
         destination.mkdir()
         previous_pages = {} if refresh else self.catalogue_pages.get(catalogue_key, {})
         previous_urls = self.catalogue_urls.get(catalogue_key, set())
-        filter_tabs = [kind] if refresh or more else [tab for tab, (tab_source, tab_query, _, _) in self.controls.items()
+        filter_tabs = [kind] if more else [tab for tab, (tab_source, tab_query, _, _) in self.controls.items()
                                                     if (tab_source.currentData(), tab_query.text().strip()) == identity]
         filter_sets = [tuple(widget.values() for widget in self.filters[tab]) for tab in filter_tabs]
         artwork_types = {image_type for artwork, _, _ in filter_sets for image_type in artwork}

@@ -162,6 +162,9 @@ class ImagePagingTests(unittest.TestCase):
         dialog.tabs.blockSignals(False)
         dialog.run = lambda function, complete: (complete(function()), dialog.update_load_more())
         shape, resolution = dialog.filters['CoverImage'][1:]
+        for key in dialog.image_keys:
+            if key != 'CoverImage':
+                dialog.filters[key][0].set_values([key])
         shape.set_values(['2:3'])
         resolution.set_values([512])
         def download(url, path):
@@ -180,6 +183,33 @@ class ImagePagingTests(unittest.TestCase):
             self.assertEqual(artwork.call_count, 2)
             self.assertIn('wide', artwork.call_args.args[0])
             self.assertEqual(dialog.images.count(), 2)
+            dialog.search()
+            self.assertEqual(artwork.call_count, 2)
+        dialog.finish(0)
+
+    def test_search_uses_filters_from_other_tabs(self):
+        provider = PagedProvider()
+        provider.image_types = frozenset(('Icon', 'CoverImage'))
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        dialog.run = lambda function, complete: complete(function())
+        for key in dialog.image_keys:
+            dialog.filters[key][0].set_values([key])
+        dialog.filters['Icon'][1].set_values(['square'])
+        dialog.filters['CoverImage'][1].set_values(['2:3'])
+        def page(game_id, image_type, page=0):
+            width, height = (256, 256) if image_type == 'Icon' else (600, 900)
+            return ([{'url': f'https://example.com/{image_type}.png',
+                      'width': width, 'height': height}], False)
+        def download(url, path):
+            pixmap = QPixmap(*( (256, 256) if 'Icon' in url else (600, 900)))
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch.object(provider, 'image_page', side_effect=page), patch('playlite.image_dialog.download_artwork', side_effect=download) as artwork:
+            dialog.search()
+            self.assertEqual(artwork.call_count, 2)
+            self.assertEqual(dialog.image_lists['CoverImage'].count(), 2)
             dialog.search()
             self.assertEqual(artwork.call_count, 2)
         dialog.finish(0)
