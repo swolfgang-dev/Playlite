@@ -47,6 +47,20 @@ def installed_plugins(directory=None):
     return result
 
 
+def set_plugin_enabled(identity, enabled, directory=None):
+    directory = Path(directory or plugin_directory())
+    entry = next((item for item in installed_plugins(directory) if item.get('id') == identity), None)
+    if entry is None:
+        raise ValueError('Plugin is no longer installed.')
+    path = Path(entry['manifest_path'])
+    if path.is_symlink() or path.parent.is_symlink() or path.resolve().parent.parent != directory.resolve():
+        raise ValueError('Plugin directory is outside the installed plugin folder.')
+    manifest = json.loads(path.read_text())
+    manifest['enabled'] = bool(enabled)
+    atomic_json(path, manifest)
+    return manifest
+
+
 def delete_plugin(identity, directory=None):
     directory = Path(directory or plugin_directory())
     entry = next((item for item in installed_plugins(directory) if item.get('id') == identity), None)

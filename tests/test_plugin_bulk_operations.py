@@ -114,3 +114,38 @@ class BulkPluginTests(unittest.TestCase):
             finally:
                 window.reject()
                 cache.plugins, cache.loaded, cache.loading, cache.error = old
+
+    def test_context_menu_toggles_mixed_selection_and_preserves_it(self):
+        from PyQt6.QtWidgets import QMenu
+        from playlite.plugin_manager import installed_plugins
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
+            root = Path(directory)
+            for identity, enabled in [('First', True), ('Second', False), ('Third', True)]:
+                folder = root / 'playlite/plugins' / identity.lower()
+                folder.mkdir(parents=True)
+                (folder / 'manifest.json').write_text(json.dumps(dict(id=identity, name=identity, version='1', enabled=enabled)))
+            with patch('playlite.providers.discover_plugins', return_value={}):
+                window = SettingsDialog(QSettings(str(root / 'settings.ini'), QSettings.Format.IniFormat))
+            table = window.installed_plugins
+            table.setFixedSize(700, 300)
+            for row in (0, 1):
+                table.selectionModel().select(table.model().index(row, 0), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+            try:
+                with patch.object(QMenu, 'popup'):
+                    window.installed_plugin_context_menu(table.visualItemRect(table.item(0, 0)).center())
+                menu = table.findChildren(QMenu)[-1]
+                self.assertEqual([action.text() for action in menu.actions()], ['Enable selected', 'Disable selected'])
+                menu.actions()[1].trigger()
+                state = {plugin['id']: plugin['enabled'] for plugin in installed_plugins()}
+                self.assertEqual(state, {'First': False, 'Second': False, 'Third': True})
+                self.assertEqual(len(table.selectionModel().selectedRows()), 2)
+                window.set_selected_plugins_enabled(['First', 'Second'], True)
+                self.assertTrue(all(plugin['enabled'] for plugin in installed_plugins()))
+                self.assertIn('Restart Playlite', window.plugin_operation_status.toPlainText())
+                with patch.object(QMenu, 'popup'):
+                    window.installed_plugin_context_menu(table.visualItemRect(table.item(2, 0)).center())
+                menu = table.findChildren(QMenu)[-1]
+                self.assertEqual([action.text() for action in menu.actions()], ['Disable'])
+                self.assertEqual([index.row() for index in table.selectionModel().selectedRows()], [2])
+            finally:
+                window.reject()

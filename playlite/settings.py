@@ -4,9 +4,9 @@ from .ui_style import DROPDOWN_STYLE
 from pathlib import Path
 import os
 import json
-from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtCore import QUrl, Qt, QItemSelectionModel
 from PyQt6.QtGui import QDesktopServices, QColor, QIcon, QPixmap
-from PyQt6.QtWidgets import (QCheckBox, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QToolButton,
+from PyQt6.QtWidgets import (QMenu, QCheckBox, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QToolButton,
                              QPlainTextEdit, QFormLayout, QGridLayout, QFrame, QPushButton, QLabel, QLineEdit, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget, QSlider, QHBoxLayout, QColorDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
 from .theme import ROLES, palette, base_palette, apply as apply_theme
 from .image_filters import OPTIONS, defaults as image_filter_defaults, FilterChecks
@@ -209,6 +209,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.installed_plugins.setHorizontalHeaderLabels(['Plugin', 'Version', 'Type', 'Status', 'Plugin ID'])
         self.installed_plugins.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.configure_plugin_table(self.installed_plugins)
+        self.installed_plugins.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.installed_plugins.customContextMenuRequested.connect(self.installed_plugin_context_menu)
         self.installed_plugins.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.installed_plugins.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.refresh_installed_plugins()
@@ -725,6 +727,46 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         task.signals.succeeded.connect(complete)
         task.signals.failed.connect(failed)
         QThreadPool.globalInstance().start(task)
+
+    def installed_plugin_context_menu(self, position):
+        if getattr(self, 'deleting_plugins', False) or getattr(self, 'installing_plugins', False):
+            return
+        table = self.installed_plugins
+        item = table.itemAt(position)
+        if item is None:
+            return
+        selected_rows = {index.row() for index in table.selectionModel().selectedRows()}
+        if item.row() not in selected_rows:
+            table.clearSelection()
+            table.selectRow(item.row())
+        table.setCurrentItem(item, QItemSelectionModel.SelectionFlag.NoUpdate)
+        plugins = [table.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
+                   for index in table.selectionModel().selectedRows()]
+        identities = [plugin['id'] for plugin in plugins]
+        menu = QMenu(table)
+        plural = len(plugins) > 1
+        if any(not plugin.get('enabled', True) for plugin in plugins):
+            menu.addAction('Enable selected' if plural else 'Enable', lambda: self.set_selected_plugins_enabled(identities, True))
+        if any(plugin.get('enabled', True) for plugin in plugins):
+            menu.addAction('Disable selected' if plural else 'Disable', lambda: self.set_selected_plugins_enabled(identities, False))
+        menu.aboutToHide.connect(menu.deleteLater)
+        menu.popup(table.viewport().mapToGlobal(position))
+
+    def set_selected_plugins_enabled(self, identities, enabled):
+        from .plugin_manager import set_plugin_enabled
+        messages = []
+        for identity in identities:
+            try:
+                plugin = set_plugin_enabled(identity, enabled)
+                messages.append(f'{plugin["name"]}: {"Enabled" if enabled else "Disabled"}.')
+            except (ValueError, OSError) as error:
+                messages.append(f'{identity}: {error}')
+        self.refresh_installed_plugins()
+        for row in range(self.installed_plugins.rowCount()):
+            if self.installed_plugins.item(row, 4).text() in identities:
+                self.installed_plugins.selectionModel().select(self.installed_plugins.model().index(row, 0),
+                    QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        self.plugin_operation_status.setPlainText('\n'.join(messages + ['Restart Playlite to apply plugin changes.']))
 
     def refresh_installed_plugins(self):
         from .plugin_manager import installed_plugins
