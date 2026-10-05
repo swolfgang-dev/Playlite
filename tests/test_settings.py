@@ -17,6 +17,40 @@ APP = QApplication.instance() or QApplication([])
 
 
 class SettingsTests(unittest.TestCase):
+    def test_default_installation_method_is_exclusive_saved_and_used(self):
+        from playlite.add_game import AddGameEditor
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            settings = QSettings(str(data / 'ui.ini'), QSettings.Format.IniFormat)
+            dialog = SettingsDialog(settings)
+            checks = dialog.default_method_checks
+            self.assertTrue(checks['Manual'].isChecked())
+            checks['LutrisImport'].click()
+            self.assertFalse(checks['Manual'].isChecked())
+            checks['LutrisAdd'].click()
+            self.assertFalse(checks['LutrisImport'].isChecked())
+            self.assertEqual(sum(check.isChecked() for check in checks.values()), 1)
+            dialog.save()
+            self.assertEqual(settings.value('installation/defaultMethod'), 'LutrisAdd')
+            editor = AddGameEditor(None, data)
+            self.assertEqual(editor.installation_plugin.id, 'LutrisAdd')
+            self.assertEqual(editor.installation_header_label.text(), 'Installation Method')
+            editor.reject()
+            editor = AddGameEditor(None, data, installation_method='Manual')
+            self.assertEqual(editor.installation_plugin.id, 'Manual')
+            editor.reject()
+            reopened = SettingsDialog(settings)
+            self.assertTrue(reopened.default_method_checks['LutrisAdd'].isChecked())
+            reopened.default_method_checks['Manual'].click()
+            reopened.reject()
+            settings.sync()
+            self.assertEqual(settings.value('installation/defaultMethod'), 'LutrisAdd')
+            settings.setValue('installation/defaultMethod', 'Unavailable')
+            settings.sync()
+            editor = AddGameEditor(None, data)
+            self.assertEqual(editor.installation_plugin.id, 'Manual')
+            editor.reject()
+
     def test_image_filter_defaults_save_cancel_and_reset(self):
         from playlite.image_dialog import ImageDownloader
         with tempfile.TemporaryDirectory() as directory:

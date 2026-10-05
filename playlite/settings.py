@@ -6,7 +6,7 @@ import os
 import json
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices, QColor, QIcon, QPixmap
-from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QToolButton,
+from PyQt6.QtWidgets import (QCheckBox, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QToolButton,
                              QPlainTextEdit, QFormLayout, QGridLayout, QFrame, QPushButton, QLabel, QLineEdit, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget, QSlider, QHBoxLayout, QColorDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
 from .theme import ROLES, palette, base_palette, apply as apply_theme
 from .image_filters import OPTIONS, defaults as image_filter_defaults, FilterChecks
@@ -239,6 +239,15 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.plugin_widgets = {}
         self.plugin_sections = {}
         self.plugin_contributions = []
+        self.default_method_group = QButtonGroup(self)
+        self.default_method_group.setExclusive(True)
+        self.default_method_checks = {}
+        self.default_method_owners = {}
+        from .providers import installation_methods
+        methods = installation_methods(self.plugins)
+        default_method = settings.value('installation/defaultMethod', 'Manual', type=str)
+        if default_method not in methods:
+            default_method = 'Manual'
         self.image_sources = {}
         self.image_filter_defaults = {}
         for kind, kind_title in [('generic', 'General'), ('metadata', 'Metadata'),
@@ -309,7 +318,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                         extra = contributor.create_settings_contribution(target, page)
                         if extra is not None:
                             contributions.append((contributor, target, extra))
-                if widget is None and not contributions:
+                add_methods = [target for target in targets if target.type == 'installation']
+                if widget is None and not contributions and not add_methods:
                     continue
                 separator = QFrame()
                 separator.setFrameShape(QFrame.Shape.HLine)
@@ -334,6 +344,14 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 header.toggled.connect(toggle_section)
                 self.plugin_sections[plugin.id] = (header, content)
                 sections.addWidget(content)
+                for method in add_methods:
+                    checkbox = QCheckBox('Use as default installation method' if len(add_methods) == 1 else f'Use {method.name} as default installation method')
+                    checkbox.setObjectName('defaultInstallationMethod' + method.id)
+                    self.default_method_group.addButton(checkbox)
+                    checkbox.setChecked(method.id == default_method)
+                    self.default_method_checks[method.id] = checkbox
+                    self.default_method_owners[method.id] = plugin.id
+                    content_layout.addWidget(checkbox)
                 if widget is not None:
                     self.plugin_widgets[plugin.id] = widget
                     content_layout.addWidget(widget)
@@ -838,6 +856,9 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         except (ValueError, OSError) as error:
             self.error.setText(str(error))
             return
+        default_method = next((identity for identity, checkbox in self.default_method_checks.items()
+                               if checkbox.isChecked() and self.default_method_owners[identity] not in self.deleted_plugin_ids), 'Manual')
+        self.settings.setValue('installation/defaultMethod', default_method)
         self.settings.setValue('app/defaultView', self.default_view.currentData())
         self.settings.setValue('links/friendlyNames', json.dumps(self.link_names))
         self.settings.setValue('app/resetSortingFilters', self.reset_on_launch.isChecked())

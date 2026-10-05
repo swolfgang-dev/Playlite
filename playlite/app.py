@@ -2040,7 +2040,7 @@ class LibraryWindow(QMainWindow):
     def add_game(self):
         self.add_manual_game()
 
-    def add_manual_game(self, installation_method='Manual'):
+    def add_manual_game(self, installation_method=None):
         active = next((dialog for dialog in self.findChildren(QDialog) if dialog.isVisible()), None)
         if active:
             active.raise_()

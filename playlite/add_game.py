@@ -36,13 +36,19 @@ class AddGameMethods(QDialog):
 
 
 class AddGameEditor(MetadataEditor):
-    def __init__(self, executable, data, parent=None, game=None, installation_method='Manual'):
+    def __init__(self, executable, data, parent=None, game=None, installation_method=None):
         selected = Path(executable).expanduser().resolve(strict=True) if executable else None
         if selected is not None and not selected.is_file():
             raise ValueError('Select a game executable.')
         from .providers import discover_plugins, GenericPlugin, installation_methods
         plugins = discover_plugins()
         self.installation_plugins = installation_methods(plugins)
+        if installation_method is None:
+            from PyQt6.QtCore import QSettings
+            settings = QSettings(str(data / 'ui.ini'), QSettings.Format.IniFormat)
+            installation_method = settings.value('installation/defaultMethod', 'Manual', type=str)
+            if installation_method not in self.installation_plugins:
+                installation_method = 'Manual'
         self.installation_plugin = self.installation_plugins[installation_method]
         super().__init__(game if game is not None else {
             'Id': str(uuid.uuid4()), 'Name': selected.parent.name if selected else '',

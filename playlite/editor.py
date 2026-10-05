@@ -289,7 +289,7 @@ class MetadataEditor(QDialog):
             self.installation_method.setCurrentIndex(self.installation_method.findData(self.installation_plugin.id))
             self.installation_method.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
             self.installation_method.setFixedHeight(40)
-            self.installation_header_label = QLabel('Integration')
+            self.installation_header_label = QLabel('Installation Method')
             self.installation_description = QLabel(self.installation_plugin.description)
             self.installation_description.setWordWrap(True)
             container = QWidget()
