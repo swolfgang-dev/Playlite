@@ -22,28 +22,28 @@ class SelectedRowTests(unittest.TestCase):
         view.compact_enabled = True
         return view
 
-    def test_all_selected_rows_stop_closing_at_icon_box_width(self):
+    def test_multi_selected_rows_remain_expanded_when_hover_leaves(self):
         view = self.create_list()
         for identity in ('a', 'b'):
             view.row_widths[identity] = 180
             view.animate_row(identity, 0)
             animation = view.row_animations[identity]
-            self.assertEqual(animation.endValue(), 64)
+            self.assertEqual(animation.endValue(), view.expanded_row_width(view.item(0 if identity == 'a' else 1).data(Qt.ItemDataRole.UserRole)))
             animation.setCurrentTime(animation.duration())
-            self.assertEqual(view.row_widths[identity], 64)
+            self.assertEqual(view.row_widths[identity], animation.endValue())
         view.item(0).setSelected(False)
         self.assertEqual(view.row_animations['a'].endValue(), 0)
-        self.assertEqual(view.row_animations['b'].endValue(), 64)
+        self.assertEqual(view.row_animations['b'].endValue(), view.expanded_row_width(view.item(1).data(Qt.ItemDataRole.UserRole)))
         view.hide_hover_immediately()
 
-    def test_selecting_a_closing_row_reverses_it_before_it_shrinks_below_box(self):
+    def test_selecting_a_closing_row_reverses_it_to_expanded_width(self):
         view = self.create_list()
         view.item(0).setSelected(False)
         view.row_widths['a'] = 180
         view.animate_row('a', 0)
         view.row_animations['a'].setCurrentTime(900)
         view.item(0).setSelected(True)
-        self.assertEqual(view.row_animations['a'].endValue(), 64)
+        self.assertEqual(view.row_animations['a'].endValue(), view.expanded_row_width(view.item(0).data(Qt.ItemDataRole.UserRole)))
         self.assertGreaterEqual(view.row_widths['a'], 64)
         view.hide_hover_immediately()
 
@@ -81,7 +81,7 @@ class SelectedRowTests(unittest.TestCase):
                 border.assert_not_called()
             painter.end()
 
-    def test_multi_selection_temporarily_expands_compact_library(self):
+    def test_multi_selection_expands_only_selected_rows_and_survives_refresh(self):
         import json
         from pathlib import Path
         from tempfile import TemporaryDirectory
@@ -95,13 +95,18 @@ class SelectedRowTests(unittest.TestCase):
             window.toggle_compact_library(True)
             self.assertTrue(window.compact_library)
             window.list.item(1).setSelected(True)
-            self.assertFalse(window.compact_library)
+            self.assertTrue(window.compact_library)
             self.assertTrue(window.prefer_compact_library)
-            self.assertEqual(window.list.item(0).text(), '0')
+            self.assertEqual(window.list.item(0).text(), '')
+            for identity in ('0', '1'):
+                self.assertGreater(window.list.row_animations[identity].endValue(), 64)
+            self.assertEqual(window.list.row_widths.get('2', 0), 0)
             window.refresh_library()
-            self.assertFalse(window.compact_library)
+            self.assertTrue(window.compact_library)
             self.assertEqual(len(window.list.selectedItems()), 2)
             window.list.item(1).setSelected(False)
             self.assertTrue(window.compact_library)
             self.assertTrue(window.prefer_compact_library)
+            self.assertEqual(window.list.row_animations['1'].endValue(), 0)
+            self.assertEqual(window.list.row_animations['0'].endValue(), 64)
             window.close()

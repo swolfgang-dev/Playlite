@@ -816,9 +816,11 @@ class LibraryList(QListWidget):
 
     def update_selected_rows(self):
         if self.compact_enabled:
+            multiple = self.has_multiple_selection()
             for index in range(self.count()):
                 game_id = self.item(index).data(Qt.ItemDataRole.UserRole)['Id']
-                if game_id != self.hover_id and (self.row_widths.get(game_id, 0) > 0 or game_id in self.row_animations):
+                if game_id != self.hover_id and (multiple and self.item(index).isSelected()
+                        or self.row_widths.get(game_id, 0) > 0 or game_id in self.row_animations):
                     self.animate_row(game_id, 0)
         self.viewport().update()
         if self.expansion_layer is not None:
@@ -912,11 +914,18 @@ class LibraryList(QListWidget):
             self.expansion_layer.update()
         self.viewport().update()
 
+    def expanded_row_width(self, game):
+        width = 64 + self.fontMetrics().horizontalAdvance(game['Name']) + 14
+        return min(width, max(64, self.window().width() - 250))
+
     def animate_row(self, game_id, target):
         current = self.currentItem()
-        selected = any(item.data(Qt.ItemDataRole.UserRole)['Id'] == game_id for item in self.selectedItems())
-        if target == 0 and (selected or current and current.data(Qt.ItemDataRole.UserRole)['Id'] == game_id):
-            target = 64
+        selected = next((item for item in self.selectedItems() if item.data(Qt.ItemDataRole.UserRole)['Id'] == game_id), None)
+        if target == 0:
+            if selected is not None and self.has_multiple_selection():
+                target = self.expanded_row_width(selected.data(Qt.ItemDataRole.UserRole))
+            elif selected is not None or current and current.data(Qt.ItemDataRole.UserRole)['Id'] == game_id:
+                target = 64
         if self.expansion_layer is None:
             self.expansion_layer = LibraryRowExpansion(self)
         animation = self.row_animations.get(game_id)
@@ -975,9 +984,7 @@ class LibraryList(QListWidget):
         self.viewport().update()
         if game and self.compact_enabled:
             # Include the same 2px text slack used by title_offset.
-            width = 64 + self.fontMetrics().horizontalAdvance(game['Name']) + 14
-            width = min(width, max(64, self.window().width() - 250))
-            self.animate_row(game_id, width)
+            self.animate_row(game_id, self.expanded_row_width(game))
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
@@ -2042,7 +2049,7 @@ class LibraryWindow(QMainWindow):
     def update_compact_library(self):
         if not hasattr(self, 'list'):
             return
-        compact = (self.width() < 900 or self.prefer_compact_library) and not self.is_grid and not self.list.has_multiple_selection()
+        compact = (self.width() < 900 or self.prefer_compact_library) and not self.is_grid
         changed = compact != self.compact_library
         start_width = self.list.width()
         animate = changed and self.isVisible() and self.toolbar_launch_settled and not getattr(self, 'switching_library_view', False)
@@ -2077,6 +2084,7 @@ class LibraryWindow(QMainWindow):
                 game = item.data(Qt.ItemDataRole.UserRole)
                 item.setText('' if compact else game['Name'])
                 item.setSizeHint(QSize(64 if compact else 0, 66))
+        self.list.update_selected_rows()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
