@@ -185,6 +185,10 @@ class LibraryControlsTests(unittest.TestCase):
             self.assertTrue(hero.pixmap.isNull())
             self.assertLess(hero.height(), 150)
             self.assertTrue(hero.play_control.isVisible())
+            window.game_status_changed('empty', 'Launching')
+            self.app.processEvents()
+            self.assertGreaterEqual(window.play_button.width(), window.play_button.sizeHint().width())
+            self.assertEqual(hero.play_control.x(), hero.height() - hero.play_control.y() - hero.play_control.height())
             window.close()
 
     def test_narrow_list_hides_names_keeps_tooltips_and_selection(self):

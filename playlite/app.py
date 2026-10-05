@@ -203,6 +203,7 @@ class Hero(QWidget):
         self.setFixedHeight(360)
         control = QWidget(self)
         self.play_control = control
+        self.play_button = play
         control.setObjectName('playControl')
         set_style(control, 'QWidget#playControl { background: transparent; }')
         control.setFixedWidth(150)
@@ -232,7 +233,10 @@ class Hero(QWidget):
 
     def position_play_control(self):
         padding = 8 if self.pixmap.isNull() else 24
-        self.play_control.move(24, max(padding, self.height() - self.play_control.height() - padding))
+        self.play_control.setFixedWidth(max(150, self.play_button.sizeHint().width() + 30))
+        self.play_control.layout().activate()
+        self.play_control.move(padding, max(padding, self.height() - self.play_control.height() - padding))
+        self.update()
         self.play_control.show()
         self.play_control.raise_()
 
@@ -1473,6 +1477,7 @@ class LibraryWindow(QMainWindow):
         play.setEnabled(any(provider.owns(game) for provider in self.game_providers))
         play.clicked.connect(self.play_game)
         hero = Hero(play, self.edit_game, self.delete_game, self.plugin_game_actions(game))
+        self.play_hero = hero
         hero.pixmap = QPixmap(self.asset(game, 'HeaderImage' if 'HeaderImage' in game else 'BackgroundImage'))
         if hero.pixmap.isNull():
             hero.setFixedHeight(hero.play_control.sizeHint().height() + 16)
@@ -1693,6 +1698,7 @@ class LibraryWindow(QMainWindow):
             active = status in ('Running', 'Launching')
             self.play_button.setText(status + ('…' if status == 'Launching' else '') if active else 'Play')
             self.play_button.setEnabled(not active and any(provider.owns(self.current) for provider in self.game_providers))
+            self.play_hero.position_play_control()
 
     def apply_panel_appearance(self):
         self.list.panel_transparency = max(0, min(100, self.settings.value('appearance/sidePanelTransparency', 0, type=int)))
