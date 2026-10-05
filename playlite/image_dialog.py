@@ -192,7 +192,7 @@ class ImageDownloader(QDialog):
     def activate_tab(self, *_):
         self.update_load_more()
         self.filter_images(self.active_key)
-        if not self.restore_catalogue(self.active_key):
+        if not self.restore_catalogue(self.active_key) and self.initial_search_scheduled:
             self.queue_search(self.active_key)
 
     def preload_images(self):

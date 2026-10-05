@@ -92,6 +92,41 @@ class ImagePagingTests(unittest.TestCase):
             search.assert_called_once_with(key='Icon', refresh=False)
         dialog.finish(0)
 
+    def test_opening_tab_waits_for_all_tab_filters_before_preloading(self):
+        provider = PagedProvider()
+        provider.image_types = frozenset(('Icon', 'CoverImage', 'HeaderImage', 'BackgroundImage'))
+        sizes = {'Icon': (256, 256), 'CoverImage': (600, 900),
+                 'HeaderImage': (1920, 620), 'BackgroundImage': (1920, 1080)}
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        with patch.object(dialog, 'search') as search:
+            dialog.tabs.setCurrentIndex(1)
+            search.assert_not_called()
+        for key, shape in zip(dialog.image_keys, ('square', '2:3', '96:31', '16:9')):
+            artwork, shapes, resolution = dialog.filters[key]
+            artwork.set_values([key])
+            shapes.set_values([shape])
+            resolution.set_values([0, 256, 512, 1024, 1920])
+        dialog.run = lambda function, complete: (complete(function()), dialog.update_load_more())
+        def page(game_id, image_type, page=0):
+            width, height = sizes[image_type]
+            return ([{'url': f'https://example.com/{image_type}.png',
+                      'width': width, 'height': height}], False)
+        def download(url, path):
+            image_type = url.rsplit('/', 1)[1].split('.')[0]
+            pixmap = QPixmap(*sizes[image_type])
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch.object(provider, 'image_page', side_effect=page), patch('playlite.image_dialog.download_artwork', side_effect=download) as artwork:
+            dialog.preload_images()
+            self.assertEqual(artwork.call_count, 4)
+            for key in dialog.image_keys:
+                visible = [dialog.image_lists[key].item(i) for i in range(dialog.image_lists[key].count())
+                           if not dialog.image_lists[key].item(i).isHidden()]
+                self.assertEqual(len(visible), 1, key)
+        dialog.finish(0)
+
     def test_search_downloads_only_new_filter_matches(self):
         provider = PagedProvider()
         provider.image_types = frozenset(('CoverImage',))
