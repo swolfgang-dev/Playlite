@@ -38,6 +38,7 @@ class LifecycleTests(unittest.TestCase):
         from PyQt6.QtWidgets import QFileDialog
         with patch('playlite.lifecycle.QFileDialog') as picker, \
                 patch('playlite.lifecycle.run_dialog', return_value=QDialog.DialogCode.Accepted):
+            picker.Option = QFileDialog.Option
             picker.return_value.selectedFiles.return_value = ['/games/Example']
             self.assertEqual(choose_directory(None, 'Folder', '/games'), '/games/Example')
             picker.assert_called_with(None, 'Folder', '/games')
