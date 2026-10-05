@@ -9,10 +9,10 @@ from playlite.image_dialog import ImageDownloader
 class PagedProvider(MetadataProvider):
     id = 'Paged'
     name = 'Paged artwork'
-    image_types = frozenset(('Icon',))
+    image_types = frozenset(('Icon', 'CoverImage'))
 
     def image_page(self, game_id, image_type, page=0):
-        return ([{'url': f'https://example.com/{page}.png', 'label': str(page)}], page == 0)
+        return ([{'url': f'https://example.com/{self.id}/{page}.png', 'label': str(page)}], page == 0)
 
     def is_exact_query(self, query, result_id=None):
         return query.isdigit()
@@ -77,8 +77,8 @@ class ImagePagingTests(unittest.TestCase):
             self.assertEqual(artwork.call_count, before)
             dialog.search()
             self.assertEqual(second_search.call_count, 2)
-            self.assertEqual(artwork.call_count, before + 1)
-            self.assertEqual(len(dialog.image_pixmaps), 3)
+            self.assertEqual(artwork.call_count, before)
+            self.assertEqual(len(dialog.image_pixmaps), 2)
         dialog.finish(0)
 
     def test_new_provider_with_id_searches_when_selected(self):
@@ -90,6 +90,41 @@ class ImagePagingTests(unittest.TestCase):
         with patch.object(dialog, 'search') as search:
             dialog.source.setCurrentIndex(1)
             search.assert_called_once_with(key='Icon', refresh=False)
+        dialog.finish(0)
+
+    def test_search_downloads_only_new_filter_matches(self):
+        provider = PagedProvider()
+        provider.image_types = frozenset(('CoverImage',))
+        candidates = [{'url': 'https://example.com/portrait.png', 'width': 600, 'height': 900},
+                      {'url': 'https://example.com/wide.png', 'width': 1920, 'height': 620},
+                      {'url': 'https://example.com/small.png', 'width': 300, 'height': 450}]
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        dialog.tabs.blockSignals(True)
+        dialog.tabs.setCurrentIndex(1)
+        dialog.tabs.blockSignals(False)
+        dialog.run = lambda function, complete: (complete(function()), dialog.update_load_more())
+        shape, resolution = dialog.filters['CoverImage'][1:]
+        shape.set_values(['2:3'])
+        resolution.set_values([512])
+        def download(url, path):
+            size = (1920, 620) if 'wide' in url else (600, 900)
+            pixmap = QPixmap(*size)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch.object(provider, 'image_page', return_value=(candidates, False)), patch('playlite.image_dialog.download_artwork', side_effect=download) as artwork:
+            dialog.search()
+            self.assertEqual(artwork.call_count, 1)
+            self.assertIn('portrait', artwork.call_args.args[0])
+            shape.set_values(['wide'])
+            resolution.set_values([1920])
+            dialog.search()
+            self.assertEqual(artwork.call_count, 2)
+            self.assertIn('wide', artwork.call_args.args[0])
+            self.assertEqual(dialog.images.count(), 2)
+            dialog.search()
+            self.assertEqual(artwork.call_count, 2)
         dialog.finish(0)
 
     def test_provider_switch_restores_other_tab_artwork_without_requests(self):

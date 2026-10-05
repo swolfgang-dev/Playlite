@@ -88,6 +88,7 @@ class ImageDownloader(QDialog):
         self.pending_searches = []
         self.automatic_searches = set()
         self.image_pixmaps = {}
+        self.downloaded_urls = {}
         self.catalogue_pages = {}
         self.catalogue_urls = {}
         self.filters = {}
@@ -358,7 +359,9 @@ class ImageDownloader(QDialog):
     def update_load_more(self):
         game = self.selected_game
         key = (self.source.currentData(), str(game['id'])) if game else None
-        self.load_more_button.setVisible(any(more for _, more in self.catalogue_pages.get(key, {}).values()))
+        artwork = self.filters[self.active_key][0].values()
+        self.load_more_button.setVisible(any(more for image_type, (_, more) in self.catalogue_pages.get(key, {}).items()
+                                              if image_type in artwork))
         self.load_more_button.setEnabled(not self.busy)
 
     def load_images(self, *_, more=False, key=None, refresh=False):
@@ -382,13 +385,17 @@ class ImageDownloader(QDialog):
         destination = Path(self.cache.name) / str(self.serial)
         destination.mkdir()
         previous_pages = {} if refresh else self.catalogue_pages.get(catalogue_key, {})
-        previous_urls = set() if refresh else self.catalogue_urls.get(catalogue_key, set())
+        previous_urls = self.catalogue_urls.get(catalogue_key, set())
+        filter_tabs = [kind] if refresh or more else [tab for tab, (tab_source, tab_query, _, _) in self.controls.items()
+                                                    if (tab_source.currentData(), tab_query.text().strip()) == identity]
+        filter_sets = [tuple(widget.values() for widget in self.filters[tab]) for tab in filter_tabs]
+        artwork_types = {image_type for artwork, _, _ in filter_sets for image_type in artwork}
         scroll = self.images.verticalScrollBar().value()
         def fetch():
             result, errors, candidates = [], [], {}
             pages = dict(previous_pages)
             for image_type in self.image_keys:
-                if image_type not in provider.image_types:
+                if image_type not in provider.image_types or image_type not in artwork_types:
                     continue
                 page, remaining = previous_pages.get(image_type, (0, True))
                 if more and not remaining:
@@ -403,21 +410,37 @@ class ImageDownloader(QDialog):
                         candidates[url][1].add(image_type)
                 except Exception as error:
                     errors.append(str(error))
+            downloaded = set()
             for index, (candidate, types) in enumerate(candidates.values()):
-                if candidate['url'] in previous_urls:
-                    continue
                 if self.closed:
                     break
+                width, height = candidate.get('width', 0), candidate.get('height', 0)
+                known_size = isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0
+                if not any(set(artwork).intersection(types) and
+                           (not known_size or (matches_shape(width, height, shape) and
+                                               matches_resolution(max(width, height), resolution)))
+                           for artwork, shape, resolution in filter_sets):
+                    continue
                 try:
-                    path = download_artwork(candidate['url'], destination / f'artwork-{index}.img')
+                    path = self.downloaded_urls.get(candidate['url'])
+                    if path is None:
+                        path = download_artwork(candidate['url'], destination / f'artwork-{index}.img')
+                        self.downloaded_urls[candidate['url']] = path
                     result.append((candidate.get('label', 'Artwork'), path, types))
+                    downloaded.add(candidate['url'])
                 except Exception as error:
                     errors.append(f"{candidate.get('label', 'Artwork')}: {error}")
-            return (result, errors), pages, set(candidates)
+            return (result, errors), pages, downloaded
         def complete(payload):
             result, pages, urls = payload
-            previous = self.catalogues.get(catalogue_key, ([], [])) if more else ([], [])
-            result = (previous[0] + result[0], result[1])
+            previous = self.catalogues.get(catalogue_key, ([], []))
+            combined = {}
+            for label, path, types in previous[0] + result[0]:
+                if path in combined:
+                    combined[path][2].update(types)
+                else:
+                    combined[path] = (label, path, set(types))
+            result = (list(combined.values()), result[1])
             self.catalogues[catalogue_key] = result
             self.catalogue_games[identity] = selected
             self.catalogue_pages[catalogue_key] = pages
@@ -501,6 +524,8 @@ class ImageDownloader(QDialog):
             if images.currentItem() is None or images.currentItem().isHidden():
                 images.setCurrentItem(next((images.item(i) for i in range(images.count())
                                             if not images.item(i).isHidden()), None))
+        if key == self.active_key:
+            self.update_load_more()
 
     def select_image(self, item=None, key=None):
         key = key or self.active_key
@@ -519,6 +544,7 @@ class ImageDownloader(QDialog):
         self.closed = True
         self.pending_searches.clear()
         self.image_pixmaps.clear()
+        self.downloaded_urls.clear()
         for images in self.image_lists.values():
             images.clear()
         if result != QDialog.DialogCode.Accepted and not self.busy:

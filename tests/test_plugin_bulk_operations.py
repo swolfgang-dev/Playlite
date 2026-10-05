@@ -58,6 +58,8 @@ class BulkPluginTests(unittest.TestCase):
                     window.delete_plugin_button.click()
                     window.batch_delete_task.run()
                 self.assertEqual(window.installed_plugins.rowCount(),0)
+                for row in range(2):
+                    window.available_plugins.selectionModel().select(window.available_plugins.model().index(row,0),QItemSelectionModel.SelectionFlag.Select|QItemSelectionModel.SelectionFlag.Rows)
                 pool=Mock()
                 def install_batch(repositories, progress):
                     progress('Installed First 1')
