@@ -198,7 +198,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         installed_layout = QVBoxLayout(installed_page)
         installed_layout.setContentsMargins(16, 16, 16, 16)
         installed_layout.setSpacing(12)
-        installed_layout.addWidget(self.hint('Installed plugins, including disabled plugins.'))
+        self.installed_status = self.hint('')
+        installed_layout.addWidget(self.installed_status)
         self.installed_plugins = QTableWidget(0, 5)
         self.installed_plugins.setHorizontalHeaderLabels(['Plugin', 'Version', 'Type', 'Status', 'Plugin ID'])
         self.installed_plugins.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -224,6 +225,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.delete_plugin_button.setEnabled(False)
         self.delete_plugin_button.clicked.connect(self.delete_selected_plugins)
         self.installed_plugins.itemSelectionChanged.connect(lambda: self.delete_plugin_button.setEnabled(bool(self.installed_plugins.selectionModel().selectedRows()) and not getattr(self, 'deleting_plugins', False) and not getattr(self, 'installing_plugins', False)))
+        self.installed_plugins.itemSelectionChanged.connect(self.update_installed_status)
+        self.update_installed_status()
         installed_actions.addWidget(self.delete_plugin_button)
         installed_actions.addStretch()
         installed_layout.addLayout(installed_actions)
@@ -418,6 +421,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.install_selected_button = install
         install.setEnabled(False)
         self.available_plugins.itemSelectionChanged.connect(lambda: install.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()) and not getattr(self, 'installing_plugins', False) and not getattr(self, 'deleting_plugins', False)))
+        self.available_plugins.itemSelectionChanged.connect(self.update_available_status)
         install.clicked.connect(self.install_selected_plugins)
         actions.addWidget(install)
         if development_checkout():
@@ -457,12 +461,25 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 item = QTableWidgetItem(plugin[key])
                 item.setData(Qt.ItemDataRole.UserRole, plugin['repository'])
                 self.available_plugins.setItem(row, column, item)
+        self.update_available_status()
+
+    def update_installed_status(self):
+        self.set_plugin_selection_status(self.installed_plugins, self.installed_status, 'installed')
+
+    @staticmethod
+    def set_plugin_selection_status(table, label, kind):
+        selected = len(table.selectionModel().selectedRows())
+        total = table.rowCount()
+        label.setText(f'{selected}/{total} plugins selected' if selected > 1 else f'{total} {kind} plugins')
+
+    def update_available_status(self):
+        cache = self.available_cache
         if cache.loading:
             self.available_status.setText('Updating available plugins…')
         elif cache.error:
             self.available_status.setText('Could not update list: ' + cache.error)
         elif cache.loaded:
-            self.available_status.setText(f'{len(cache.plugins)} available plugins · Cached for this session. Private repositories are hidden without access.')
+            self.set_plugin_selection_status(self.available_plugins, self.available_status, 'available')
         else:
             self.available_status.setText('Use Update list to load available plugins.')
 
@@ -658,6 +675,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 item.setToolTip('\n'.join(str(value) for value in
                     (plugin.get('description', ''), plugin.get('repository', ''), plugin.get('manifest_path', '')) if value))
                 self.installed_plugins.setItem(row, column, item)
+        self.update_installed_status()
 
     def install_plugin(self, checked=False, selected_repository=None):
         if getattr(self, 'deleting_plugins', False) or getattr(self, 'installing_plugins', False):
