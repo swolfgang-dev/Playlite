@@ -47,6 +47,33 @@ class ImagePagingTests(unittest.TestCase):
         self.assertEqual(provider.image_page(1, 'Icon'), ([{'url': 'legacy'}], False))
         self.assertEqual(provider.image_page(1, 'Icon', 1), ([], False))
 
+    def test_provider_switch_restores_other_tab_artwork_without_requests(self):
+        other = PagedProvider()
+        other.id, other.name = 'Other', 'Other artwork'
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': PagedProvider(), 'Other': other}):
+            dialog = ImageDownloader({'Name': 'Example'})
+        dialog.run = lambda function, complete: (complete(function()), dialog.update_load_more())
+        def download(url, path):
+            pixmap = QPixmap(16, 16)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch('playlite.image_dialog.download_artwork', side_effect=download):
+            dialog.selected_game = {'id': 1, 'name': 'Example'}
+            dialog.load_images()
+        with patch.object(dialog, 'run') as request:
+            dialog.tabs.setCurrentIndex(1)
+            dialog.filters['CoverImage'][1].set_values(['wide'])
+            dialog.source.setCurrentIndex(dialog.source.findData('Other'))
+            self.assertEqual(dialog.images.count(), 0)
+            dialog.source.setCurrentIndex(dialog.source.findData('Paged'))
+            self.assertEqual(dialog.images.count(), 1)
+            self.assertEqual(dialog.selected_game['id'], 1)
+            self.assertEqual(dialog.filters['CoverImage'][1].values(), ['wide'])
+            self.assertFalse(dialog.load_more_button.isHidden())
+            request.assert_not_called()
+        dialog.finish(0)
+
     def test_cached_catalogue_retains_more_state_on_tab_switch(self):
         with patch('playlite.image_dialog.discover_providers', return_value={'Paged': PagedProvider()}):
             dialog = ImageDownloader({'Name': 'Example'})

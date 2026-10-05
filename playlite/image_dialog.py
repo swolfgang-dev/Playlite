@@ -84,6 +84,7 @@ class ImageDownloader(QDialog):
         self.selected_games = {}
         self.loaded_searches = {}
         self.catalogues = {}
+        self.catalogue_games = {}
         self.catalogue_pages = {}
         self.catalogue_urls = {}
         self.filters = {}
@@ -190,14 +191,8 @@ class ImageDownloader(QDialog):
         provider = self.providers.get(self.source.currentData())
         query = self.query.text().strip()
         identity = (self.source.currentData(), query)
-        for key, loaded_identity in self.loaded_searches.items():
-            selected = self.selected_games.get(key)
-            if (loaded_identity == identity and selected and not self.busy
-                    and (identity[0], str(selected['id'])) in self.catalogues):
-                self.selected_game = selected
-                self.game_label.setText(f"{self.source.currentText()} — {selected['name']}")
-                self.load_images()
-                return
+        if self.restore_catalogue(self.active_key):
+            return
         if (not self.busy and not self.closed and provider and query
                 and provider.is_exact_query(query)
                 and self.loaded_searches.get(self.active_key) != identity):
@@ -241,6 +236,21 @@ class ImageDownloader(QDialog):
         if provider:
             query.setPlaceholderText(provider.query_hint)
         search.setEnabled(provider is not None)
+        self.restore_catalogue(key)
+
+    def restore_catalogue(self, key):
+        source, query, _, label = self.controls[key]
+        identity = (source.currentData(), query.text().strip())
+        selected = self.catalogue_games.get(identity)
+        catalogue_key = (identity[0], str(selected['id'])) if selected else None
+        if self.busy or catalogue_key not in self.catalogues:
+            return False
+        self.selected_games[key] = selected
+        self.loaded_searches[key] = identity
+        label.setText(f"{source.currentText()} — {selected['name']}")
+        self.show_images({key: self.catalogues[catalogue_key]})
+        self.update_load_more()
+        return True
 
     def share_query(self, key, text):
         provider_id = self.controls[key][0].currentData()
@@ -325,6 +335,7 @@ class ImageDownloader(QDialog):
         kind = self.active_key
         identity = (self.source.currentData(), self.query.text().strip())
         catalogue_key = (self.source.currentData(), str(game_id))
+        selected = self.selected_game
         if catalogue_key in self.catalogues and not more:
             self.loaded_searches[kind] = identity
             self.show_images({kind: self.catalogues[catalogue_key]})
@@ -371,6 +382,7 @@ class ImageDownloader(QDialog):
             previous = self.catalogues.get(catalogue_key, ([], [])) if more else ([], [])
             result = (previous[0] + result[0], result[1])
             self.catalogues[catalogue_key] = result
+            self.catalogue_games[identity] = selected
             self.catalogue_pages[catalogue_key] = pages
             self.catalogue_urls[catalogue_key] = previous_urls | urls
             self.loaded_searches[kind] = identity
