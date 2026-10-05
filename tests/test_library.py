@@ -169,6 +169,35 @@ class LibraryControlsTests(unittest.TestCase):
             self.assertEqual(window.library_scrollbar_opacity.opacity(), 1)
             window.close()
 
+    def test_switching_games_resets_scroll_and_refresh_preserves_position(self):
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            from PyQt6.QtGui import QPixmap, QColor
+            header = QPixmap(800, 1000)
+            header.fill(QColor('#202020'))
+            header.save(str(data / 'header.png'))
+            (data / 'library.json').write_text(json.dumps([dict(game, HeaderImage='header.png') for game in GAMES[:2]]))
+            window = LibraryWindow(data)
+            window.resize(1000, 400)
+            window.show()
+            for _ in range(5):
+                self.app.processEvents()
+            bar = window.game_scroll.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            bar.setValue(min(80, bar.maximum()))
+            position = bar.value()
+            window.select_game(window.list.currentItem())
+            for _ in range(5):
+                self.app.processEvents()
+            self.assertEqual(bar.value(), position)
+            other = next(window.list.item(i) for i in range(window.list.count())
+                         if window.list.item(i) is not window.list.currentItem())
+            window.list.setCurrentItem(other)
+            for _ in range(5):
+                self.app.processEvents()
+            self.assertEqual(bar.value(), 0)
+            window.close()
+
     def test_missing_artwork_does_not_reserve_header_or_cover_space(self):
         from playlite.app import Hero
         from PyQt6.QtWidgets import QLabel

@@ -1450,6 +1450,26 @@ class LibraryWindow(QMainWindow):
             control.blockSignals(False)
 
     def select_game(self, item, previous=None):
+        selected = item.data(Qt.ItemDataRole.UserRole) if item else None
+        selected_id = selected.get('Id') if selected else None
+        current_id = self.current.get('Id') if self.current else None
+        position = self.game_scroll.verticalScrollBar().value() if selected_id == current_id else 0
+        self.page.setUpdatesEnabled(False)
+        self.content.cover_animation.stop()
+        try:
+            self.build_game_view(item)
+            self.details.activate()
+            self.page.layout().activate()
+            self.game_scroll.verticalScrollBar().setValue(position)
+        finally:
+            self.page.setUpdatesEnabled(True)
+        def settle_scroll():
+            current_id = self.current.get('Id') if self.current else None
+            if current_id == selected_id:
+                self.game_scroll.verticalScrollBar().setValue(position)
+        QTimer.singleShot(0, settle_scroll)
+
+    def build_game_view(self, item):
         while self.details.count():
             child = self.details.takeAt(0)
             if child.widget():
@@ -1481,6 +1501,8 @@ class LibraryWindow(QMainWindow):
         hero.pixmap = QPixmap(self.asset(game, 'HeaderImage' if 'HeaderImage' in game else 'BackgroundImage'))
         if hero.pixmap.isNull():
             hero.setFixedHeight(hero.play_control.sizeHint().height() + 16)
+        else:
+            hero.setFixedHeight(max(240, round(self.content.width() * hero.pixmap.height() / hero.pixmap.width())))
         self.details.addWidget(hero)
         row = QWidget()
         row.setObjectName('content')
