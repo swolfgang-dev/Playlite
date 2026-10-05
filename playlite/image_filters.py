@@ -5,7 +5,7 @@ from .theme import set_style
 from .ui_style import CHEVRON
 
 OPTIONS = {
-    'artwork': [('Icons and logos', 'Icon'), ('Covers', 'CoverImage'),
+    'artwork': [('Icons', 'Icon'), ('Logos', 'Logo'), ('Covers', 'CoverImage'),
                 ('Headers', 'HeaderImage'), ('Backgrounds', 'BackgroundImage')],
     'shape': [('Square', 'square'), ('Portrait', 'portrait'),
               ('Landscape', 'landscape'), ('Wide (2:1 or wider)', 'wide'),

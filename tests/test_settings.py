@@ -88,7 +88,7 @@ class SettingsTests(unittest.TestCase):
             for name, value in [('artwork', 'all'), ('shape', 'landscape'), ('resolution', 512)]:
                 settings.setValue('images/defaultFilters/Icon/' + name, value)
             saved = defaults(settings, 'Icon')
-            self.assertEqual(saved['artwork'], ['Icon', 'CoverImage', 'HeaderImage', 'BackgroundImage'])
+            self.assertEqual(saved['artwork'], ['Icon', 'Logo', 'CoverImage', 'HeaderImage', 'BackgroundImage'])
             self.assertEqual(saved['shape'], ['landscape', 'wide'])
             self.assertEqual(saved['resolution'], [512, 1024, 1920])
             checks = FilterChecks('shape', saved['shape'])

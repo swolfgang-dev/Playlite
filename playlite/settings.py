@@ -283,13 +283,14 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                     set_style(label, 'font-weight: bold;')
                     grid.addWidget(label, 0, column)
                 for row, (key, title) in enumerate([('Icon', 'Icon'), ('CoverImage', 'Cover'),
-                                                   ('HeaderImage', 'Header'), ('BackgroundImage', 'Background')], 1):
+                                                   ('HeaderImage', 'Header'), ('BackgroundImage', 'Background'), ('Logo', 'Logos')], 1):
                     grid.addWidget(QLabel(title), row, 0, Qt.AlignmentFlag.AlignTop)
                     source = QComboBox()
                     for plugin in self.plugins.values():
                         if plugin.type == 'metadata' and getattr(plugin, 'image_types', ()):
                             source.addItem(plugin.name, plugin.id)
-                    preferred = settings.value(f'images/defaultProvider/{key}', 'Steam')
+                    fallback = next((plugin.id for plugin in self.plugins.values() if key in getattr(plugin, 'image_types', ())), 'Steam') if key == 'Logo' else 'Steam'
+                    preferred = settings.value(f'images/defaultProvider/{key}', fallback)
                     source.setCurrentIndex(max(0, source.findData(preferred)))
                     source.setEnabled(source.count() > 0)
                     self.image_sources[key] = source

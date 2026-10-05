@@ -150,15 +150,15 @@ class ImagePagingTests(unittest.TestCase):
 
     def test_opening_tab_waits_for_all_tab_filters_before_preloading(self):
         provider = PagedProvider()
-        provider.image_types = frozenset(('Icon', 'CoverImage', 'HeaderImage', 'BackgroundImage'))
+        provider.image_types = frozenset(('Icon', 'CoverImage', 'HeaderImage', 'BackgroundImage', 'Logo'))
         sizes = {'Icon': (256, 256), 'CoverImage': (600, 900),
-                 'HeaderImage': (1920, 620), 'BackgroundImage': (1920, 1080)}
+                 'HeaderImage': (1920, 620), 'BackgroundImage': (1920, 1080), 'Logo': (800, 300)}
         with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
             dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
         with patch.object(dialog, 'search') as search:
             dialog.tabs.setCurrentIndex(1)
             search.assert_not_called()
-        for key, shape in zip(dialog.image_keys, ('square', '2:3', '96:31', '16:9')):
+        for key, shape in zip(dialog.image_keys, ('square', '2:3', '96:31', '16:9', 'wide')):
             artwork, shapes, resolution = dialog.filters[key]
             artwork.set_values([key])
             shapes.set_values([shape])
@@ -176,7 +176,7 @@ class ImagePagingTests(unittest.TestCase):
             return str(path)
         with patch.object(provider, 'image_page', side_effect=page), patch('playlite.image_dialog.download_artwork', side_effect=download) as artwork:
             dialog.preload_images()
-            self.assertEqual(artwork.call_count, 4)
+            self.assertEqual(artwork.call_count, 5)
             for key in dialog.image_keys:
                 visible = [dialog.image_lists[key].item(i) for i in range(dialog.image_lists[key].count())
                            if not dialog.image_lists[key].item(i).isHidden()]

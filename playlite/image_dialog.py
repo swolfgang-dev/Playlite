@@ -73,13 +73,14 @@ class ImageDownloader(QDialog):
     artwork_ready = pyqtSignal(object, object, object)
     download_progress = pyqtSignal(str)
 
-    def __init__(self, game, parent=None, settings_path=None):
+    def __init__(self, game, parent=None, settings_path=None, logo_target='Icon'):
         super().__init__(parent)
         self.setWindowTitle('Download images')
         available = self.screen().availableGeometry()
         self.resize(min(1200, available.width() - 40), min(850, available.height() - 60))
         self.cache = TemporaryDirectory(prefix='playlite-images-')
         self.applied = {}
+        self.logo_target = logo_target
         self.closed = False
         self.initial_search_scheduled = False
         self.busy = False
@@ -105,17 +106,18 @@ class ImageDownloader(QDialog):
         self.provider_queries = {key: provider.query(game) for key, provider in self.providers.items()}
         self.controls = {}
         self.tabs = QTabWidget()
-        self.image_keys = ('Icon', 'CoverImage', 'HeaderImage', 'BackgroundImage')
+        self.image_keys = ('Icon', 'CoverImage', 'HeaderImage', 'BackgroundImage', 'Logo')
         self.filter_defaults = {key: defaults(settings, key) for key in self.image_keys}
         self.image_lists = {}
-        for key, label in zip(self.image_keys, ('Icon', 'Cover', 'Header', 'Background')):
+        for key, label in zip(self.image_keys, ('Icon', 'Cover', 'Header', 'Background', 'Logos')):
             page = QWidget()
             page_layout = QVBoxLayout(page)
             row = QHBoxLayout()
             source = QComboBox()
             for provider_id, provider in self.providers.items():
                 source.addItem(provider.name, provider_id)
-            preferred = settings.value(f'images/defaultProvider/{key}', 'Steam') if settings else 'Steam'
+            fallback = next((identity for identity, provider in self.providers.items() if key in provider.image_types), 'Steam') if key == 'Logo' else 'Steam'
+            preferred = settings.value(f'images/defaultProvider/{key}', fallback) if settings else fallback
             source.setCurrentIndex(max(0, source.findData(preferred)))
             query = QLineEdit()
             search = QPushButton('Search')
@@ -124,6 +126,10 @@ class ImageDownloader(QDialog):
             page_layout.addLayout(row)
             game_label = QLabel('Search for a game to load images.')
             page_layout.addWidget(game_label)
+            if key == 'Logo':
+                hint = QLabel('Transparent logos for image overlays. Selected logos fill the icon field in the game editor.' if logo_target == 'Icon' else 'Transparent logos for image overlays.')
+                hint.setWordWrap(True)
+                page_layout.addWidget(hint)
             self.controls[key] = (source, query, search, game_label)
             filter_row = QHBoxLayout()
             filter_row.setSpacing(24)
@@ -567,7 +573,7 @@ class ImageDownloader(QDialog):
                 item.setSizeHint(images.gridSize())
                 item.setToolTip(label)
                 item.setData(Qt.ItemDataRole.UserRole, path)
-                item.setData(Qt.ItemDataRole.UserRole + 1, self.applied.get(key) == path)
+                item.setData(Qt.ItemDataRole.UserRole + 1, self.applied.get(self.logo_target if key == 'Logo' else key) == path)
                 images.addItem(item)
             total += len(results)
             warnings.extend(f'{key}: {error}' for error in errors)
@@ -622,7 +628,7 @@ class ImageDownloader(QDialog):
         key = key or self.active_key
         item = item or self.image_lists[key].currentItem()
         if item:
-            self.applied[key] = item.data(Qt.ItemDataRole.UserRole)
+            self.applied[self.logo_target if key == 'Logo' else key] = item.data(Qt.ItemDataRole.UserRole)
             images = self.image_lists[key]
             for row in range(images.count()):
                 candidate = images.item(row)
