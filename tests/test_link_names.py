@@ -19,7 +19,13 @@ class LinkNamesTests(unittest.TestCase):
                  {'Name': '', 'Url': 'https://igdb.com/games/example'},
                  {'Name': 'My label', 'Url': 'https://example.com'}]
         current = {'Name': 'Example', 'Links': links}
-        dialog = MetadataDownloader(current, mode='metadata')
+        from unittest.mock import patch
+        from playlite.providers import MetadataProvider
+        provider = MetadataProvider()
+        provider.id, provider.name = 'Test', 'Test'
+        provider.fields = frozenset({'Links'})
+        with patch('playlite.providers.discover_providers', return_value={'Test': provider}):
+            dialog = MetadataDownloader(current, mode='metadata')
         self.assertEqual(dialog.current['Links'], links)
         self.assertEqual(current['Links'], links)
         dialog.reject()
