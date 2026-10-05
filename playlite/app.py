@@ -641,11 +641,23 @@ class DescriptionLinksRow(QWidget):
         return super().eventFilter(watched, event)
 
 
+def selection_border(painter, rect):
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor(colour('accent')), 2))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(rect).adjusted(1, 1, -1, -1), 7, 7)
+    painter.restore()
+
+
 class CompactLibraryDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         view = self.parent()
         if view.viewMode() != QListView.ViewMode.ListMode:
-            return super().paint(painter, option, index)
+            super().paint(painter, option, index)
+            if option.state & QStyle.StateFlag.State_Selected:
+                selection_border(painter, option.rect)
+            return
         if index.data(Qt.ItemDataRole.DisplayRole) or view.width_transition:
             decorated = QStyleOptionViewItem(option)
             self.initStyleOption(decorated, index)
@@ -658,6 +670,8 @@ class CompactLibraryDelegate(QStyledItemDelegate):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(view.row_surface())
                 painter.drawRoundedRect(QRectF(option.rect), 7, 7)
+            if option.state & QStyle.StateFlag.State_Selected:
+                selection_border(painter, option.rect)
             icon_slot = QRect(option.rect)
             icon_slot.setWidth(64)
             icon_rect = QRect(0, 0, view.iconSize().width(), view.iconSize().height())
@@ -692,6 +706,8 @@ class CompactLibraryDelegate(QStyledItemDelegate):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(view.row_surface())
             painter.drawRoundedRect(row_rect, 7, 7)
+            if selected:
+                selection_border(painter, row_rect)
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         if icon is not None and view.row_widths.get(game.get('Id'), 64) <= 64:
             size = view.iconSize()
@@ -749,6 +765,8 @@ class LibraryRowExpansion(QWidget):
             text.setWidth(self.view.fontMetrics().horizontalAdvance(game['Name']) + 2)
             painter.drawText(text, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, game['Name'])
             painter.restore()
+            if item.isSelected():
+                selection_border(painter, rect)
 
 
 class LibraryList(QListWidget):
@@ -783,6 +801,7 @@ class LibraryList(QListWidget):
         self.verticalScrollBar().valueChanged.connect(self.refresh_hover)
         self.verticalScrollBar().rangeChanged.connect(self.update_scrollbar_padding)
         self.currentItemChanged.connect(self.update_selected_row)
+        self.itemSelectionChanged.connect(self.update_selected_rows)
 
     def update_selected_row(self, current, previous):
         if not self.compact_enabled:
@@ -791,6 +810,16 @@ class LibraryList(QListWidget):
             game_id = previous.data(Qt.ItemDataRole.UserRole)['Id']
             if game_id != self.hover_id and self.row_widths.get(game_id, 0) > 0:
                 self.animate_row(game_id, 0)
+
+    def update_selected_rows(self):
+        if self.compact_enabled:
+            for index in range(self.count()):
+                game_id = self.item(index).data(Qt.ItemDataRole.UserRole)['Id']
+                if game_id != self.hover_id and (self.row_widths.get(game_id, 0) > 0 or game_id in self.row_animations):
+                    self.animate_row(game_id, 0)
+        self.viewport().update()
+        if self.expansion_layer is not None:
+            self.expansion_layer.update()
 
     def title_offset(self, game, available, metrics=None):
         if not game or game.get('Id') != self.hover_id or not self.title_clock.isValid():
@@ -882,7 +911,8 @@ class LibraryList(QListWidget):
 
     def animate_row(self, game_id, target):
         current = self.currentItem()
-        if target == 0 and current and current.data(Qt.ItemDataRole.UserRole)['Id'] == game_id:
+        selected = any(item.data(Qt.ItemDataRole.UserRole)['Id'] == game_id for item in self.selectedItems())
+        if target == 0 and (selected or current and current.data(Qt.ItemDataRole.UserRole)['Id'] == game_id):
             target = 64
         if self.expansion_layer is None:
             self.expansion_layer = LibraryRowExpansion(self)
@@ -898,6 +928,8 @@ class LibraryList(QListWidget):
         if animation.endValue() == target:
             return
         start_width = float(self.row_widths.get(game_id, 0))
+        if target == 64:
+            start_width = max(64, start_width)
         animation.stop()
         # Reconfiguring a finished animation can emit its old endpoint.
         # Preserve the visible width and reset its clock before starting.
