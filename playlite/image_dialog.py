@@ -204,7 +204,7 @@ class ImageDownloader(QDialog):
             self.queue_search(self.active_key)
 
     def preload_images(self):
-        for key in self.image_keys:
+        for key in (self.active_key, *(key for key in self.image_keys if key != self.active_key)):
             self.queue_search(key, start=False)
         self.process_pending_searches()
 
@@ -216,7 +216,7 @@ class ImageDownloader(QDialog):
                 and identity not in self.automatic_searches
                 and identity not in self.catalogue_games):
             self.automatic_searches.add(identity)
-            self.pending_searches.append((key, identity))
+            self.pending_searches.append((key, identity, False))
         if start:
             self.process_pending_searches()
 
@@ -224,14 +224,14 @@ class ImageDownloader(QDialog):
         if self.busy or self.closed:
             return
         while self.pending_searches:
-            key, identity = self.pending_searches.pop(0)
+            key, identity, refresh = self.pending_searches.pop(0)
             source, query, _, _ = self.controls[key]
             if identity != (source.currentData(), query.text().strip()):
                 self.automatic_searches.discard(identity)
                 continue
-            if self.restore_catalogue(key):
+            if not refresh and self.restore_catalogue(key):
                 continue
-            self.search(key=key, refresh=False)
+            self.search(key=key, refresh=refresh)
             return
 
     @property
@@ -280,7 +280,7 @@ class ImageDownloader(QDialog):
         identity = (source.currentData(), query.text().strip())
         selected = self.catalogue_games.get(identity)
         catalogue_key = (identity[0], str(selected['id'])) if selected else None
-        if self.busy or catalogue_key not in self.catalogues:
+        if catalogue_key not in self.catalogues:
             return False
         self.selected_games[key] = selected
         self.loaded_searches[key] = identity
@@ -309,22 +309,15 @@ class ImageDownloader(QDialog):
             return
         self.busy = True
         self.load_more_button.setEnabled(False)
-        self.tabs.setEnabled(False)
-        self.apply_button.setEnabled(False)
-        for widget in (self.source, self.query, self.search_button):
-            widget.setEnabled(False)
         self.download_status.setText(f'Downloading from {self.source.currentText()}…')
         self.task = Task(function)
         def done(value, error=False):
             self.busy = False
-            self.tabs.setEnabled(True)
             if self.closed:
                 if self.result() != QDialog.DialogCode.Accepted:
                     self.cache.cleanup()
                 return
             self.apply_button.setEnabled(bool(self.applied))
-            for widget in (self.source, self.query, self.search_button):
-                widget.setEnabled(True)
             self.download_status.setText(str(value) if error else 'Download complete.')
             if not error:
                 complete(value)
@@ -338,11 +331,20 @@ class ImageDownloader(QDialog):
         key = key or self.active_key
         source, query, _, _ = self.controls[key]
         provider = self.providers.get(source.currentData())
-        if not provider or self.busy:
+        if not provider:
+            return
+        identity = (source.currentData(), query.text().strip())
+        if self.busy:
+            pending = (key, identity, refresh)
+            if pending not in self.pending_searches:
+                self.pending_searches.append(pending)
             return
         text = query.text()
+        def complete(results):
+            if identity == (source.currentData(), query.text().strip()):
+                self.show_games(results, key=key, refresh=refresh)
         self.run(lambda: provider.search(text),
-                 lambda results: self.show_games(results, key=key, refresh=refresh))
+                 complete)
         if self.busy:
             self.download_status.setText(f'Downloading from {source.currentText()}…')
 
@@ -397,12 +399,15 @@ class ImageDownloader(QDialog):
         filter_tabs = [kind] if more else [tab for tab, (tab_source, tab_query, _, _) in self.controls.items()
                                                     if (tab_source.currentData(), tab_query.text().strip()) == identity]
         filter_sets = [tuple(widget.values() for widget in self.filters[tab]) for tab in filter_tabs]
+        priority_filters = [tuple(widget.values() for widget in self.filters[kind])]
         artwork_types = {image_type for artwork, _, _ in filter_sets for image_type in artwork}
+        priority_types = self.filters[kind][0].values()
+        image_types = sorted(self.image_keys, key=lambda image_type: image_type not in priority_types)
         scroll = self.images.verticalScrollBar().value()
         def fetch():
             result, errors, candidates = [], [], {}
             pages = dict(previous_pages)
-            for image_type in self.image_keys:
+            for image_type in image_types:
                 if image_type not in provider.image_types or image_type not in artwork_types:
                     continue
                 page, remaining = previous_pages.get(image_type, (0, True))
@@ -421,6 +426,7 @@ class ImageDownloader(QDialog):
             downloaded = set()
             matching = [(candidate, types) for candidate, types in candidates.values()
                         if self.candidate_matches(candidate, types, filter_sets)]
+            matching.sort(key=lambda entry: not self.candidate_matches(*entry, priority_filters))
             for index, (candidate, types) in enumerate(matching):
                 if self.closed:
                     break
@@ -487,8 +493,15 @@ class ImageDownloader(QDialog):
 
     def show_images(self, payload):
         total, warnings = 0, []
+        positions = {}
         for key, (results, errors) in payload.items():
             images = self.image_lists[key]
+            current = images.currentItem()
+            selected_path = current.data(Qt.ItemDataRole.UserRole) if current else None
+            scroll = images.verticalScrollBar().value()
+            had_images = images.count() > 0
+            if had_images:
+                positions[key] = scroll
             images.clear()
             for entry in results:
                 label, path = entry[:2]
@@ -517,11 +530,16 @@ class ImageDownloader(QDialog):
             warnings.extend(f'{key}: {error}' for error in errors)
             images.setToolTip('\n'.join(errors) if errors else 'No images available.' if not results else '')
             if results:
-                images.setCurrentRow(0)
+                images.setCurrentItem(next((images.item(i) for i in range(images.count())
+                                            if images.item(i).data(Qt.ItemDataRole.UserRole) == selected_path),
+                                           images.item(0)))
         self.status.setText(f'{total} images available.' if total else 'No artwork available.')
         self.status.setToolTip('\n'.join(warnings))
         for key in payload:
             self.filter_images(key)
+            # Preserve browsing position as newly downloaded images arrive.
+            if key in positions:
+                self.image_lists[key].verticalScrollBar().setValue(positions[key])
 
     def reset_filters(self, key):
         category, shape, resolution = self.filters[key]
@@ -558,7 +576,7 @@ class ImageDownloader(QDialog):
     def select_image(self, item=None, key=None):
         key = key or self.active_key
         item = item or self.image_lists[key].currentItem()
-        if item and not self.busy:
+        if item:
             self.applied[key] = item.data(Qt.ItemDataRole.UserRole)
             images = self.image_lists[key]
             for row in range(images.count()):

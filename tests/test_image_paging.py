@@ -53,6 +53,40 @@ class ImagePagingTests(unittest.TestCase):
         self.assertEqual(provider.image_page(1, 'Icon'), ([{'url': 'legacy'}], False))
         self.assertEqual(provider.image_page(1, 'Icon', 1), ([], False))
 
+    def test_download_keeps_controls_usable_and_queues_search(self):
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': PagedProvider()}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        with patch('playlite.image_dialog.QThreadPool') as pool:
+            dialog.run(lambda: None, lambda result: None)
+            self.assertTrue(dialog.busy)
+            self.assertTrue(dialog.tabs.isEnabled())
+            self.assertTrue(dialog.source.isEnabled())
+            self.assertTrue(dialog.query.isEnabled())
+            dialog.tabs.setCurrentIndex(1)
+            dialog.search()
+            self.assertIn(('CoverImage', ('Paged', '1'), True), dialog.pending_searches)
+            pool.globalInstance.return_value.start.assert_called_once()
+        dialog.busy = False
+        dialog.finish(0)
+
+    def test_preload_prioritizes_selected_tab(self):
+        provider = PagedProvider()
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        dialog.tabs.setCurrentIndex(1)
+        dialog.run = lambda function, complete: complete(function())
+        def download(url, path):
+            pixmap = QPixmap(16, 16)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        def page(game_id, image_type, page=0):
+            return ([{'url': f'https://example.com/{image_type}.png'}], False)
+        with patch.object(provider, 'image_page', side_effect=page), patch('playlite.image_dialog.download_artwork', side_effect=download) as artwork:
+            dialog.preload_images()
+            self.assertIn('CoverImage', artwork.call_args_list[0].args[0])
+        dialog.finish(0)
+
     def test_images_are_revealed_before_batch_finishes(self):
         provider = PagedProvider()
         provider.image_types = frozenset(('Icon',))
