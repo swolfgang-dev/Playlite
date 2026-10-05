@@ -31,7 +31,7 @@ fetched from its own checksummed release, and must be followed by a restart.
 | Lutris Integration | [playlite-plugin-lutris](https://github.com/swolfgang-dev/playlite-plugin-lutris) |
 | Game Archiver | [playlite-plugin-game-archiver](https://github.com/swolfgang-dev/playlite-plugin-game-archiver) |
 | SteamAutoCrack | [playlite-plugin-steamautocrack](https://github.com/swolfgang-dev/playlite-plugin-steamautocrack) |
-| Icon Studio | [playlite-plugin-icon-studio](https://github.com/swolfgang-dev/playlite-plugin-icon-studio) |
+| Image Studio | [playlite-plugin-image-studio](https://github.com/swolfgang-dev/playlite-plugin-image-studio) |
 
 Plugin implementations and integration tests belong to those repositories. Core
 release builds check that no optional plugin implementation enters the wheel.
