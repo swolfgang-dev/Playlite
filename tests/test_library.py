@@ -370,9 +370,10 @@ class LibraryControlsTests(unittest.TestCase):
             (data / 'library.json').write_text(json.dumps(GAMES))
             window = LibraryWindow(data)
             window.resize(1500, 900)
-            window.update_compact_library()
+            window.toggle_compact_library(False)
             window.show()
             QTest.qWait(80)
+            window.toolbar_launch_settled = True
             window.update_compact_library()
             initial = window.list.width()
             saved = window.library_widths['list']
@@ -382,7 +383,7 @@ class LibraryControlsTests(unittest.TestCase):
             self.assertGreater(window.list.width(), 96)
             self.assertLess(window.list.width(), initial)
             window.toggle_compact_library(False)
-            QTest.qWait(380)
+            window.library_animation.setCurrentTime(window.library_animation.duration())
             self.assertFalse(window.list.width_transition)
             self.assertEqual(window.library_widths['list'], saved)
             self.assertEqual(window.list.maximumWidth(), 16777215)
