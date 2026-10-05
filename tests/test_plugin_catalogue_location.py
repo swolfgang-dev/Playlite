@@ -13,6 +13,6 @@ class CatalogueLocationTests(unittest.TestCase):
         with patch('playlite.plugin_manager.github_request', return_value=document) as request:
             entries = plugin_catalogue()
         request.assert_called_once_with('repos/swolfgang-dev/Playlite/contents/catalogue.json')
-        self.assertEqual(len(entries), 7)
-        self.assertEqual(len({repository for _, repository in entries}), 7)
+        self.assertEqual(len(entries), len(catalogue['plugins']))
+        self.assertEqual(len({repository for _, repository in entries}), len(entries))
         self.assertTrue(all(not repository.endswith('-releases') for _, repository in entries))
