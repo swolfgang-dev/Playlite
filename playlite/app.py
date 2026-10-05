@@ -655,7 +655,7 @@ class CompactLibraryDelegate(QStyledItemDelegate):
         view = self.parent()
         if view.viewMode() != QListView.ViewMode.ListMode:
             super().paint(painter, option, index)
-            if option.state & QStyle.StateFlag.State_Selected:
+            if option.state & QStyle.StateFlag.State_Selected and view.has_multiple_selection():
                 selection_border(painter, option.rect)
             return
         if index.data(Qt.ItemDataRole.DisplayRole) or view.width_transition:
@@ -670,7 +670,7 @@ class CompactLibraryDelegate(QStyledItemDelegate):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(view.row_surface())
                 painter.drawRoundedRect(QRectF(option.rect), 7, 7)
-            if option.state & QStyle.StateFlag.State_Selected:
+            if option.state & QStyle.StateFlag.State_Selected and view.has_multiple_selection():
                 selection_border(painter, option.rect)
             icon_slot = QRect(option.rect)
             icon_slot.setWidth(64)
@@ -706,7 +706,7 @@ class CompactLibraryDelegate(QStyledItemDelegate):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(view.row_surface())
             painter.drawRoundedRect(row_rect, 7, 7)
-            if selected:
+            if selected and view.has_multiple_selection():
                 selection_border(painter, row_rect)
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         if icon is not None and view.row_widths.get(game.get('Id'), 64) <= 64:
@@ -765,11 +765,14 @@ class LibraryRowExpansion(QWidget):
             text.setWidth(self.view.fontMetrics().horizontalAdvance(game['Name']) + 2)
             painter.drawText(text, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, game['Name'])
             painter.restore()
-            if item.isSelected():
+            if item.isSelected() and self.view.has_multiple_selection():
                 selection_border(painter, rect)
 
 
 class LibraryList(QListWidget):
+    def has_multiple_selection(self):
+        return len(self.selectedItems()) > 1
+
     def row_surface(self):
         return QColor(colour('#292a2c'))
 
@@ -1255,6 +1258,7 @@ class LibraryWindow(QMainWindow):
         self.list.setMinimumWidth(160)
         self.list.setIconSize(QSize(48, 48))
         self.list.currentItemChanged.connect(self.select_game)
+        self.list.itemSelectionChanged.connect(self.update_compact_library)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self.show_game_context_menu)
         split.addWidget(self.list)
@@ -1374,8 +1378,6 @@ class LibraryWindow(QMainWindow):
             if game['Id'] == previous:
                 selected = item
         self.list.balance_grid()
-        self.update_compact_library()
-        self.list.blockSignals(False)
         self.count.setText(f'{self.list.count()} / {len(self.games)} games')
         active = sum(bool(value) for value in self.active_filters.values())
         self.filter_button.setToolTip(f'Filters ({active} active)' if active else 'Filters')
@@ -1389,8 +1391,9 @@ class LibraryWindow(QMainWindow):
                 candidate.setSelected(candidate.data(Qt.ItemDataRole.UserRole)['Id'] in selection)
             if not self.list.selectedItems():
                 self.list.currentItem().setSelected(True)
-        else:
-            self.select_game(None)
+        self.list.blockSignals(False)
+        self.update_compact_library()
+        self.select_game(self.list.currentItem())
 
     def refresh_library(self, *args):
         self.order.setIcon(toolbar_icon('descending' if self.order.isChecked() else 'ascending'))
@@ -2035,7 +2038,7 @@ class LibraryWindow(QMainWindow):
     def update_compact_library(self):
         if not hasattr(self, 'list'):
             return
-        compact = (self.width() < 900 or self.prefer_compact_library) and not self.is_grid
+        compact = (self.width() < 900 or self.prefer_compact_library) and not self.is_grid and not self.list.has_multiple_selection()
         changed = compact != self.compact_library
         start_width = self.list.width()
         animate = changed and self.isVisible() and self.toolbar_launch_settled and not getattr(self, 'switching_library_view', False)

@@ -63,3 +63,45 @@ class SelectedRowTests(unittest.TestCase):
                 delegate.paint(painter, option, view.model().index(0, 0))
                 border.assert_called_once()
             painter.end()
+
+    def test_single_selection_has_no_blue_border(self):
+        view = self.create_list()
+        view.clearSelection()
+        view.item(0).setSelected(True)
+        for mode, text in ((QListView.ViewMode.IconMode, 'a'), (QListView.ViewMode.ListMode, 'a'), (QListView.ViewMode.ListMode, '')):
+            view.setViewMode(mode)
+            view.item(0).setText(text)
+            option = QStyleOptionViewItem()
+            option.rect = QRect(0, 0, 180, 66)
+            option.state = QStyle.StateFlag.State_Selected
+            image = QImage(200, 80, QImage.Format.Format_ARGB32)
+            painter = QPainter(image)
+            with patch('playlite.app.selection_border') as border:
+                view.itemDelegate().paint(painter, option, view.model().index(0, 0))
+                border.assert_not_called()
+            painter.end()
+
+    def test_multi_selection_temporarily_expands_compact_library(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from playlite.app import LibraryWindow
+        with TemporaryDirectory() as folder:
+            data = Path(folder)
+            games = [dict(Id=str(i), Name=str(i)) for i in range(3)]
+            (data / 'library.json').write_text(json.dumps(games))
+            window = LibraryWindow(data)
+            window.resize(1400, 1000)
+            window.toggle_compact_library(True)
+            self.assertTrue(window.compact_library)
+            window.list.item(1).setSelected(True)
+            self.assertFalse(window.compact_library)
+            self.assertTrue(window.prefer_compact_library)
+            self.assertEqual(window.list.item(0).text(), '0')
+            window.refresh_library()
+            self.assertFalse(window.compact_library)
+            self.assertEqual(len(window.list.selectedItems()), 2)
+            window.list.item(1).setSelected(False)
+            self.assertTrue(window.compact_library)
+            self.assertTrue(window.prefer_compact_library)
+            window.close()
