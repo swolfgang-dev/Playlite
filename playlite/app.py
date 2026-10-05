@@ -1647,11 +1647,15 @@ class LibraryWindow(QMainWindow):
         self.details.addWidget(row)
         description_row = DescriptionLinksRow()
         description_columns = description_row.columns
-        if game.get('FullDescription'):
+        full_description = game.get('FullDescription', '')
+        if self.settings.value('descriptions/hideRepeatedSentences', False, type=bool):
+            from .description_overlap import hide_repeated_sentences
+            full_description = hide_repeated_sentences(game.get('Description', ''), full_description)
+        if full_description:
             from .rich_description import CollapsibleDescription
             full_card, full_layout = card()
             full_layout.addWidget(label('Description', 'section'))
-            description_panel = CollapsibleDescription(game['FullDescription'])
+            description_panel = CollapsibleDescription(full_description)
             full_layout.addWidget(description_panel)
             description_row.description = full_card
             full_card.installEventFilter(description_row)
