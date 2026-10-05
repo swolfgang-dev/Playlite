@@ -1122,6 +1122,9 @@ class LibraryWindow(QMainWindow):
         self.logo.setAccessibleName('Playlite menu')
         self.logo_menu = QMenu(self.logo)
         self.logo_menu.addAction('Add Game…').triggered.connect(self.add_game)
+        for plugin in self.generic_plugins:
+            for action_label, callback in getattr(plugin, 'main_menu_actions', lambda window: [])(self):
+                self.logo_menu.addAction(action_label).triggered.connect(callback)
         self.logo_menu.addSeparator()
         self.logo_menu.addAction('Settings…').triggered.connect(self.open_settings)
         self.logo.setMenu(self.logo_menu)
