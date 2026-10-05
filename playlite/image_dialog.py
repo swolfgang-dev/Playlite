@@ -84,6 +84,8 @@ class ImageDownloader(QDialog):
         self.selected_games = {}
         self.loaded_searches = {}
         self.catalogues = {}
+        self.catalogue_pages = {}
+        self.catalogue_urls = {}
         self.filters = {}
         self.providers = {key: plugin for key, plugin in discover_providers().items()
                           if plugin.image_types}
@@ -154,6 +156,9 @@ class ImageDownloader(QDialog):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
+        self.load_more_button = buttons.addButton('Load more', QDialogButtonBox.ButtonRole.ActionRole)
+        self.load_more_button.hide()
+        self.load_more_button.clicked.connect(lambda: self.load_images(more=True))
         self.apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self.accept)
@@ -227,6 +232,7 @@ class ImageDownloader(QDialog):
         self.loaded_searches.pop(key, None)
         label.setText('Search for a game to load images.')
         self.image_lists[key].clear()
+        self.update_load_more()
         provider = self.providers.get(source.currentData())
         query.blockSignals(True)
         query.setText(self.provider_queries.get(source.currentData(), ''))
@@ -254,6 +260,7 @@ class ImageDownloader(QDialog):
         if self.busy or self.closed:
             return
         self.busy = True
+        self.load_more_button.setEnabled(False)
         self.tabs.setEnabled(False)
         self.apply_button.setEnabled(False)
         for widget in (self.source, self.query, self.search_button):
@@ -273,6 +280,7 @@ class ImageDownloader(QDialog):
             self.status.setText(str(value) if error else '')
             if not error:
                 complete(value)
+            self.update_load_more()
         self.task.signals.succeeded.connect(lambda value: done(value))
         self.task.signals.failed.connect(lambda error: done(error, True))
         QThreadPool.globalInstance().start(self.task)
@@ -300,31 +308,46 @@ class ImageDownloader(QDialog):
             self.game_label.setText(f"{self.source.currentText()} — {selected['name']}")
             self.load_images()
 
-    def load_images(self, *_):
+    def update_load_more(self):
+        game = self.selected_game
+        key = (self.source.currentData(), str(game['id'])) if game else None
+        self.load_more_button.setVisible(any(more for _, more in self.catalogue_pages.get(key, {}).values()))
+        self.load_more_button.setEnabled(not self.busy)
+
+    def load_images(self, *_, more=False):
         if not self.selected_game or self.busy or self.closed:
             return
-        self.images.clear()
+        if not more:
+            self.images.clear()
         provider = self.providers[self.source.currentData()]
         game_id = self.selected_game['id']
         kind = self.active_key
         identity = (self.source.currentData(), self.query.text().strip())
         catalogue_key = (self.source.currentData(), str(game_id))
-        if catalogue_key in self.catalogues:
+        if catalogue_key in self.catalogues and not more:
             self.loaded_searches[kind] = identity
             self.show_images({kind: self.catalogues[catalogue_key]})
+            self.update_load_more()
             return
         self.serial += 1
         destination = Path(self.cache.name) / str(self.serial)
         destination.mkdir()
+        previous_pages = self.catalogue_pages.get(catalogue_key, {})
+        previous_urls = self.catalogue_urls.get(catalogue_key, set())
+        scroll = self.images.verticalScrollBar().value()
         def fetch():
-            if catalogue_key in self.catalogues:
-                return self.catalogues[catalogue_key]
             result, errors, candidates = [], [], {}
+            pages = dict(previous_pages)
             for image_type in self.image_keys:
                 if image_type not in provider.image_types:
                     continue
+                page, remaining = previous_pages.get(image_type, (0, True))
+                if more and not remaining:
+                    continue
                 try:
-                    for candidate in provider.images(game_id, image_type):
+                    images, remaining = provider.image_page(game_id, image_type, page)
+                    pages[image_type] = (page + 1, remaining)
+                    for candidate in images:
                         url = candidate['url']
                         if url not in candidates:
                             candidates[url] = (candidate, set())
@@ -332,6 +355,8 @@ class ImageDownloader(QDialog):
                 except Exception as error:
                     errors.append(str(error))
             for index, (candidate, types) in enumerate(candidates.values()):
+                if candidate['url'] in previous_urls:
+                    continue
                 if self.closed:
                     break
                 try:
@@ -339,12 +364,18 @@ class ImageDownloader(QDialog):
                     result.append((candidate.get('label', 'Artwork'), path, types))
                 except Exception as error:
                     errors.append(f"{candidate.get('label', 'Artwork')}: {error}")
-            return result, errors
-        def complete(result):
-            if result[0]:
-                self.catalogues[catalogue_key] = result
+            return (result, errors), pages, set(candidates)
+        def complete(payload):
+            result, pages, urls = payload
+            previous = self.catalogues.get(catalogue_key, ([], [])) if more else ([], [])
+            result = (previous[0] + result[0], result[1])
+            self.catalogues[catalogue_key] = result
+            self.catalogue_pages[catalogue_key] = pages
+            self.catalogue_urls[catalogue_key] = previous_urls | urls
             self.loaded_searches[kind] = identity
             self.show_images({kind: result})
+            if more:
+                self.images.verticalScrollBar().setValue(scroll)
         self.run(fetch, complete)
 
     def show_images(self, payload):

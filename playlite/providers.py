@@ -173,6 +173,10 @@ class MetadataProvider(Plugin):
         """Return selectable artwork candidates with url and label."""
         return []
 
+    def image_page(self, game_id, image_type, page=0):
+        """Return (candidates, has_more); existing providers have one page."""
+        return (self.images(game_id, image_type), False) if page == 0 else ([], False)
+
     def search(self, query):
         raise NotImplementedError
 

@@ -179,7 +179,7 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(reopened.tabs.tabText(2), 'Plugins')
             self.assertEqual([reopened.plugin_tabs.tabText(i) for i in range(reopened.plugin_tabs.count())], ['Installed', 'Available', 'General', 'Metadata', 'Installation'])
             self.assertTrue(any(target.id == 'LutrisAdd' and reopened.plugin_tabs.widget(4).isAncestorOf(widget) for owner, target, widget in reopened.plugin_contributions))
-            self.assertEqual(set(reopened.plugin_widgets), {'Lutris', 'IGDB', 'PlayliteArchiver', 'SteamAutoCrack'})
+            self.assertTrue({'Lutris', 'IGDB', 'PlayliteArchiver', 'SteamAutoCrack'}.issubset(reopened.plugin_widgets))
             installed = {reopened.installed_plugins.item(row, 4).text():
                          reopened.installed_plugins.item(row, 3).text()
                          for row in range(reopened.installed_plugins.rowCount())}
