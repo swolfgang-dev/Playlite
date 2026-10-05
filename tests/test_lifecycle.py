@@ -11,6 +11,26 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_picker_starts_are_independent_and_handle_new_prefixes(self):
+        from playlite.lifecycle import choose_directory, choose_file
+        with tempfile.TemporaryDirectory() as root:
+            games = Path(root) / 'games'
+            prefixes = Path(root) / 'prefixes'
+            games.mkdir()
+            prefixes.mkdir()
+            executable = games / 'game.exe'
+            executable.touch()
+            starts = []
+            def cancel(dialog):
+                starts.append(dialog.directory().absolutePath())
+                return QDialog.DialogCode.Rejected
+            with patch('playlite.lifecycle.run_dialog', side_effect=cancel):
+                choose_directory(None, 'Installation', str(games))
+                choose_directory(None, 'Prefix', str(prefixes / 'new-game'))
+                choose_file(None, 'Executable', str(executable))
+                choose_directory(None, 'Empty')
+            self.assertEqual(starts, [str(games), str(prefixes), str(games), str(Path.home())])
+
     def test_pickers_allow_native_desktop_dialogs(self):
         from playlite.lifecycle import choose_directory, choose_file
         from PyQt6.QtWidgets import QFileDialog

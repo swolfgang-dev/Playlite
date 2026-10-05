@@ -22,8 +22,19 @@ def run_dialog(dialog):
     return dialog.result()
 
 
+def picker_directory(path):
+    """Resolve a starting folder without inheriting another dialog's history."""
+    folder = Path(path).expanduser().absolute() if path else Path.home()
+    while not folder.is_dir() and folder != folder.parent:
+        folder = folder.parent
+    return str(folder)
+
+
 def choose_file(parent, title, directory='', file_filter=''):
     dialog = QFileDialog(parent, title, directory, file_filter)
+    dialog.setDirectory(picker_directory(directory))
+    if directory and Path(directory).expanduser().is_file():
+        dialog.selectFile(str(Path(directory).expanduser()))
     dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
     if run_dialog(dialog) == QDialog.DialogCode.Accepted:
         files = dialog.selectedFiles()
@@ -33,6 +44,7 @@ def choose_file(parent, title, directory='', file_filter=''):
 
 def choose_directory(parent, title, directory=''):
     dialog = QFileDialog(parent, title, directory)
+    dialog.setDirectory(picker_directory(directory))
     dialog.setFileMode(QFileDialog.FileMode.Directory)
     dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
     if run_dialog(dialog) == QDialog.DialogCode.Accepted:

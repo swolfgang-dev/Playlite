@@ -43,12 +43,12 @@ class ManualInstallation(InstallationPlugin):
                 browse.setObjectName('browse' + key)
                 def select_executable():
                     filename, _ = choose_file(editor, 'Select game executable',
-                                             directory_defaults.get('InstallDirectory', '') or widget.fields['Executable'].text() or widget.fields['InstallDirectory'].text(), 'All files (*)')
+                                             widget.fields['Executable'].text() or widget.fields['InstallDirectory'].text() or directory_defaults.get('InstallDirectory', ''), 'All files (*)')
                     if filename:
                         widget.fields['Executable'].setText(filename)
                 def select_folder(checked=False, folder_key=key):
                     folder = choose_directory(editor, 'Select Wine prefix' if folder_key == 'Prefix' else 'Select installation folder',
-                                              directory_defaults.get(folder_key, '') or widget.fields[folder_key].text())
+                                              widget.fields[folder_key].text() or directory_defaults.get(folder_key, ''))
                     if folder:
                         widget.fields[folder_key].setText(folder)
                 browse.clicked.connect(select_executable if key == 'Executable' else select_folder)
