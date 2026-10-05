@@ -57,13 +57,13 @@ class LibraryControlsTests(unittest.TestCase):
             installation = next(p for p in panels if p.property('installationPanel'))
             history = next(p for p in panels if p.property('playHistoryPanel'))
             self.assertLess(history.x(), installation.x())
-            self.assertIn('2026-10-01', [v.text() for v in installation.findChildren(QLabel)])
+            self.assertIn('01-Oct-2026', [v.text() for v in installation.findChildren(QLabel)])
             installation_labels = {v.text(): v for v in installation.findChildren(QLabel)}
             history_labels = {v.text(): v for v in history.findChildren(QLabel)}
             for left, right in [('Folder', 'Play time'), ('Size', 'Last played'), ('Added date', 'Play count')]:
                 self.assertEqual(installation_labels[left].y(), history_labels[right].y())
             texts = [v.text() for v in history.findChildren(QLabel)]
-            for value in ('Play time', '1h 2m', 'Last played', '2026-10-04 14:30', 'Play count', '7'):
+            for value in ('Play time', '1h 2m', 'Last played', '04-Oct-2026', 'Play count', '7'):
                 self.assertIn(value, texts)
             window.resize(1000, 900)
             window.split.setSizes([410, 590])

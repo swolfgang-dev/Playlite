@@ -1,3 +1,4 @@
+from .date_display import display_date
 from .theme import colour, set_style
 from .theme import apply as apply_theme, themed_asset
 from .lifecycle import show_warning
@@ -1653,7 +1654,7 @@ class LibraryWindow(QMainWindow):
                 form.addRow(label(title, 'muted'), horizontal_values(values, on_click=lambda value, key=key: self.apply_metadata_filter(key, value)))
         info.addLayout(form)
         if release:
-            info.addWidget(horizontal_values([release], 'muted', lambda value: self.apply_metadata_filter('ReleaseDate', value)))
+            info.addWidget(horizontal_values([display_date(release)], 'muted', lambda value: self.apply_metadata_filter('ReleaseDate', release)))
         for key in ('Platforms', 'Genres'):
             values = game.get(key) or (['PC (Windows)'] if key == 'Platforms' else [])
             if values:
@@ -1715,15 +1716,6 @@ class LibraryWindow(QMainWindow):
             self.content.update_cover()
         else:
             description_row.deleteLater()
-        def display_date(value, fallback):
-            if not value:
-                return fallback
-            try:
-                date = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
-                return date.strftime('%Y-%m-%d %H:%M' if 'T' in str(value) or ' ' in str(value) else '%Y-%m-%d')
-            except ValueError:
-                return str(value)
-
         installation_row = DescriptionLinksRow()
         installation_row.setObjectName('installationRow')
         installation, folder_layout = card()
@@ -1828,7 +1820,7 @@ class LibraryWindow(QMainWindow):
             duration = f'{hours}h {minutes}m' if hours else f'{minutes}m' if minutes else f'{seconds}s'
             self.history_labels['Play time'].setText(duration)
             self.history_labels['Play count'].setText(str(updated['PlayCount']))
-            self.history_labels['Last played'].setText(datetime.fromisoformat(stamp).strftime('%Y-%m-%d %H:%M'))
+            self.history_labels['Last played'].setText(display_date(stamp))
 
     def game_status_changed(self, game_id, status):
         for index in range(self.list.count()):

@@ -149,7 +149,8 @@ FIELD_ORDER = ['Name', 'SortingName', 'ReleaseDate', 'Genres', 'Developers', 'Pu
 
 def display(value):
     if isinstance(value, dict) and 'ReleaseDate' in value:
-        return value['ReleaseDate']
+        from .date_display import display_date
+        return display_date(value['ReleaseDate'])
     if isinstance(value, list):
         return ', '.join(item['Name'] if isinstance(item, dict) else str(item) for item in value)
     return '' if value is None else str(value)
