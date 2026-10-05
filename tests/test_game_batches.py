@@ -51,6 +51,22 @@ class GameBatchTests(unittest.TestCase):
         self.assertTrue(any(button.text() == 'Browse…' and button.height() == 40 for button in edited.findChildren(QPushButton)))
         self.assertEqual(self.window.list.spacing(), 3)
 
+    def test_saving_added_game_selects_it_and_reveals_it_through_filters(self):
+        from types import SimpleNamespace
+        from PyQt6.QtWidgets import QLabel
+        for mode in ('list', 'grid'):
+            self.window.view.setCurrentIndex(self.window.view.findData(mode))
+            self.window.favorites_filter.setChecked(True)
+            game = dict(Id='added-' + mode, Name='Added game', IsInstalled=True)
+            editor = SimpleNamespace(result_game=game, download_caches=[], generic_plugins=[], error=QLabel())
+            with patch('playlite.add_game.AddGameEditor', return_value=editor), patch('playlite.app.run_dialog', return_value=QDialog.DialogCode.Accepted):
+                self.window.add_manual_game()
+            self.assertEqual(self.window.current['Id'], game['Id'])
+            self.assertEqual([g['Id'] for g in self.window.selected_games()], [game['Id']])
+            self.assertFalse(self.window.favorites_filter.isChecked())
+            self.assertEqual(self.window.list.currentItem().data(Qt.ItemDataRole.UserRole)['Id'], game['Id'])
+            self.assertTrue(any(saved['Id'] == game['Id'] for saved in json.loads((self.data / 'library.json').read_text())))
+
     def test_grid_and_list_support_control_click_and_preserve_selection_on_view_switch(self):
         window = self.window
         self.assertEqual(window.list.selectionMode(), QAbstractItemView.SelectionMode.ExtendedSelection)

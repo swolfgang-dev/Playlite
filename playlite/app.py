@@ -2004,8 +2004,7 @@ class LibraryWindow(QMainWindow):
                 except OSError as error:
                     editor.error.setText(f'Could not save the Playlite entry: {error}')
                     continue
-                self.update_filter_choices()
-                self.refresh_library()
+                self.focus_added_game(editor.result_game['Id'])
                 for plugin in editor.generic_plugins:
                     plugin.after_game_added(self, editor.result_game, editor)
                 break
@@ -2213,6 +2212,25 @@ class LibraryWindow(QMainWindow):
     def add_game(self):
         self.add_manual_game()
 
+    def focus_added_game(self, identity):
+        self.search.clear()
+        self.update_filter_choices()
+        self.refresh_library()
+        def find_item():
+            return next((self.list.item(index) for index in range(self.list.count())
+                         if self.list.item(index).data(Qt.ItemDataRole.UserRole)['Id'] == identity), None)
+        item = find_item()
+        if item is None:
+            self.reset_filters()
+            item = find_item()
+            if item is None and any(game['Id'] == identity and game.get('Hidden') for game in self.games):
+                self.hidden_filter.setChecked(True)
+                item = find_item()
+        if item is not None:
+            self.list.setCurrentItem(item, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            self.list.scrollToItem(item)
+            self.list.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def add_manual_game(self, installation_method=None):
         active = next((dialog for dialog in self.findChildren(QDialog) if dialog.isVisible()), None)
         if active:
@@ -2231,10 +2249,7 @@ class LibraryWindow(QMainWindow):
             except OSError as error:
                 dialog.error.setText(f'Could not save the Playlite entry: {error}')
                 continue
-            self.last_selected = dialog.result_game['Id']
-            self.search.clear()
-            self.update_filter_choices()
-            self.refresh_library()
+            self.focus_added_game(dialog.result_game['Id'])
             for cache in dialog.download_caches:
                 cache.cleanup()
             for plugin in dialog.generic_plugins:
