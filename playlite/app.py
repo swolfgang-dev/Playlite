@@ -954,7 +954,7 @@ class LibraryList(QListWidget):
         self.row_widths[game_id] = start_width
         animation.start()
 
-    def hide_hover_immediately(self):
+    def hide_hover_immediately(self, preserve_selected=False):
         self.title_timer.stop()
         for animation in self.row_animations.values():
             animation.stop()
@@ -962,6 +962,10 @@ class LibraryList(QListWidget):
         self.row_animations.clear()
         self.row_widths.clear()
         self.hover_id = None
+        if preserve_selected and self.compact_enabled and self.has_multiple_selection():
+            for item in self.selectedItems():
+                game = item.data(Qt.ItemDataRole.UserRole)
+                self.row_widths[game['Id']] = self.expanded_row_width(game)
         self.fit_compact_width()
 
     def refresh_hover(self):
@@ -2214,7 +2218,7 @@ class LibraryWindow(QMainWindow):
             self.list.clearSelection()
             item.setSelected(True)
         self.list.setCurrentItem(item, QItemSelectionModel.SelectionFlag.NoUpdate)
-        self.list.hide_hover_immediately()
+        self.list.hide_hover_immediately(preserve_selected=True)
         games = self.selected_games()
         actions = self.plugin_game_actions(games[0]) if len(games) == 1 else [
             (plugin.name, actions) for plugin in self.generic_plugins

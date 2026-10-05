@@ -47,6 +47,17 @@ class SelectedRowTests(unittest.TestCase):
         self.assertGreaterEqual(view.row_widths['a'], 64)
         view.hide_hover_immediately()
 
+    def test_context_menu_hover_cleanup_preserves_selected_expansions(self):
+        view = self.create_list()
+        view.hover_id = 'a'
+        expected = {item.data(Qt.ItemDataRole.UserRole)['Id']: view.expanded_row_width(item.data(Qt.ItemDataRole.UserRole)) for item in view.selectedItems()}
+        view.hide_hover_immediately(preserve_selected=True)
+        self.assertIsNone(view.hover_id)
+        for item in view.selectedItems():
+            game = item.data(Qt.ItemDataRole.UserRole)
+            self.assertEqual(view.row_widths[game['Id']], expected[game['Id']])
+        view.hide_hover_immediately()
+
     def test_selected_border_is_drawn_in_grid_list_and_compact_modes(self):
         view = self.create_list()
         delegate = view.itemDelegate()
