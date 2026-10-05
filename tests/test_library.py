@@ -193,9 +193,14 @@ class LibraryControlsTests(unittest.TestCase):
             other = next(window.list.item(i) for i in range(window.list.count())
                          if window.list.item(i) is not window.list.currentItem())
             window.list.setCurrentItem(other)
+            self.assertFalse(window.game_scroll.updatesEnabled())
             for _ in range(5):
                 self.app.processEvents()
+            self.assertTrue(window.game_scroll.updatesEnabled())
             self.assertEqual(bar.value(), 0)
+            header = window.details.itemAt(0).widget()
+            information = window.details.itemAt(1).widget()
+            self.assertGreater(information.y(), header.geometry().bottom())
             window.close()
 
     def test_missing_artwork_does_not_reserve_header_or_cover_space(self):
