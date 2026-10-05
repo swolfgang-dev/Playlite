@@ -167,3 +167,5 @@ Lutris registrations and Wine prefixes are preserved, and cancellation keeps the
 source until the verified destination and library record have been committed.
 The current plugin moves folders without compression and rejects symlinks and
 special files.
+
+Select multiple games with Ctrl-click or Shift-click in list or grid view. Right-click the selection for batch deletion and supported plugin actions. Deleting entries keeps installation folders, archives, and Wine prefixes. Archived games show an archive icon and location in the installation panel. Edit → Installation → Archive information records an existing archive without moving files.

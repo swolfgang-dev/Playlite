@@ -141,6 +141,10 @@ class ImageProvider(Plugin):
 
 
 class GenericPlugin(Plugin):
+    def batch_game_actions(self, window, games):
+        """Actions applying to a snapshot of the selected library entries."""
+        return []
+
     def game_actions(self, window, game):
         return []
 

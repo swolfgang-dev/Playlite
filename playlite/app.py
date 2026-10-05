@@ -19,10 +19,10 @@ from .library import FILTER_FIELDS, SORT_FIELDS, query_games, values
 from .scroll_fades import ScrollFades, HorizontalValuesScroll
 from .link_names import load_names, friendly_name
 
-from PyQt6.QtCore import QAbstractAnimation, Qt, QSize, QUrl, QTimer, QRect, QRectF, QSettings, QThreadPool, QEvent, QVariantAnimation, QEasingCurve, QElapsedTimer
+from PyQt6.QtCore import QAbstractAnimation, QItemSelectionModel, Qt, QSize, QUrl, QTimer, QRect, QRectF, QSettings, QThreadPool, QEvent, QVariantAnimation, QEasingCurve, QElapsedTimer
 from PyQt6.QtGui import QFontMetrics, QColor, QDesktopServices, QIcon, QImage, QImageReader, QCursor, QPainter, QPen, QPainterPath, QPixmap, QTextDocument, QRegion
 from PyQt6.QtWidgets import (
-    QApplication, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout,
+    QApplication, QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout,
     QLabel, QLayout, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QTextBrowser, QTextEdit,
     QVBoxLayout, QBoxLayout, QWidget, QComboBox, QCheckBox, QGridLayout, QListView, QMenu, QAbstractItemView,
@@ -136,54 +136,78 @@ class ArtworkPage(QWidget):
         self.rendered_background = QPixmap()
         self.defer_background_render = False
 
-    def set_background(self, pixmap, blur_radius=48):
+    def set_background(self, source, blur_radius=48):
+        self.background_generation = getattr(self, 'background_generation', 0) + 1
+        generation = self.background_generation
         self.background = QPixmap()
         self.rendered_background = QPixmap()
-        if not pixmap.isNull():
-            from PIL import Image, ImageFilter
-            source = pixmap.scaled(1000, 1000, Qt.AspectRatioMode.KeepAspectRatio,
-                                   Qt.TransformationMode.SmoothTransformation)
-            image = source.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
-            pixels = image.constBits().asstring(image.sizeInBytes())
-            blurred = Image.frombytes('RGBA', (image.width(), image.height()), pixels)
-            if blur_radius > 0:
-                blurred = blurred.filter(ImageFilter.GaussianBlur(max(0, min(100, blur_radius))))
-            data = blurred.tobytes()
-            self.background = QPixmap.fromImage(QImage(data, blurred.width, blurred.height,
-                                                       blurred.width * 4, QImage.Format.Format_RGBA8888).copy())
         self.update()
+        if isinstance(source, QPixmap):
+            if source.isNull():
+                return
+            source = source.toImage()
+            key = None
+        else:
+            path = Path(source)
+            if not path.is_file():
+                return
+            key = (str(path), path.stat().st_mtime_ns, blur_radius, colour('#101112'))
+        self.background_cache = getattr(self, 'background_cache', {})
+        if key is not None and key in self.background_cache:
+            self.background = self.background_cache[key]
+            self.update()
+            return
+        from .metadata_dialog import Task
+        from .background_art import prepare
+        base = colour('#101112')
+        task = Task(lambda: prepare(source, blur_radius, base))
+        self.background_tasks = getattr(self, 'background_tasks', [])
+        self.background_tasks.append(task)
+        def complete(image):
+            from PyQt6 import sip
+            if sip.isdeleted(self):
+                self.background_tasks.remove(task)
+                return
+            pixmap = QPixmap.fromImage(image)
+            if key is not None:
+                if len(self.background_cache) >= 12:
+                    self.background_cache.pop(next(iter(self.background_cache)))
+                self.background_cache[key] = pixmap
+            if generation == self.background_generation:
+                self.background = pixmap
+                self.update()
+            self.background_tasks.remove(task)
+        def failed(error):
+            self.background_tasks.remove(task)
+        task.signals.succeeded.connect(complete)
+        task.signals.failed.connect(failed)
+        QThreadPool.globalInstance().start(task)
 
     def paintEvent(self, event):
         super().paintEvent(event)
         if self.background.isNull():
             return
-        if self.rendered_background.size() != self.size() and (
-                not self.defer_background_render or self.rendered_background.isNull()):
-            from PIL import Image, ImageChops
-            scaled = self.background.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                             Qt.TransformationMode.SmoothTransformation)
-            cropped = scaled.copy((scaled.width() - self.width()) // 2,
-                                  (scaled.height() - self.height()) // 2, self.width(), self.height())
-            image = cropped.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
-            artwork = Image.frombytes('RGBA', (image.width(), image.height()),
-                                      image.constBits().asstring(image.sizeInBytes()))
-            artwork.putalpha(artwork.getchannel('A').point(lambda value: round(value * 0.16)))
-            backdrop = Image.new('RGBA', artwork.size, colour('#101112'))
-            dimmed = Image.alpha_composite(backdrop, artwork).convert('RGB')
-            # Dither after dimming: noise added before the overlay gets rounded away.
-            noise = Image.effect_noise(dimmed.size, 0.65).convert('RGB')
-            dithered = ImageChops.add(dimmed, noise, offset=-128)
-            data = dithered.tobytes()
-            self.rendered_background = QPixmap.fromImage(QImage(data, dithered.width, dithered.height,
-                                                               dithered.width * 3, QImage.Format.Format_RGB888).copy())
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawPixmap(self.rect(), self.rendered_background)
+        # Draw the cached image directly; resize animations never regenerate it.
+        source = self.background.rect()
+        aspect = self.width() / max(1, self.height())
+        image_aspect = source.width() / max(1, source.height())
+        if image_aspect > aspect:
+            width = round(source.height() * aspect)
+            source.setX((source.width() - width) // 2)
+            source.setWidth(width)
+        else:
+            height = round(source.width() / aspect)
+            source.setY((source.height() - height) // 2)
+            source.setHeight(height)
+        painter.drawPixmap(self.rect(), self.background, source)
 
 
 def game_context_menu(parent, edit_handler, delete_handler, plugin_actions=()):
     menu = QMenu(parent)
-    menu.addAction('Edit…').triggered.connect(edit_handler)
+    if edit_handler is not None:
+        menu.addAction('Edit…').triggered.connect(edit_handler)
     menu.addSeparator()
     for plugin_name, actions in plugin_actions:
         if actions:
@@ -1189,6 +1213,7 @@ class LibraryWindow(QMainWindow):
         set_style(split, 'QSplitter { background: transparent; }')
         self.split = split
         self.list = LibraryList()
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.library_scrollbar_opacity = QGraphicsOpacityEffect(self.list.verticalScrollBar())
         self.library_scrollbar_opacity.setOpacity(1)
         self.list.verticalScrollBar().setGraphicsEffect(self.library_scrollbar_opacity)
@@ -1299,6 +1324,7 @@ class LibraryWindow(QMainWindow):
     def filter_games(self, query):
         self.setMinimumHeight(self.empty_library_height() if not self.games else 0)
         previous = self.current.get('Id') if self.current else self.last_selected
+        selection = {item.data(Qt.ItemDataRole.UserRole)['Id'] for item in self.list.selectedItems()}
         self.list.blockSignals(True)
         self.list.clear()
         selected = None
@@ -1325,7 +1351,12 @@ class LibraryWindow(QMainWindow):
         self.filter_button.style().unpolish(self.filter_button)
         self.filter_button.style().polish(self.filter_button)
         if self.list.count():
-            self.list.setCurrentItem(selected or self.list.item(0))
+            self.list.setCurrentItem(selected or self.list.item(0), QItemSelectionModel.SelectionFlag.NoUpdate)
+            for index in range(self.list.count()):
+                candidate = self.list.item(index)
+                candidate.setSelected(candidate.data(Qt.ItemDataRole.UserRole)['Id'] in selection)
+            if not self.list.selectedItems():
+                self.list.currentItem().setSelected(True)
         else:
             self.select_game(None)
 
@@ -1497,11 +1528,16 @@ class LibraryWindow(QMainWindow):
                 self.details.addWidget(label('No matching games.', 'muted'))
             return
         game = self.current
-        self.game_background.set_background(QPixmap(self.asset(game, 'BackgroundImage')),
+        self.game_background.set_background(self.asset(game, 'BackgroundImage'),
                                            self.settings.value('appearance/backgroundBlur', 48, type=int))
         self.last_selected = game['Id']
         self.settings.setValue('lastSelectedGame', self.last_selected)
-        self.settings.sync()
+        if not hasattr(self, 'selection_settings_timer'):
+            self.selection_settings_timer = QTimer(self)
+            self.selection_settings_timer.setSingleShot(True)
+            self.selection_settings_timer.setInterval(250)
+            self.selection_settings_timer.timeout.connect(self.settings.sync)
+        self.selection_settings_timer.start()
         play = QPushButton('Play')
         self.play_button = play
         play.setObjectName('play')
@@ -1636,12 +1672,28 @@ class LibraryWindow(QMainWindow):
         installation_row.setObjectName('installationRow')
         installation, folder_layout = card()
         installation.setProperty('installationPanel', True)
-        folder_layout.addWidget(label('Installation', 'section'))
+        heading = QHBoxLayout()
+        heading.addWidget(label('Installation', 'section'))
+        if game.get('ArchivePath'):
+            badge = QLabel('Archived')
+            badge.setObjectName('archiveIndicator')
+            badge.setToolTip(game['ArchivePath'])
+            archive_icon = QLabel()
+            archive_icon.setPixmap(QIcon(str(Path(__file__).parent / 'assets/archive.svg')).pixmap(20, 20))
+            heading.addWidget(archive_icon)
+            heading.addWidget(badge)
+        heading.addStretch()
+        folder_layout.addLayout(heading)
         installation_form = QFormLayout()
         installation_form.setHorizontalSpacing(22)
         installation_form.setVerticalSpacing(8)
         installation_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         installation_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        if game.get('ArchivePath'):
+            archived = QPushButton(game['ArchivePath'])
+            archived.setToolTip(game['ArchivePath'])
+            archived.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(game['ArchivePath'])))
+            installation_form.addRow(label('Archive', 'muted'), archived)
         if game.get('InstallDirectory'):
             folder = QPushButton(game['InstallDirectory'])
             folder.setObjectName('folder')
@@ -2042,6 +2094,8 @@ class LibraryWindow(QMainWindow):
         self.settings.sync()
 
     def closeEvent(self, event):
+        if hasattr(self, 'selection_settings_timer'):
+            self.selection_settings_timer.stop()
         self.game_detection.stop()
         self.save_window_state()
         super().closeEvent(event)
@@ -2101,32 +2155,49 @@ class LibraryWindow(QMainWindow):
                 plugin.after_game_added(self, dialog.result_game, dialog)
             break
 
+    def selected_games(self):
+        identities = {item.data(Qt.ItemDataRole.UserRole)['Id'] for item in self.list.selectedItems()}
+        return [dict(game) for game in self.games if game['Id'] in identities]
+
     def show_game_context_menu(self, position):
         item = self.list.itemAt(position)
         if item is None:
             return
-        self.list.setCurrentItem(item)
+        if not item.isSelected():
+            self.list.clearSelection()
+            item.setSelected(True)
+        self.list.setCurrentItem(item, QItemSelectionModel.SelectionFlag.NoUpdate)
         self.list.hide_hover_immediately()
-        menu = game_context_menu(self.list, self.edit_game, self.delete_game, self.plugin_game_actions(self.current))
+        games = self.selected_games()
+        actions = self.plugin_game_actions(games[0]) if len(games) == 1 else [
+            (plugin.name, actions) for plugin in self.generic_plugins
+            if (actions := plugin.batch_game_actions(self, games))]
+        menu = game_context_menu(self.list, self.edit_game if len(games) == 1 else None,
+                                 lambda: self.delete_games(games), actions)
         menu.aboutToHide.connect(menu.deleteLater)
         menu.popup(self.list.viewport().mapToGlobal(position))
 
     def delete_game(self):
-        if self.current is None:
+        if self.current is not None:
+            self.delete_games([dict(self.current)])
+
+    def delete_games(self, games):
+        if not games:
             return
-        game = dict(self.current)
         dialog = QDialog(self)
-        dialog.setWindowTitle('Delete game')
+        dialog.setWindowTitle('Delete game' if len(games) == 1 else 'Delete games')
         layout = QVBoxLayout(dialog)
-        message = QLabel(f'Remove “{game["Name"]}” from Playlite?')
+        message = QLabel(f'Remove “{games[0]["Name"]}” from Playlite?' if len(games) == 1
+                         else f'Remove {len(games)} selected games from Playlite?')
         message.setWordWrap(True)
         layout.addWidget(message)
-        deletion_provider = next((provider for provider in self.game_providers
-                                  if getattr(provider, 'supports_entry_deletion', False) and provider.owns(game)), None)
-        remove_lutris = QCheckBox(f'Also delete the {deletion_provider.name} entry' if deletion_provider else 'Also delete the launcher entry')
-        remove_lutris.setEnabled(deletion_provider is not None)
-        layout.addWidget(remove_lutris)
-        layout.addWidget(QLabel('Game files and Wine prefixes will be kept.'))
+        providers = {game['Id']: next((provider for provider in self.game_providers
+                     if getattr(provider, 'supports_entry_deletion', False) and provider.owns(game)), None)
+                     for game in games}
+        remove_launcher = QCheckBox('Also delete associated launcher entries')
+        remove_launcher.setEnabled(any(providers.values()))
+        layout.addWidget(remove_launcher)
+        layout.addWidget(QLabel('Game files, archives, and Wine prefixes will be kept.'))
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         delete = buttons.addButton('Delete', QDialogButtonBox.ButtonRole.AcceptRole)
         delete.clicked.connect(dialog.accept)
@@ -2135,20 +2206,24 @@ class LibraryWindow(QMainWindow):
         if run_dialog(dialog) != QDialog.DialogCode.Accepted:
             return
         from .storage import atomic_json
-        backup = None
+        backups = []
         try:
             from .library_storage import library_lock
             with library_lock(self.data):
                 latest = json.loads((self.data / 'library.json').read_text())
-                remaining = [entry for entry in latest if entry['Id'] != game['Id']]
+                identities = {game['Id'] for game in games}
+                remaining = [entry for entry in latest if entry['Id'] not in identities]
                 shutil.copy2(self.data / 'library.json', self.data / 'library.json.bak')
-                if remove_lutris.isChecked():
-                    backup = deletion_provider.delete_entry(game)
+                if remove_launcher.isChecked():
+                    for game in games:
+                        provider = providers[game['Id']]
+                        if provider is not None:
+                            backups.append((provider, provider.delete_entry(game)))
                 atomic_json(self.data / 'library.json', remaining)
         except Exception as error:
-            if backup is not None:
-                deletion_provider.restore_deleted_entry(backup)
-            show_warning(self, 'Could not delete game', str(error))
+            for provider, backup in reversed(backups):
+                provider.restore_deleted_entry(backup)
+            show_warning(self, 'Could not delete games', str(error))
             return
         self.games = remaining
         self.update_filter_choices()
@@ -2164,7 +2239,7 @@ class LibraryWindow(QMainWindow):
         while run_dialog(dialog) == QDialog.DialogCode.Accepted:
             try:
                 self.games = save_game(self.data, self.games, dialog.result_game)
-            except OSError as error:
+            except (OSError, ValueError) as error:
                 dialog.error.setText(f'Could not save game: {error}')
                 continue
             self.update_filter_choices()
