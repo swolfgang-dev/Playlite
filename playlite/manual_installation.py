@@ -60,6 +60,14 @@ class ManualInstallation(InstallationPlugin):
         def update_directory(value):
             folder = widget.fields['InstallDirectory']
             default = str(Path(value).parent) if value.strip() and Path(value).is_absolute() else ''
+            root = directory_defaults.get('InstallDirectory', '')
+            if root and default:
+                try:
+                    relative = Path(default).resolve().relative_to(Path(root).resolve())
+                    if relative.parts:
+                        default = str(Path(root).resolve() / relative.parts[0])
+                except (ValueError, OSError):
+                    pass
             if not folder.text() or folder.text() == widget.default_directory:
                 folder.setText(default)
             widget.default_directory = default

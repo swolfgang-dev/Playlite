@@ -32,6 +32,7 @@ def picker_directory(path):
 
 def choose_file(parent, title, directory='', file_filter=''):
     dialog = QFileDialog(parent, title, directory, file_filter)
+    dialog.setViewMode(QFileDialog.ViewMode.List)
     dialog.setDirectory(picker_directory(directory))
     if directory and Path(directory).expanduser().is_file():
         dialog.selectFile(str(Path(directory).expanduser()))
@@ -44,6 +45,7 @@ def choose_file(parent, title, directory='', file_filter=''):
 
 def choose_directory(parent, title, directory=''):
     dialog = QFileDialog(parent, title, directory)
+    dialog.setViewMode(QFileDialog.ViewMode.List)
     dialog.setDirectory(picker_directory(directory))
     dialog.setFileMode(QFileDialog.FileMode.Directory)
     dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)

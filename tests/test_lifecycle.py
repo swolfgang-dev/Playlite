@@ -23,6 +23,8 @@ class LifecycleTests(unittest.TestCase):
             starts = []
             def cancel(dialog):
                 starts.append(dialog.directory().absolutePath())
+                from PyQt6.QtWidgets import QFileDialog
+                self.assertEqual(dialog.viewMode(), QFileDialog.ViewMode.List)
                 return QDialog.DialogCode.Rejected
             with patch('playlite.lifecycle.run_dialog', side_effect=cancel):
                 choose_directory(None, 'Installation', str(games))
