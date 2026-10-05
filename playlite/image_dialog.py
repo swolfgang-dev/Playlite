@@ -89,6 +89,9 @@ class ImageDownloader(QDialog):
         self.catalogues = {}
         self.catalogue_games = {}
         self.pending_searches = []
+        self.suspended_downloads = []
+        self.download_priority = None
+        self.preempt_downloads = False
         self.automatic_searches = set()
         self.image_pixmaps = {}
         self.downloaded_urls = {}
@@ -198,6 +201,7 @@ class ImageDownloader(QDialog):
         return self.image_keys[self.tabs.currentIndex()]
 
     def activate_tab(self, *_):
+        self.update_download_priority()
         self.update_load_more()
         self.filter_images(self.active_key)
         if not self.restore_catalogue(self.active_key) and self.initial_search_scheduled:
@@ -218,10 +222,29 @@ class ImageDownloader(QDialog):
             self.automatic_searches.add(identity)
             self.pending_searches.append((key, identity, False))
         if start:
+            self.update_download_priority()
             self.process_pending_searches()
+
+    def update_download_priority(self):
+        key = self.active_key
+        source, query, _, _ = self.controls[key]
+        identity = (source.currentData(), query.text().strip())
+        filters = tuple(tuple(widget.values()) for widget in self.filters[key])
+        previous = self.download_priority
+        self.download_priority = (identity, filters)
+        if self.busy and previous and previous[0] != identity:
+            self.preempt_downloads = True
+        self.pending_searches.sort(key=lambda job: job[1] != identity)
 
     def process_pending_searches(self):
         if self.busy or self.closed:
+            return
+        identity = self.download_priority[0] if self.download_priority else None
+        priority_search = any(job[1] == identity for job in self.pending_searches)
+        priority_resume = next((job for job in self.suspended_downloads if job[0] == identity), None)
+        if priority_resume is not None and not priority_search:
+            self.suspended_downloads.remove(priority_resume)
+            self.run(priority_resume[1], priority_resume[2])
             return
         while self.pending_searches:
             key, identity, refresh = self.pending_searches.pop(0)
@@ -233,6 +256,9 @@ class ImageDownloader(QDialog):
                 continue
             self.search(key=key, refresh=refresh)
             return
+        if self.suspended_downloads:
+            _, function, complete = self.suspended_downloads.pop(0)
+            self.run(function, complete)
 
     @property
     def source(self):
@@ -338,6 +364,7 @@ class ImageDownloader(QDialog):
             pending = (key, identity, refresh)
             if pending not in self.pending_searches:
                 self.pending_searches.append(pending)
+            self.update_download_priority()
             return
         text = query.text()
         def complete(results):
@@ -391,6 +418,7 @@ class ImageDownloader(QDialog):
             self.show_images({kind: self.catalogues[catalogue_key]})
             self.update_load_more()
             return
+        self.update_download_priority()
         self.serial += 1
         destination = Path(self.cache.name) / str(self.serial)
         destination.mkdir()
@@ -404,33 +432,46 @@ class ImageDownloader(QDialog):
         priority_types = self.filters[kind][0].values()
         image_types = sorted(self.image_keys, key=lambda image_type: image_type not in priority_types)
         scroll = self.images.verticalScrollBar().value()
+        state = {'prepared': False, 'remaining': [], 'pages': dict(previous_pages), 'index': 0}
         def fetch():
             result, errors, candidates = [], [], {}
-            pages = dict(previous_pages)
-            for image_type in image_types:
-                if image_type not in provider.image_types or image_type not in artwork_types:
-                    continue
-                page, remaining = previous_pages.get(image_type, (0, True))
-                if more and not remaining:
-                    continue
-                try:
-                    images, remaining = provider.image_page(game_id, image_type, page)
-                    pages[image_type] = (page + 1, remaining)
-                    for candidate in images:
-                        url = candidate['url']
-                        if url not in candidates:
-                            candidates[url] = (candidate, set())
-                        candidates[url][1].add(image_type)
-                except Exception as error:
-                    errors.append(str(error))
+            pages = state['pages']
+            if not state['prepared']:
+                for image_type in image_types:
+                    if image_type not in provider.image_types or image_type not in artwork_types:
+                        continue
+                    page, remaining = previous_pages.get(image_type, (0, True))
+                    if more and not remaining:
+                        continue
+                    try:
+                        images, remaining = provider.image_page(game_id, image_type, page)
+                        pages[image_type] = (page + 1, remaining)
+                        for candidate in images:
+                            url = candidate['url']
+                            if url not in candidates:
+                                candidates[url] = (candidate, set())
+                            candidates[url][1].add(image_type)
+                    except Exception as error:
+                        errors.append(str(error))
+                state['remaining'] = list(candidates.values())
+                state['prepared'] = True
             downloaded = set()
-            matching = [(candidate, types) for candidate, types in candidates.values()
-                        if self.candidate_matches(candidate, types, filter_sets)]
-            matching.sort(key=lambda entry: not self.candidate_matches(*entry, priority_filters))
-            for index, (candidate, types) in enumerate(matching):
-                if self.closed:
+            while state['remaining'] and not self.closed:
+                priority = self.download_priority
+                if self.preempt_downloads and priority and priority[0] != identity:
+                    self.preempt_downloads = False
+                    return (result, errors), pages, downloaded, True
+                active_filters = [priority[1]] if priority and priority[0] == identity else priority_filters
+                matching = [entry for entry in state['remaining']
+                            if self.candidate_matches(*entry, filter_sets) or
+                            (priority and priority[0] == identity and self.candidate_matches(*entry, active_filters))]
+                if not matching:
                     break
-                self.download_progress.emit(f'{provider.name}: downloading image {index + 1}/{len(matching)}…')
+                candidate, types = min(matching, key=lambda entry: not self.candidate_matches(*entry, active_filters))
+                state['remaining'].remove((candidate, types))
+                index = state['index']
+                state['index'] += 1
+                self.download_progress.emit(f'{provider.name}: downloading image {index + 1}/{index + len(matching)}…')
                 try:
                     path = self.downloaded_urls.get(candidate['url'])
                     if path is None:
@@ -442,9 +483,11 @@ class ImageDownloader(QDialog):
                     downloaded.add(candidate['url'])
                 except Exception as error:
                     errors.append(f"{candidate.get('label', 'Artwork')}: {error}")
-            return (result, errors), pages, downloaded
+            return (result, errors), pages, downloaded, False
         def complete(payload):
-            result, pages, urls = payload
+            result, pages, urls, paused = payload
+            if paused:
+                self.suspended_downloads.append((identity, fetch, complete))
             previous = self.catalogues.get(catalogue_key, ([], []))
             combined = {}
             for label, path, types in previous[0] + result[0]:
@@ -550,6 +593,8 @@ class ImageDownloader(QDialog):
         self.filter_images(key)
 
     def filter_images(self, key):
+        if key == self.active_key:
+            self.update_download_priority()
         if key not in self.image_lists:
             return
         category, shape, resolution = self.filters[key]
@@ -589,6 +634,7 @@ class ImageDownloader(QDialog):
     def finish(self, result):
         self.closed = True
         self.pending_searches.clear()
+        self.suspended_downloads.clear()
         self.image_pixmaps.clear()
         self.downloaded_urls.clear()
         for images in self.image_lists.values():

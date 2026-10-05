@@ -287,3 +287,90 @@ class ImagePagingTests(unittest.TestCase):
         dialog.update_source('Icon')
         self.assertTrue(dialog.load_more_button.isHidden())
         dialog.finish(0)
+
+    def test_switching_tabs_reprioritizes_remaining_images(self):
+        provider = PagedProvider()
+        provider.image_types = frozenset(('Icon', 'HeaderImage'))
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        dialog.run = lambda function, complete: complete(function())
+        order = []
+        def page(game_id, image_type, page=0):
+            return ([{'url': f'https://example.com/{image_type}-{i}.png'} for i in range(2)], False)
+        def download(url, path):
+            order.append(url.rsplit('/', 1)[1])
+            if len(order) == 1:
+                dialog.tabs.setCurrentIndex(2)
+            pixmap = QPixmap(16, 16)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch.object(provider, 'image_page', side_effect=page), patch('playlite.image_dialog.download_artwork', side_effect=download):
+            dialog.search()
+        self.assertEqual(order, ['Icon-0.png', 'HeaderImage-0.png', 'HeaderImage-1.png', 'Icon-1.png'])
+        dialog.finish(0)
+
+    def test_filter_changes_prioritize_new_matches_then_resume_queued_images(self):
+        provider = PagedProvider()
+        provider.image_types = frozenset(('Icon',))
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': provider}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1}})
+        for key in dialog.image_keys:
+            dialog.filters[key][0].set_values([key])
+        dialog.filters['Icon'][1].set_values(['square'])
+        dialog.filters['Icon'][2].set_values([256, 1920])
+        dialog.run = lambda function, complete: complete(function())
+        candidates = [{'url': 'first', 'width': 256, 'height': 256},
+                      {'url': 'second', 'width': 256, 'height': 256},
+                      {'url': 'wide', 'width': 1920, 'height': 620}]
+        order = []
+        def download(url, path):
+            order.append(url)
+            if len(order) == 1:
+                dialog.filters['Icon'][1].set_values(['wide'])
+            pixmap = QPixmap(16, 16)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch.object(provider, 'image_page', return_value=(candidates, False)), patch('playlite.image_dialog.download_artwork', side_effect=download):
+            dialog.search()
+        self.assertEqual(order, ['first', 'wide', 'second'])
+        dialog.finish(0)
+
+    def test_other_provider_preempts_batch_then_resumes_without_refetching(self):
+        first, second = PagedProvider(), PagedProvider()
+        second.id = second.name = 'Other'
+        first.image_types = frozenset(('Icon',))
+        second.image_types = frozenset(('CoverImage',))
+        with patch('playlite.image_dialog.discover_providers', return_value={'Paged': first, 'Other': second}):
+            dialog = ImageDownloader({'MetadataIds': {'Paged': 1, 'Other': 2}})
+        dialog.controls['CoverImage'][0].setCurrentIndex(1)
+        dialog.initial_search_scheduled = True
+        def run(function, complete):
+            dialog.busy = True
+            result = function()
+            dialog.busy = False
+            complete(result)
+        dialog.run = run
+        order = []
+        def page(provider, game_id, image_type, page=0):
+            return ([{'url': provider + str(i)} for i in range(2)], False)
+        def download(url, path):
+            order.append(url)
+            if len(order) == 1:
+                dialog.tabs.setCurrentIndex(1)
+            pixmap = QPixmap(16, 16)
+            pixmap.fill()
+            pixmap.save(str(path), 'PNG')
+            return str(path)
+        with patch.object(first, 'image_page', side_effect=lambda *args: page('Paged', *args)) as first_pages, patch.object(second, 'image_page', side_effect=lambda *args: page('Other', *args)), patch('playlite.image_dialog.download_artwork', side_effect=download):
+            dialog.search(key='Icon')
+            self.assertEqual(order, ['Paged0'])
+            self.assertEqual(len(dialog.suspended_downloads), 1)
+            dialog.process_pending_searches()
+            self.assertEqual(order, ['Paged0', 'Other0', 'Other1'])
+            dialog.process_pending_searches()
+            self.assertEqual(order, ['Paged0', 'Other0', 'Other1', 'Paged1'])
+            first_pages.assert_called_once()
+        self.assertFalse(dialog.suspended_downloads)
+        dialog.finish(0)
