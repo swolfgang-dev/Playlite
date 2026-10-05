@@ -35,6 +35,11 @@
       "id": "IconStudio",
       "name": "Image Studio",
       "repository": "swolfgang-dev/playlite-plugin-image-studio"
+    },
+    {
+      "id": "SteamDownloader",
+      "name": "Steam Depot Downloader",
+      "repository": "swolfgang-dev/playlite-plugin-steam-downloader"
     }
   ]
 }
