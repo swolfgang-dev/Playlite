@@ -13,6 +13,18 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LinkNamesTests(unittest.TestCase):
+    def test_metadata_downloader_preserves_stored_link_names(self):
+        from playlite.metadata_dialog import MetadataDownloader
+        links = [{'Name': 'store.steampowered.com', 'Url': 'https://store.steampowered.com/app/42/'},
+                 {'Name': '', 'Url': 'https://igdb.com/games/example'},
+                 {'Name': 'My label', 'Url': 'https://example.com'}]
+        current = {'Name': 'Example', 'Links': links}
+        dialog = MetadataDownloader(current, mode='metadata')
+        self.assertEqual(dialog.current['Links'], links)
+        self.assertEqual(current['Links'], links)
+        dialog.reject()
+        dialog.cache.cleanup()
+
     def test_link_flow_uses_rows_dots_and_wrapped_labels(self):
         from playlite.app import LinkLayout, LinkContent
         content = LinkContent()

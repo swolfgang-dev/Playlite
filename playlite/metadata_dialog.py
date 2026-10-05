@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap
 
-from .metadata import download_artwork, friendly_links
+from .metadata import download_artwork
 
 
 class MetadataTable(QTableWidget):
@@ -186,8 +186,6 @@ class MetadataDownloader(QDialog):
         self.mode = mode
         self.settings_key = 'metadata/fields' if mode != 'images' else 'images/fields'
         current = dict(current)
-        if current.get('Links'):
-            current['Links'] = friendly_links(current['Links'])
         self.current = current
         self.save_ids_handler = save_ids
         self.payload = None
