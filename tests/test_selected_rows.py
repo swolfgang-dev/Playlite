@@ -121,3 +121,38 @@ class SelectedRowTests(unittest.TestCase):
             self.assertEqual(window.list.row_animations['1'].endValue(), 0)
             self.assertEqual(window.list.row_animations['0'].endValue(), 64)
             window.close()
+
+    def test_sidebar_transition_preserves_expanded_row_width_when_reversed(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from playlite.app import LibraryWindow
+        from PyQt6.QtTest import QTest
+        with TemporaryDirectory() as folder:
+            data = Path(folder)
+            (data / 'library.json').write_text(json.dumps([dict(Id=str(i), Name='Example game ' + str(i)) for i in range(3)]))
+            window = LibraryWindow(data)
+            window.resize(1400, 1000)
+            window.toggle_compact_library(True)
+            window.show()
+            QTest.qWait(30)
+            window.toolbar_launch_settled = True
+            window.list.item(1).setSelected(True)
+            for animation in window.list.row_animations.values():
+                animation.setCurrentTime(animation.duration())
+            start = dict(window.list.row_widths)
+            window.toggle_compact_library(False)
+            self.assertEqual(window.list.row_widths['0'], start['0'])
+            self.assertEqual(window.list.row_widths['1'], start['1'])
+            window.library_animation.setCurrentTime(160)
+            midway = dict(window.list.row_widths)
+            window.toggle_compact_library(True)
+            self.assertEqual(window.list.row_widths['0'], midway['0'])
+            self.assertEqual(window.list.row_widths['1'], midway['1'])
+            window.library_animation.setCurrentTime(window.library_animation.duration())
+            self.assertTrue(window.compact_library)
+            for index in (0, 1):
+                game = window.list.item(index).data(Qt.ItemDataRole.UserRole)
+                self.assertEqual(window.list.row_widths[game['Id']], window.list.expanded_row_width(game))
+            self.assertEqual(window.list.row_widths.get('2', 0), 0)
+            window.close()

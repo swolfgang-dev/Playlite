@@ -658,6 +658,9 @@ class CompactLibraryDelegate(QStyledItemDelegate):
             if option.state & QStyle.StateFlag.State_Selected and view.has_multiple_selection():
                 selection_border(painter, option.rect)
             return
+        game_id = (index.data(Qt.ItemDataRole.UserRole) or {}).get('Id')
+        if view.width_transition and view.row_widths.get(game_id, 0) > 0:
+            return  # The expansion layer carries this row through the transition.
         if index.data(Qt.ItemDataRole.DisplayRole) or view.width_transition:
             decorated = QStyleOptionViewItem(option)
             self.initStyleOption(decorated, index)
@@ -815,7 +818,7 @@ class LibraryList(QListWidget):
                 self.animate_row(game_id, 0)
 
     def update_selected_rows(self):
-        if self.compact_enabled:
+        if self.compact_enabled and not self.width_transition:
             multiple = self.has_multiple_selection()
             for index in range(self.count()):
                 game_id = self.item(index).data(Qt.ItemDataRole.UserRole)['Id']
@@ -909,7 +912,7 @@ class LibraryList(QListWidget):
                     self.setFixedWidth(target)
         if self.expansion_layer is not None:
             self.expansion_layer.setGeometry(self.window().rect())
-            self.expansion_layer.setVisible(self.compact_enabled and any(width > 0 for width in self.row_widths.values()))
+            self.expansion_layer.setVisible((self.compact_enabled or self.width_transition) and any(width > 0 for width in self.row_widths.values()))
             self.expansion_layer.raise_()
             self.expansion_layer.update()
         self.viewport().update()
@@ -919,6 +922,8 @@ class LibraryList(QListWidget):
         return min(width, max(64, self.window().width() - 250))
 
     def animate_row(self, game_id, target):
+        if self.width_transition:
+            return
         current = self.currentItem()
         selected = next((item for item in self.selectedItems() if item.data(Qt.ItemDataRole.UserRole)['Id'] == game_id), None)
         if target == 0:
@@ -2029,6 +2034,11 @@ class LibraryWindow(QMainWindow):
         self.list.setFixedWidth(width)
         total = self.split.width() - self.split.handleWidth()
         self.split.setSizes([width, max(1, total - width)])
+        progress = self.library_animation.easingCurve().valueForProgress(
+            self.library_animation.currentTime() / max(1, self.library_animation.duration()))
+        for identity, (start, end) in getattr(self, 'transition_rows', {}).items():
+            self.list.row_widths[identity] = start + (end - start) * progress
+        self.list.fit_compact_width()
 
     def update_library_scrollbar_policy(self, *_):
         running = [animation for animation in
@@ -2042,6 +2052,9 @@ class LibraryWindow(QMainWindow):
         self.list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
     def finish_library_transition(self):
+        for identity, (_, end) in getattr(self, 'transition_rows', {}).items():
+            self.list.row_widths[identity] = end
+        self.transition_rows = {}
         self.list.width_transition = False
         if self.compact_library:
             self.list.setFixedWidth(self.list.compact_width())
@@ -2049,6 +2062,10 @@ class LibraryWindow(QMainWindow):
             self.list.setMinimumWidth(160)
             self.list.setMaximumWidth(16777215)
             self.restore_library_width()
+        if not self.compact_library:
+            self.list.hide_hover_immediately()
+        self.list.fit_compact_width()
+        self.list.viewport().update()
         self.update_library_scrollbar_policy()
 
     def update_compact_library(self):
@@ -2066,11 +2083,36 @@ class LibraryWindow(QMainWindow):
         self.compact_library = compact
         self.list.compact_enabled = compact
         self.list.update_scrollbar_padding()
-        if changed:
+        if changed and not animate:
             self.list.hide_hover_immediately()
         if animate:
+            self.transition_rows = {}
+            current = self.list.currentItem()
+            full_width = max(64, self.library_widths['list'] - self.list.compact_width() + 64)
+            for animation in self.list.row_animations.values():
+                animation.stop()
+            for index in range(self.list.count()):
+                item = self.list.item(index)
+                game = item.data(Qt.ItemDataRole.UserRole)
+                identity = game['Id']
+                active = item.isSelected() or item is current or identity == self.list.hover_id
+                start = self.list.row_widths.get(identity, 0)
+                if compact and not start and active:
+                    start = max(64, start_width - self.list.compact_width() + 64)
+                if not start and not active:
+                    continue
+                if compact:
+                    end = self.list.expanded_row_width(game) if identity == self.list.hover_id or item.isSelected() and self.list.has_multiple_selection() else (64 if active else 0)
+                else:
+                    end = full_width if active else 0
+                self.transition_rows[identity] = (start or 64, end)
+                self.list.row_widths[identity] = start or 64
+            if self.list.expansion_layer is None:
+                self.list.expansion_layer = LibraryRowExpansion(self.list)
+            self.list.fit_compact_width()
             target = self.list.compact_width() if compact else self.library_widths['grid' if self.is_grid else 'list']
             self.library_animation.blockSignals(True)
+            self.library_animation.setCurrentTime(0)
             self.library_animation.setStartValue(float(start_width))
             self.library_animation.setEndValue(float(target))
             self.library_animation.blockSignals(False)
