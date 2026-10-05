@@ -375,6 +375,8 @@ class LibraryControlsTests(unittest.TestCase):
         view.update_hover(view.visualItemRect(view.item(0)).center())
         QTest.qWait(1100)
         self.assertGreater(view.row_widths['a'], 64)
+        self.assertIsNone(view.title_offset(GAMES[0], view.row_widths['a'] - 76))
+        self.assertIsNotNone(view.title_offset(GAMES[0], view.row_widths['a'] - 90))
         self.assertEqual(view.width(), rail_width)
         self.assertEqual(view.visualItemRect(view.item(0)).topLeft(), origin)
         self.assertFalse(hasattr(view, 'hover_row'))

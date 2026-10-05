@@ -911,7 +911,8 @@ class LibraryList(QListWidget):
             self.title_timer.stop()
         self.viewport().update()
         if game and self.compact_enabled:
-            width = 64 + self.fontMetrics().horizontalAdvance(game['Name']) + 12
+            # Include the same 2px text slack used by title_offset.
+            width = 64 + self.fontMetrics().horizontalAdvance(game['Name']) + 14
             width = min(width, max(64, self.window().width() - 250))
             self.animate_row(game_id, width)
 
