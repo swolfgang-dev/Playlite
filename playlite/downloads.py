@@ -182,6 +182,7 @@ class DownloadsPanel(QFrame):
         self.strip_present=False
         self.pinned_id=None
         self.completed_shown=set()
+        self.hovered_card=None
         self.completion_timer=QTimer(self);self.completion_timer.setSingleShot(True)
         self.completion_timer.timeout.connect(self.release_completed)
         self.card_fade=QVariantAnimation(self);self.card_fade.setDuration(260)
@@ -227,6 +228,19 @@ class DownloadsPanel(QFrame):
     def eventFilter(self,watched,event):
         if watched is self.parentWidget() and event.type()==QEvent.Type.Resize:self.place()
         pinned=self.cards.get(self.pinned_id)
+        if pinned and watched is pinned[0]:
+            if event.type()==QEvent.Type.Enter:
+                self.hovered_card=self.pinned_id
+                row=next((row for row in self.queue.entries if row.id==self.pinned_id),None)
+                if row and row.state=='Complete':
+                    self.completion_timer.stop()
+                    self.completed_shown.discard(row.id)
+                    self.card_fade.stop();self.set_card_opacity(1.)
+            elif event.type()==QEvent.Type.Leave:
+                self.hovered_card=None
+                row=next((row for row in self.queue.entries if row.id==self.pinned_id),None)
+                if row and row.state=='Complete' and row.id not in self.completed_shown:
+                    self.completion_timer.start(3000)
         if pinned and watched is pinned[0] and not self.opened:
             if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
                 self.card_press=event.position().toPoint()
@@ -316,6 +330,9 @@ class DownloadsPanel(QFrame):
             effect.setOpacity(self.card_opacity)
 
     def release_completed(self):
+        if self.hovered_card==self.pinned_id and self.pinned_id is not None:
+            self.completion_timer.stop()
+            return
         self.completed_shown.add(self.pinned_id)
         upcoming=any(row.state in ('Downloading','Queued','Paused') for row in self.queue.entries)
         if upcoming or self.opened:
@@ -335,7 +352,8 @@ class DownloadsPanel(QFrame):
         active=self.queue.active or next((row for row in self.queue.ordered() if row.state in ('Downloading','Queued','Paused')),None)
         previous=next((row for row in self.queue.entries if row.id==self.pinned_id),None)
         if previous and previous.state=='Complete' and previous.id not in self.completed_shown:
-            if not self.completion_timer.isActive():self.completion_timer.start(3000)
+            if self.hovered_card==previous.id:self.completion_timer.stop()
+            elif not self.completion_timer.isActive():self.completion_timer.start(3000)
             active=previous
         elif previous and previous.state=='Complete' and self.card_fade.state()==QVariantAnimation.State.Running and self.card_fade.endValue()==0. and active is None:
             active=previous
@@ -344,6 +362,7 @@ class DownloadsPanel(QFrame):
         new_id=active.id if active else None
         changed_pin=new_id!=self.pinned_id
         if changed_pin:
+            self.hovered_card=None
             self.card_fade.stop()
             old=self.cards.get(self.pinned_id)
             if old:old[0].setGraphicsEffect(None)

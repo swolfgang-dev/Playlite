@@ -112,6 +112,31 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(panel.cards[second.id][0].graphicsEffect().opacity(),1.)
         host.close()
 
+    def test_hover_retains_completed_card_and_leave_restarts_countdown(self):
+        from PyQt6.QtCore import QEvent
+        host=QWidget();host.resize(800,600);host.show()
+        queue=DownloadQueue();panel=DownloadsPanel(host,queue)
+        first=queue.enqueue('First','/tmp/first',lambda *_:Mock())
+        second=queue.enqueue('Second','/tmp/second',lambda *_:Mock())
+        self.app.processEvents()
+        card=panel.cards[first.id][0]
+        panel.eventFilter(card,QEvent(QEvent.Type.Enter))
+        queue.finish(first,True,'Done');self.app.processEvents()
+        self.assertFalse(panel.completion_timer.isActive())
+        panel.release_completed()
+        self.assertEqual(panel.pinned_id,first.id)
+        queue.update(second,10,'Downloading')
+        self.assertFalse(panel.completion_timer.isActive())
+        panel.eventFilter(card,QEvent(QEvent.Type.Leave))
+        self.assertTrue(panel.completion_timer.isActive())
+        self.assertEqual(panel.completion_timer.interval(),3000)
+        panel.eventFilter(card,QEvent(QEvent.Type.Enter))
+        self.assertFalse(panel.completion_timer.isActive())
+        panel.eventFilter(card,QEvent(QEvent.Type.Leave))
+        panel.completion_timer.stop();panel.completion_timer.timeout.emit()
+        self.assertEqual(panel.pinned_id,second.id)
+        host.close()
+
     def test_remove_completed_entry_keeps_files_and_other_downloads(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);files=root/'game';files.mkdir();(files/'game.exe').write_bytes(b'game')
