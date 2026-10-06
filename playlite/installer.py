@@ -165,6 +165,13 @@ class InstallerDialog(QDialog):
         if not repositories:
             self.log.appendPlainText('Choose at least one plugin.'); return
         def complete(results):
+            successful = {repository.casefold() for repository, manifest, error in results if manifest}
+            for index in range(self.plugins.count()):
+                item = self.plugins.item(index)
+                if item.data(Qt.ItemDataRole.UserRole).casefold() in successful:
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                    if not item.text().endswith(' (installed)'):
+                        item.setText(item.text() + ' (installed)')
             installed_setup([manifest for _, manifest, _ in results if manifest], self, self.log.appendPlainText)
             self.log.appendPlainText('Plugin installation finished. Failed items can be selected and retried.')
         self.start(lambda progress: install_plugins(repositories, progress), complete)

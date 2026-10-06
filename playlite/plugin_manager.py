@@ -18,8 +18,16 @@ CATALOGUE_REPOSITORY = 'swolfgang-dev/Playlite'
 
 def plugin_catalogue():
     import base64
-    document = github_request('repos/' + CATALOGUE_REPOSITORY + '/contents/catalogue.json')
-    catalogue = json.loads(base64.b64decode(document['content']))
+    from urllib.error import HTTPError
+    try:
+        document = github_request('repos/' + CATALOGUE_REPOSITORY + '/contents/catalogue.json')
+        catalogue = json.loads(base64.b64decode(document['content']))
+    except HTTPError as error:
+        if error.code not in (403, 429):
+            raise
+        from urllib.request import urlopen
+        with urlopen('https://raw.githubusercontent.com/' + CATALOGUE_REPOSITORY + '/main/catalogue.json', timeout=30) as response:
+            catalogue = json.loads(response.read())
     if catalogue.get('schema_version') != 1:
         raise ValueError('Unsupported plugin catalogue format.')
     entries = catalogue.get('plugins')
@@ -292,6 +300,18 @@ def available_plugins():
         except HTTPError as error:
             if error.code == 404:
                 continue
+            if error.code in (403, 429):
+                from urllib.request import Request, urlopen
+                from urllib.parse import unquote
+                try:
+                    with urlopen(Request('https://github.com/' + repository + '/releases/latest', headers={'User-Agent': 'Playlite'}), timeout=30) as response:
+                        tag = unquote(response.geturl().rsplit('/', 1)[-1])
+                    result.append(dict(name=name, repository=repository, description='', version=tag, private=False))
+                    continue
+                except HTTPError as public_error:
+                    if public_error.code == 404:
+                        continue
+                    raise ValueError('Could not load public plugin releases. Try again later.') from None
             raise ValueError('GitHub could not list plugins (access denied or rate limit).') from None
         result.append(dict(name=name, repository=info.get('full_name') or repository, description=info.get('description') or '',
                            version=release['tag_name'], private=info['private']))
@@ -303,12 +323,22 @@ def install_github(repository, version='latest', directory=None):
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
         raise ValueError('Enter a GitHub repository as owner/repository.')
     release_path = 'latest' if version == 'latest' else 'tags/' + version
-    release = github_request('repos/' + repository + '/releases/' + release_path)
-    assets = {asset['name']: asset for asset in release['assets']}
+    authenticated = bool(github_token())
+    if authenticated:
+        release = github_request('repos/' + repository + '/releases/' + release_path)
+        assets = {asset['name']: asset for asset in release['assets']}
     with tempfile.TemporaryDirectory(prefix='playlite-plugin-download-') as temporary:
         for name in ('plugin.zip', 'SHA256SUMS'):
-            asset = assets[name]
-            data = github_request('repos/' + repository + '/releases/assets/' + str(asset['id']), binary=True)
+            if authenticated:
+                asset = assets[name]
+                data = github_request('repos/' + repository + '/releases/assets/' + str(asset['id']), binary=True)
+            else:
+                from urllib.request import Request, urlopen
+                from urllib.parse import quote
+                path = 'latest/download/' if version == 'latest' else 'download/' + quote(version, safe='') + '/'
+                url = 'https://github.com/' + repository + '/releases/' + path + name
+                with urlopen(Request(url, headers={'User-Agent': 'Playlite'}), timeout=30) as response:
+                    data = response.read()
             (Path(temporary) / name).write_bytes(data)
         import hashlib
         archive = Path(temporary) / 'plugin.zip'
