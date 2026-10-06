@@ -43,7 +43,11 @@ def main(argv=None):
     preferences=parser.add_mutually_exclusive_group()
     preferences.add_argument('--keep-settings',action='store_true',help='Retain user and plugin settings for reinstalling (default).')
     preferences.add_argument('--remove-settings',action='store_true',help='Remove known Playlite and plugin preferences; keep library data and external games.')
+    plugins=parser.add_mutually_exclusive_group()
+    plugins.add_argument('--keep-plugins',action='store_true',help='Retain installed plugins for reinstalling.')
+    plugins.add_argument('--remove-plugins',action='store_true',help='Remove managed plugins (default).')
     args=parser.parse_args(argv)
+    if args.keep_plugins and args.purge_data:parser.error('--keep-plugins cannot be combined with --purge-data.')
     if args.keep_settings and args.purge_data:parser.error('--keep-settings cannot be combined with --purge-data.')
     if os.environ.get('PLAYLITE_PROFILE')=='repo':
         parser.error('Run this release uninstaller from a normal terminal, outside the repo profile.')
@@ -145,10 +149,13 @@ def main(argv=None):
         desktop=data.parent/'applications/playlite.desktop'
         if desktop.is_file() and str(data/'runtime/bin/playlite') in desktop.read_text(errors='replace'):
             remove(desktop)
-        for plugin in (data/'plugins').glob('*'):
-            if plugin.is_dir():remove_owned(plugin)
-        for registration in (data/'plugin-cleanup').glob('*'):
-            if registration.is_dir():remove_owned(registration)
+        if args.keep_plugins:
+            print('Installed plugins retained for reinstalling.')
+        else:
+            for plugin in (data/'plugins').glob('*'):
+                if plugin.is_dir():remove_owned(plugin)
+            for registration in (data/'plugin-cleanup').glob('*'):
+                if registration.is_dir():remove_owned(registration)
         if (data/'runtime').exists():remove_owned(data/'runtime')
         scripts=data/'.playlite-install-scripts.json'
         if scripts.is_file() and not scripts.is_symlink():

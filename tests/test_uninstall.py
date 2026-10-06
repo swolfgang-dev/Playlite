@@ -41,6 +41,18 @@ class UninstallTests(unittest.TestCase):
         self.assertTrue((self.data / 'library.json').exists())
         self.assertTrue((self.data / 'steam-runtime/file').exists())
 
+    def test_keep_plugins_retains_code_and_cleanup_registration(self):
+        import json
+        plugin=self.data/'plugins/example';plugin.mkdir(parents=True)
+        (plugin/'manifest.json').write_text(json.dumps(dict(id='Example')))
+        (plugin/'plugin.py').write_text('plugin code');record_tree(plugin)
+        registration=self.data/'plugin-cleanup/Example';registration.mkdir(parents=True)
+        (registration/'manifest.json').write_text(json.dumps(dict(id='Example')));record_tree(registration)
+        self.assertEqual(uninstall.main(['--keep-settings','--keep-plugins']),0)
+        self.assertTrue((plugin/'plugin.py').exists())
+        self.assertTrue((registration/'manifest.json').exists())
+        self.assertFalse((self.data/'runtime').exists())
+
     def test_dry_run_changes_nothing(self):
         self.assertEqual(uninstall.main(['--dry-run', '--purge-data', '--purge-secrets']), 0)
         self.assertTrue((self.data / 'runtime/file').exists())

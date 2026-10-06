@@ -32,7 +32,7 @@ Remove the application and its tracked plugins:
 bash ~/.local/share/playlite/uninstall.sh
 ```
 
-The script asks whether to keep user settings, defaulting to **Yes**. For unattended removal, use `--keep-settings` or `--remove-settings`. Removing settings clears known Playlite and plugin preferences while keeping your library, external games, private Steam data, and wallet credentials. Individual plugin removal offers the same checked-by-default option; settings for unknown third-party plugins are retained. To also remove known application data, owned private Steam data/image, and the downloader’s saved credentials, use:
+The script asks separately whether to keep user settings and installed plugins, defaulting to **Yes** for both. For unattended removal, use `--keep-settings` or `--remove-settings`, and `--keep-plugins` or `--remove-plugins` (plugins are removed by default in unattended runs). Removing settings clears known Playlite and plugin preferences while keeping your library, external games, private Steam data, and wallet credentials. Individual plugin removal offers the same checked-by-default option; settings for unknown third-party plugins are retained. To also remove known application data, owned private Steam data/image, and the downloader’s saved credentials, use:
 
 ```sh
 bash ~/.local/share/playlite/uninstall.sh --purge-data --purge-secrets --remove-steam-image

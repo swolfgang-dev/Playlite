@@ -51,3 +51,19 @@ class PluginFolderTests(unittest.TestCase):
                 install_archive(archive, plugins)
             self.assertTrue((old / 'manifest.json').exists())
             self.assertEqual(installed_plugins(plugins)[0]['id'], 'ImageStudio')
+
+    def test_reinstall_recovers_cache_only_folder_but_protects_user_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);plugins=root/'plugins'
+            destination=plugins/'playlite-plugin-example';destination.mkdir(parents=True)
+            cache=destination/'__pycache__';cache.mkdir();(cache/'plugin.cpython-314.pyc').write_bytes(b'cache')
+            archive=root/'plugin.zip'
+            with ZipFile(archive,'w') as bundle:
+                bundle.writestr('manifest.json',json.dumps(dict(id='Example',name='Example',version='1.0',api_version=1,type='generic',repository='owner/playlite-plugin-example')))
+                bundle.writestr('plugin.py','pass')
+            note=destination/'notes.txt';note.write_text('keep')
+            with self.assertRaisesRegex(ValueError,'already occupied'):install_archive(archive,plugins)
+            self.assertEqual(note.read_text(),'keep');note.unlink()
+            install_archive(archive,plugins)
+            self.assertEqual(installed_plugins(plugins)[0]['id'],'Example')
+            self.assertTrue((destination/'plugin.py').exists())
