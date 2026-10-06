@@ -275,7 +275,8 @@ class MetadataEditor(QDialog):
             from PyQt6.QtGui import QDesktopServices
             directory = self.data / 'artwork' / self.game['Id']
             directory.mkdir(parents=True, exist_ok=True)
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
+            from .desktop import open_folder
+            open_folder(directory)
         folder.clicked.connect(open_folder)
         folder_row = QHBoxLayout()
         folder_row.addWidget(folder, 0, Qt.AlignmentFlag.AlignLeft)

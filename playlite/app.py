@@ -2,6 +2,7 @@ from .date_display import display_date
 from .theme import colour, set_style
 from .theme import apply as apply_theme, themed_asset
 from .lifecycle import show_warning
+from .desktop import open_folder
 from .lifecycle import run_dialog
 import argparse
 import html
@@ -1347,7 +1348,11 @@ class LibraryWindow(QMainWindow):
             restore=getattr(plugin,'restore_downloads',None)
             if callable(restore):restore(self,self.download_queue)
         self.downloads_panel = DownloadsPanel(self.game_scroll, self.download_queue)
-        self.downloads_button = DownloadsButton(self.list, self.downloads_panel, self.download_queue)
+        self.downloads_button = DownloadsButton(toolbar, self.downloads_panel, self.download_queue, toolbar=True)
+        self.downloads_button.button.setFixedSize(control_height, control_height)
+        set_style(self.downloads_button.button, 'padding: 0;')
+        toolbar.layout().addSpacing(12)
+        toolbar.layout().addWidget(self.downloads_button.button)
         self.apply_panel_appearance()
         self.split.splitterMoved.connect(self.remember_library_width)
         self.configure_view()
@@ -1419,7 +1424,7 @@ class LibraryWindow(QMainWindow):
             if game['Id'] == previous:
                 selected = item
         self.list.balance_grid()
-        self.count.setText(f'{self.list.count()} / {len(self.games)} games')
+        self.update_game_count()
         active = sum(bool(value) for value in self.active_filters.values())
         self.filter_button.setToolTip(f'Filters ({active} active)' if active else 'Filters')
         self.filter_button.setProperty('activeFilter', bool(active))
@@ -1757,7 +1762,7 @@ class LibraryWindow(QMainWindow):
         if game.get('InstallDirectory'):
             folder = QPushButton(game['InstallDirectory'])
             folder.setObjectName('folder')
-            folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(game['InstallDirectory'])))
+            folder.clicked.connect(lambda: open_folder(game['InstallDirectory']))
             set_style(folder, 'QPushButton#folder { padding: 0; }')
             folder.setFixedSize(folder.sizeHint().width(), folder.fontMetrics().height())
             folder.setToolTip(game['InstallDirectory'])
@@ -1846,6 +1851,7 @@ class LibraryWindow(QMainWindow):
             self.play_hero.position_play_control()
 
     def apply_panel_appearance(self):
+        self.downloads_panel.set_transparency(self.settings.value('appearance/downloadsPanelTransparency', 0, type=int))
         self.list.panel_transparency = max(0, min(100, self.settings.value('appearance/sidePanelTransparency', 0, type=int)))
         self.list.viewport().setAutoFillBackground(False)
         self.list.update_scrollbar_padding()
@@ -2071,9 +2077,15 @@ class LibraryWindow(QMainWindow):
         self.list.viewport().update()
         self.update_library_scrollbar_policy()
 
+    def update_game_count(self):
+        selected = len(self.list.selectedItems())
+        self.count.setText(f'{selected} / {self.list.count()} selected' if selected > 1
+                           else f'{self.list.count()} / {len(self.games)} games')
+
     def update_compact_library(self):
         if not hasattr(self, 'list'):
             return
+        self.update_game_count()
         compact = (self.width() < 900 or self.prefer_compact_library) and not self.is_grid
         changed = compact != self.compact_library
         start_width = self.list.width()

@@ -33,6 +33,22 @@ class QueryTests(unittest.TestCase):
 
 
 class LibraryControlsTests(unittest.TestCase):
+    def test_downloads_follow_count_and_multiple_selection_updates_count(self):
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            (data / 'library.json').write_text(json.dumps(GAMES))
+            window = LibraryWindow(data)
+            toolbar = window.count.parentWidget()
+            layout = toolbar.layout()
+            self.assertGreater(layout.indexOf(window.downloads_button.button), layout.indexOf(window.count))
+            self.assertEqual(window.list.viewportMargins().bottom(), 0)
+            window.list.item(0).setSelected(True)
+            window.list.item(1).setSelected(True)
+            self.assertEqual(window.count.text(), '2 / 3 selected')
+            window.list.clearSelection()
+            self.assertEqual(window.count.text(), '3 / 4 games')
+            window.close()
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication(['playlite'])

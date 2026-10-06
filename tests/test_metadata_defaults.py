@@ -68,6 +68,28 @@ class MetadataDefaultsTests(unittest.TestCase):
     def test_no_settings_disables_save_button(self):
         self.assertFalse(self.dialog(settings=False).save_field_defaults_button.isEnabled())
 
+    def test_skip_moves_to_next_source_without_changing_defaults_or_ids(self):
+        dialog = self.dialog()
+        dialog.set_step(1)
+        dialog.provider_queue = ['Second']
+        with patch.object(dialog, 'start_next_provider') as next_source:
+            dialog.skip_provider_button.click()
+            next_source.assert_called_once()
+        self.assertEqual(dialog.id_fields['First'].text(), '123')
+        self.assertTrue(dialog.source_toggles['Name']['First'].isChecked())
+
+    def test_skip_last_source_reviews_downloads_or_returns_to_options(self):
+        dialog = self.dialog()
+        dialog.set_step(1)
+        dialog.provider_payloads = {'First': {}}
+        with patch.object(dialog, 'show_combined_preview') as review:
+            dialog.skip_provider_button.click()
+            review.assert_called_once()
+        dialog.provider_payloads = {}
+        dialog.skip_provider_button.click()
+        self.assertEqual(dialog.pages.currentIndex(), 0)
+        self.assertIn('skipped', dialog.status.text())
+
     def test_selections_persist_without_save_defaults(self):
         dialog = self.dialog()
         dialog.source_toggles['Name']['First'].setChecked(False)

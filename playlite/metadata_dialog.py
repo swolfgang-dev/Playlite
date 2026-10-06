@@ -464,6 +464,10 @@ class MetadataDownloader(QDialog):
             button.hide()
             navigation.addWidget(button)
         self.next_button = QPushButton('Download')
+        self.skip_provider_button = QPushButton('Skip')
+        self.skip_provider_button.setToolTip('Skip this metadata source for this download.')
+        self.skip_provider_button.clicked.connect(self.skip_provider)
+        navigation.addWidget(self.skip_provider_button)
         self.next_button.clicked.connect(self.next_step)
         navigation.addWidget(self.next_button)
         navigation.addWidget(self.buttons)
@@ -538,6 +542,7 @@ class MetadataDownloader(QDialog):
         self.back_button.setVisible(index > 0)
         self.next_button.setVisible(index < 2)
         self.next_button.setText('Download' if index == 0 else 'Select')
+        self.skip_provider_button.setVisible(index == 1)
         self.apply_button.setVisible(index == 2)
         for button in (self.previous_image, self.next_image):
             button.setVisible(self.mode == 'images' and index == 2)
@@ -619,6 +624,19 @@ class MetadataDownloader(QDialog):
             self.steps.setText(f'2. Select the matching game on {provider}')
         self.search()
 
+    def skip_provider(self):
+        if self.pages.currentIndex() != 1 or not self.skip_provider_button.isEnabled():
+            return
+        self.resolving_id = False
+        self.results.clear()
+        if self.provider_queue:
+            self.start_next_provider()
+        elif self.provider_payloads:
+            self.show_combined_preview()
+        else:
+            self.set_step(0)
+            self.status.setText('All metadata sources were skipped. Choose sources to try again.')
+
     def sync_source_column(self, provider):
         states = [toggles[provider].isChecked() for toggles in self.source_toggles.values() if toggles[provider].isEnabled()]
         state = Qt.CheckState.Checked if all(states) else Qt.CheckState.Unchecked if not any(states) else Qt.CheckState.PartiallyChecked
@@ -655,6 +673,7 @@ class MetadataDownloader(QDialog):
         self.results.setEnabled(not value)
         self.back_button.setEnabled(not value)
         self.next_button.setEnabled(not value)
+        self.skip_provider_button.setEnabled(not value)
         self.apply_button.setEnabled(not value and self.payload is not None)
         self.status.setText(message)
 

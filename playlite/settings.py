@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QMenu, QCheckBox, QButtonGroup, QComboBox, QDialog,
 from .theme import ROLES, palette, base_palette, apply as apply_theme
 from .image_filters import OPTIONS, defaults as image_filter_defaults, FilterChecks
 from .lifecycle import run_dialog
+from .desktop import open_folder
 from .link_names import load_names, LinkNamesDialog
 
 
@@ -174,7 +175,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.panel_transparency = {}
         for key, label, hint in [
                 ('sidePanelTransparency', 'Side panel transparency', 'Library navigation background'),
-                ('gamePanelTransparency', 'Game panel transparency', 'Detail panels; artwork and icons stay opaque')]:
+                ('gamePanelTransparency', 'Game panel transparency', 'Detail panels; artwork and icons stay opaque'),
+                ('downloadsPanelTransparency', 'Downloads panel transparency', 'Download panel and active download strip; controls stay opaque')]:
             slider = SettingsSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, 100)
             slider.setValue(settings.value(f'appearance/{key}', 0, type=int))
@@ -1044,7 +1046,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
 
     def open_plugins_folder(self):
         self.plugins_directory.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.plugins_directory)))
+        open_folder(self.plugins_directory)
 
     def set_colour_button(self, button, value):
         color = QColor(value)

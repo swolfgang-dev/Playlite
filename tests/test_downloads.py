@@ -10,6 +10,73 @@ class DownloadTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
 
+    def test_active_strip_reserves_space_and_panel_expands_above_it(self):
+        from PyQt6.QtWidgets import QScrollArea
+        host=QScrollArea();host.resize(800,600);host.setWidget(QWidget())
+        queue=DownloadQueue();panel=DownloadsPanel(host,queue)
+        host.show()
+        row=queue.enqueue('Active game','/tmp/active-strip',lambda *_:Mock())
+        self.app.processEvents()
+        queue.update(row,35,'Steam downloading · 35% · 35 / 100 MiB · 10 MiB/s · 1 min remaining · disk 50 / 120 MiB')
+        status=panel.cards[row.id][2]
+        self.assertEqual(status.text(),'Downloading · 35 / 100 MiB')
+        self.assertEqual(status.metrics_label.text(),'10 MiB/s · 1 min remaining')
+        self.assertTrue(panel.active_strip.isVisible())
+        self.assertIn('Active game',panel.active_label.text())
+        self.assertEqual(panel.active_progress.value(),350)
+        strip_height=panel.active_strip.height()
+        self.assertEqual(host.viewportMargins().bottom(),strip_height)
+        panel.expand_button.click();panel.animation.setCurrentTime(panel.animation.duration())
+        self.assertFalse(panel.active_progress.isVisible())
+        self.assertEqual(panel.active_strip.height(),strip_height)
+        self.assertLessEqual(panel.height(),host.height()*.5)
+        self.assertEqual(panel.geometry().bottom()+1,panel.active_strip.y())
+        self.assertGreater(host.viewportMargins().bottom(),strip_height)
+        panel.set_open(False);panel.animation.setCurrentTime(panel.animation.duration())
+        self.assertTrue(panel.active_progress.isVisible())
+        self.assertEqual(host.viewportMargins().bottom(),strip_height)
+        queue.finish(row,True,'Done')
+        self.assertFalse(panel.active_strip.isVisible())
+        self.assertEqual(host.viewportMargins().bottom(),0)
+        host.close()
+
+    def test_remove_completed_entry_keeps_files_and_other_downloads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);files=root/'game';files.mkdir();(files/'game.exe').write_bytes(b'game')
+            queue=DownloadQueue(storage=root/'downloads.json')
+            row=queue.enqueue('Finished',str(files),lambda *_:Mock())
+            other=queue.enqueue('Waiting',str(root/'other'),lambda *_:Mock())
+            self.app.processEvents();queue.finish(row,True,'Done')
+            host=QWidget();panel=DownloadsPanel(host,queue)
+            panel.cards[row.id][0].remove_button.click()
+            self.assertNotIn(row,queue.entries)
+            self.assertIn(other,queue.entries)
+            self.assertNotIn(row.id,panel.cards)
+            self.assertEqual((files/'game.exe').read_bytes(),b'game')
+            self.assertNotIn(row.id,[entry.id for entry in DownloadQueue(storage=root/'downloads.json').entries])
+            queue.remove_completed(other)
+            self.assertIn(other,queue.entries)
+            host.close()
+
+    def test_status_changes_keep_card_and_panel_height_stable(self):
+        host=QWidget();host.resize(1000,800)
+        queue=DownloadQueue();row=queue.enqueue('Game','/tmp/stable-download',lambda *_:Mock())
+        panel=DownloadsPanel(host,queue);host.show();self.app.processEvents()
+        panel.set_open(True);panel.animation.setCurrentTime(panel.animation.duration())
+        heights=[]
+        for state,progress,message in (
+                ('Downloading',None,'Starting'),
+                ('Downloading',45,'45 / 100 MiB · 10 MiB/s · 1 min remaining'),
+                ('Paused',45,'Paused · partial files retained'),
+                ('Complete',100,'Windows download completed and verified by Steam')):
+            row.state=state;row.progress=progress;row.status=message
+            panel.refresh();self.app.processEvents()
+            if state=='Paused':
+                self.assertEqual(panel.cards[row.id][2].text(),'Paused · partial files retained')
+            heights.append((panel.height(),panel.cards[row.id][0].sizeHint().height()))
+        self.assertEqual(len(set(heights)),1,heights)
+        host.close()
+
     def test_games_start_sequentially_and_failure_advances_queue(self):
         queue=DownloadQueue(); first=Mock();second=Mock()
         a=queue.enqueue('First','/tmp/queue-first',lambda *_:first)
