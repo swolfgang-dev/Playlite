@@ -67,3 +67,23 @@ class MetadataDefaultsTests(unittest.TestCase):
 
     def test_no_settings_disables_save_button(self):
         self.assertFalse(self.dialog(settings=False).save_field_defaults_button.isEnabled())
+
+    def test_selections_persist_without_save_defaults(self):
+        dialog = self.dialog()
+        dialog.source_toggles['Name']['First'].setChecked(False)
+        dialog.toggle_source_column('Second', False)
+        reopened = self.dialog()
+        self.assertFalse(reopened.source_toggles['Name']['First'].isChecked())
+        self.assertTrue(reopened.source_toggles['Description']['First'].isChecked())
+        self.assertFalse(any(toggles['Second'].isChecked() for toggles in reopened.source_toggles.values()))
+
+    def test_provider_columns_fit_widest_styled_header(self):
+        dialog = self.dialog()
+        header = dialog.fields.horizontalHeader()
+        header.setStyleSheet('QHeaderView { font-size: 24px; }')
+        dialog.table_providers['Second'].name = 'Long metadata provider'
+        dialog.fields.horizontalHeaderItem(2).setText('Long metadata provider')
+        dialog.fit_metadata_columns()
+        widths = [dialog.fields.columnWidth(column) for column, _ in dialog.provider_columns]
+        self.assertEqual(len(set(widths)), 1)
+        self.assertGreaterEqual(widths[0], header.fontMetrics().horizontalAdvance('Long metadata provider') + 40)

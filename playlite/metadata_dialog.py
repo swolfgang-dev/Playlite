@@ -363,6 +363,9 @@ class MetadataDownloader(QDialog):
         if mode == 'metadata':
             self.skip_existing.hide()
             self.save_defaults.hide()
+            for toggles in self.source_toggles.values():
+                for toggle in toggles.values():
+                    toggle.toggled.connect(self.persist_field_defaults)
         self.pages.addWidget(options)
 
         match_page = QWidget()
@@ -504,13 +507,17 @@ class MetadataDownloader(QDialog):
         self.fit_metadata_columns()
 
     def fit_metadata_columns(self):
+        self.fields.ensurePolished()
+        header = self.fields.horizontalHeader()
+        header.ensurePolished()
         metrics = self.fields.fontMetrics()
         field_widths = [metrics.horizontalAdvance(self.fields.item(row, 0).text()) + 24
                         for row in range(self.fields.rowCount()) if self.fields.item(row, 0)]
         self.fields.setColumnWidth(0, max([80] + field_widths))
         widths = [field.fontMetrics().horizontalAdvance(field.text() or field.placeholderText()) + 40
                   for field in self.id_fields.values()]
-        width = max([80] + widths + [metrics.horizontalAdvance(plugin.name) + 24 for plugin in self.table_providers.values()])
+        width = max([80] + widths + [header.sectionSizeHint(column) for column, _ in self.provider_columns]
+                    + [header.fontMetrics().horizontalAdvance(plugin.name) + 40 for plugin in self.table_providers.values()])
         for column, provider in self.provider_columns:
             self.fields.setColumnWidth(column, width)
 
@@ -550,6 +557,11 @@ class MetadataDownloader(QDialog):
             self.next_image.setEnabled(index < self.image_tabs.count() - 1)
 
     def save_field_defaults(self):
+        self.persist_field_defaults()
+        if self.settings is not None:
+            self.status.setText('Default fields and sources saved.')
+
+    def persist_field_defaults(self, *_):
         if self.settings is None:
             return
         checked = [item.data(Qt.ItemDataRole.UserRole) for item in self.field_items()
@@ -560,7 +572,6 @@ class MetadataDownloader(QDialog):
             for provider, toggle in toggles.items():
                 self.settings.setValue(f'metadata/sources/{key}/{provider}', toggle.isChecked())
         self.settings.sync()
-        self.status.setText('Default fields and sources saved.')
 
     def next_step(self):
         if self.pages.currentIndex() == 1:
