@@ -196,13 +196,12 @@ def install_archive(archive, directory=None, repository=''):
                 finally:
                     if before is not None: record_added_files(runtime, before, owned)
         existing = next((Path(item['manifest_path']).parent for item in installed_plugins(directory)
-                         if item['id'] == identity), None)
+                         if item['id'] == identity or (repository and item.get('repository', '').casefold() == repository.casefold())), None)
         if existing and (existing.is_symlink() or existing.resolve().parent != directory.resolve()):
             raise ValueError('Plugin directory is outside the installed plugin folder.')
         if repository:
             manifest['repository'] = repository
-        existing_folder = next((Path(entry['manifest_path']).parent for entry in installed_plugins(directory) if entry.get('id') == manifest['id']), None)
-        destination = existing_folder or directory / plugin_folder(manifest)
+        destination = existing or directory / plugin_folder(manifest)
         if destination.exists() and destination != existing:
             raise ValueError('Plugin destination folder is already occupied.')
         if existing:

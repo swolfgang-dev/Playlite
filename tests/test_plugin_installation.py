@@ -89,3 +89,18 @@ class PluginInstallationTests(unittest.TestCase):
             delete_plugin(entry['id'], plugins)
             self.assertFalse(Path(entry['manifest_path']).exists())
             self.assertEqual((registration / 'cleanup.py').read_text(), script)
+
+    def test_repository_update_can_change_plugin_id_without_duplicate_folder(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            plugins = root / 'plugins'
+            install_archive(self.archive(root, enabled=False), plugins, 'owner/playlite-plugin-example')
+            archive = root / 'renamed.zip'
+            with ZipFile(archive, 'w') as bundle:
+                bundle.writestr('manifest.json', json.dumps(dict(id='Renamed', name='Renamed', version='2', api_version=1, type='generic')))
+                bundle.writestr('plugin.py', 'from playlite.providers import GenericPlugin\nclass Plugin(GenericPlugin):\n    pass\n')
+            install_archive(archive, plugins, 'owner/playlite-plugin-example')
+            entries = installed_plugins(plugins)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]['id'], 'Renamed')
+            self.assertFalse(entries[0]['enabled'])
