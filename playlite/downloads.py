@@ -57,6 +57,17 @@ class DownloadQueue(QObject):
         rank={'Downloading':0,'Queued':1,'Failed':2,'Paused':3,'Cancelled':4,'Complete':5}
         return sorted(self.entries,key=lambda row:rank.get(row.state,3))
 
+    def move_queued(self,row,direction):
+        if self.stopped or row.state!='Queued' or direction not in (-1,1):return
+        queued=[entry for entry in self.entries if entry.state=='Queued']
+        if row not in queued:return
+        target=queued.index(row)+direction
+        if not 0<=target<len(queued):return
+        other=queued[target]
+        first=self.entries.index(row);second=self.entries.index(other)
+        self.entries[first],self.entries[second]=self.entries[second],self.entries[first]
+        self.changed.emit()
+
     def enqueue(self,name,destination,factory,metadata=None):
         if self.stopped:raise ValueError('The download queue is closing.')
         destination=str(Path(destination).expanduser().resolve())
@@ -142,6 +153,7 @@ class DownloadsPanel(QFrame):
     def __init__(self,host,queue):
         super().__init__(host)
         self.queue=queue;self.opened=False;self.amount=0.;self.cards={}
+        self.host_margins=host.viewportMargins() if hasattr(host,'viewportMargins') else None
         self.setObjectName('downloadsPanel')
         set_style(self,f'QFrame#downloadsPanel {{ background: {colour("#202123")}; border: 1px solid {colour("#45474b")}; border-top-left-radius: 12px; border-top-right-radius: 12px; }}')
         layout=QVBoxLayout(self);layout.setContentsMargins(20,16,20,16);layout.setSpacing(12)
@@ -152,7 +164,7 @@ class DownloadsPanel(QFrame):
         layout.addLayout(header)
         self.summary=QLabel('No downloads queued');layout.addWidget(self.summary)
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content=QWidget();self.rows=QVBoxLayout(content);self.rows.setContentsMargins(0,0,0,0);self.rows.setSpacing(12);self.rows.addStretch()
+        content=QWidget();self.rows=QVBoxLayout(content);self.rows.setContentsMargins(12,12,12,12);self.rows.setSpacing(12);self.rows.addStretch()
         scroll.setWidget(content);layout.addWidget(scroll,1)
         self.animation=QVariantAnimation(self);self.animation.setDuration(260);self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.animation.valueChanged.connect(self.set_amount);self.animation.finished.connect(self.settle)
@@ -165,7 +177,11 @@ class DownloadsPanel(QFrame):
     def place(self):
         host=self.parentWidget();height=min(460,max(160,round(host.height()*.65)))
         height=min(host.height(),height)
-        self.setGeometry(0,host.height()-round(height*self.amount),host.width(),height)
+        visible_height=round(height*self.amount)
+        if self.host_margins is not None:
+            margins=self.host_margins
+            host.setViewportMargins(margins.left(),margins.top(),margins.right(),margins.bottom()+visible_height)
+        self.setGeometry(0,host.height()-visible_height,host.width(),height)
         self.raise_()
 
     def set_amount(self,value):self.amount=float(value);self.place()
@@ -180,14 +196,27 @@ class DownloadsPanel(QFrame):
 
     def refresh(self):
         queued=sum(row.state=='Queued' for row in self.queue.entries)
+        waiting=[row for row in self.queue.entries if row.state=='Queued']
         self.summary.setText(f'{queued} waiting · '+('Downloading' if self.queue.active else 'Idle'))
         ids={row.id for row in self.queue.entries}
         for identifier in list(self.cards):
             if identifier not in ids:self.cards.pop(identifier)[0].deleteLater()
         for index,row in enumerate(self.queue.ordered()):
             if row.id not in self.cards:
-                card=QFrame();box=QVBoxLayout(card);box.setContentsMargins(12,10,12,10)
+                card=QFrame();card.setObjectName('downloadCard')
+                set_style(card,
+                    f'QFrame#downloadCard {{ background: {colour("#292b2e")}; border: 1px solid {colour("#45474b")}; border-radius: 8px; }}'
+                    f'QFrame#downloadCard QPushButton {{ background: {colour("#3b4654")}; border: 1px solid {colour("#566477")}; }}'
+                    f'QFrame#downloadCard QPushButton:hover {{ background: {colour("#4b5b70")}; }}'
+                    f'QFrame#downloadCard QPushButton:pressed {{ background: {colour("#303c4b")}; }}'
+                    f'QFrame#downloadCard QPushButton:disabled {{ background: {colour("#30343a")}; color: {colour("#7f8791")}; border-color: {colour("#45474b")}; }}')
+                box=QVBoxLayout(card);box.setContentsMargins(14,12,14,12);box.setSpacing(10)
                 line=QHBoxLayout();line.setSpacing(10);name=QLabel();name.setWordWrap(True);line.addWidget(name,1)
+                up=QPushButton('↑');up.setToolTip('Move earlier in queue');up.setAccessibleName('Move earlier in queue')
+                down=QPushButton('↓');down.setToolTip('Move later in queue');down.setAccessibleName('Move later in queue')
+                up.clicked.connect(lambda checked=False,row=row:self.queue.move_queued(row,-1))
+                down.clicked.connect(lambda checked=False,row=row:self.queue.move_queued(row,1))
+                line.addWidget(up);line.addWidget(down)
                 action=QPushButton();action.clicked.connect(lambda checked=False,row=row:self.action(row))
                 library=QPushButton('Add to Playlite')
                 library.clicked.connect(lambda checked=False,row=row:row.controller.add_to_library())
@@ -198,9 +227,12 @@ class DownloadsPanel(QFrame):
                 status=QLabel();status.setWordWrap(True);box.addWidget(status)
                 bar=QProgressBar();bar.setRange(0,1000);box.addWidget(bar)
                 self.rows.insertWidget(self.rows.count()-1,card)
-                self.cards[row.id]=(card,name,status,bar,action,library,pause,retry)
-            card,name,status,bar,action,library,pause,retry=self.cards[row.id]
+                self.cards[row.id]=(card,name,status,bar,action,library,pause,retry,up,down)
+            card,name,status,bar,action,library,pause,retry,up,down=self.cards[row.id]
             self.rows.removeWidget(card);self.rows.insertWidget(index,card)
+            up.setVisible(row.state=='Queued');down.setVisible(row.state=='Queued')
+            up.setEnabled(row.state=='Queued' and waiting.index(row)>0)
+            down.setEnabled(row.state=='Queued' and waiting.index(row)<len(waiting)-1)
             pause.setVisible(row.state in ('Queued','Downloading'));pause.setEnabled(not row.cancelled)
             retry.setText('Resume' if row.state=='Paused' else 'Retry')
             retry.setVisible(row.state in ('Failed','Cancelled','Paused'));retry.setEnabled(callable(row.factory))

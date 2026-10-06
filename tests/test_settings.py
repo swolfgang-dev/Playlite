@@ -17,6 +17,25 @@ APP = QApplication.instance() or QApplication([])
 
 
 class SettingsTests(unittest.TestCase):
+    def test_general_install_folder_is_saved_and_used_by_add_game(self):
+        from PyQt6.QtWidgets import QWidget,QPushButton
+        from playlite.manual_installation import ManualInstallation
+        with tempfile.TemporaryDirectory() as directory:
+            data=Path(directory);settings=QSettings(str(data/'ui.ini'),QSettings.Format.IniFormat)
+            dialog=SettingsDialog(settings)
+            dialog.default_install_folder.setText('/games/default')
+            dialog.save()
+            self.assertEqual(settings.value('installation/defaultFolder'),'/games/default')
+            editor=QWidget();editor.data=data;editor.fields={}
+            widget=ManualInstallation().create_editor(editor,{})
+            with patch('playlite.manual_installation.choose_directory',return_value='') as choose:
+                widget.findChild(QPushButton,'browseInstallDirectory').click()
+                self.assertEqual(choose.call_args.args[2],'/games/default')
+            override=ManualInstallation().create_editor(editor,{},directory_defaults={'InstallDirectory':'/games/plugin'})
+            with patch('playlite.manual_installation.choose_directory',return_value='') as choose:
+                override.findChild(QPushButton,'browseInstallDirectory').click()
+                self.assertEqual(choose.call_args.args[2],'/games/plugin')
+
     def test_default_installation_method_is_exclusive_saved_and_used(self):
         from playlite.add_game import AddGameEditor
         with tempfile.TemporaryDirectory() as directory:

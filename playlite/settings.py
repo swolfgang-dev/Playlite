@@ -67,6 +67,54 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             return body
 
         general = page('General', 'Choose how Playlite opens and behaves when you close it.')
+        installation = self.card(general, 'Installation')
+        installation.addWidget(QLabel('Default installation folder'))
+        self.default_install_folder = QLineEdit(settings.value('installation/defaultFolder', '', type=str))
+        browse_install = QPushButton('Browse…')
+        def choose_install_folder():
+            from .lifecycle import choose_directory
+            folder=choose_directory(self,'Default installation folder',self.default_install_folder.text())
+            if folder:self.default_install_folder.setText(folder)
+        browse_install.clicked.connect(choose_install_folder)
+        install_row=QHBoxLayout();install_row.setSpacing(10)
+        install_row.addWidget(self.default_install_folder,1);install_row.addWidget(browse_install)
+        installation.addLayout(install_row)
+        installation.addWidget(self.hint('Add Game browses from this folder. Plugin-specific installation folders take precedence.'))
+        installation.addWidget(QLabel('Default Wine prefix parent folder'))
+        self.default_prefix_folder = QLineEdit(settings.value('installation/defaultPrefixFolder', '', type=str))
+        browse_prefix = QPushButton('Browse…')
+        def choose_prefix_folder():
+            from .lifecycle import choose_directory
+            folder = choose_directory(self, 'Default Wine prefix parent folder', self.default_prefix_folder.text())
+            if folder:
+                self.default_prefix_folder.setText(folder)
+        browse_prefix.clicked.connect(choose_prefix_folder)
+        prefix_row = QHBoxLayout()
+        prefix_row.setSpacing(10)
+        prefix_row.addWidget(self.default_prefix_folder, 1)
+        prefix_row.addWidget(browse_prefix)
+        installation.addLayout(prefix_row)
+        installation.addWidget(self.hint('Lutris creates a separate prefix for each game under this folder. Plugin-specific prefix folders take precedence.'))
+        updates = self.card(general, 'Updates')
+        from importlib.metadata import version, PackageNotFoundError
+        try:
+            current_version = version('playlite')
+        except PackageNotFoundError:
+            current_version = 'repo checkout'
+        self.application_version = current_version
+        self.update_status = QLabel('Current version: ' + current_version)
+        self.update_status.setWordWrap(True)
+        updates.addWidget(self.update_status)
+        self.check_update_button = QPushButton('Check for updates')
+        self.install_update_button = QPushButton('Install update and restart')
+        self.install_update_button.setEnabled(False)
+        self.check_update_button.clicked.connect(self.check_application_update)
+        self.install_update_button.clicked.connect(self.install_application_update)
+        update_row = QHBoxLayout()
+        update_row.addWidget(self.check_update_button)
+        update_row.addWidget(self.install_update_button)
+        updates.addLayout(update_row)
+        updates.addWidget(self.hint('Updates retain your library, settings, and plugins. Repo builds are updated through Git. Update output is saved to update.log in this profile’s Playlite data folder.'))
         startup = self.card(general, 'Startup')
         self.default_view = QComboBox()
         for title, value in [('Grid', 'grid'), ('List', 'list'), ('Compact list', 'compact'), ('Remember last', 'remember')]:
@@ -98,7 +146,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         links.addWidget(self.hint('Set friendly names for website links in the game view.'))
         self.link_names_button = QPushButton('Link names…')
         self.link_names_button.clicked.connect(self.edit_link_names)
-        links.addWidget(self.link_names_button)
+        links.addWidget(self.link_names_button, alignment=Qt.AlignmentFlag.AlignLeft)
         general.addStretch()
 
         appearance = page('Appearance', 'Adjust the background, panel transparency, and interface colours.')
@@ -150,6 +198,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.colour_buttons = {}
         saved_palette = palette(settings)
         colour_groups = {
+            'Downloads': tuple(role for role in ROLES if role.startswith('download_')),
             'Surfaces': ('window', 'sidebar', 'panel', 'popup', 'placeholder'),
             'Controls': ('control', 'hover', 'disabled_surface', 'selection', 'accent', 'scrollbar'),
             'Text and accents': ('text', 'secondary_text', 'disabled_text', 'brand', 'error'),
@@ -639,6 +688,56 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         layout.addWidget(buttons)
         run_dialog(dialog)
 
+    def update_task(self, function, complete):
+        from .metadata_dialog import Task
+        from PyQt6.QtCore import QThreadPool
+        self.check_update_button.setEnabled(False)
+        self.install_update_button.setEnabled(False)
+        task = Task(function)
+        self.application_update_task = task
+        def failed(error):
+            self.update_status.setText('Update failed: ' + str(error))
+            self.check_update_button.setEnabled(True)
+        task.signals.failed.connect(failed)
+        task.signals.succeeded.connect(complete)
+        QThreadPool.globalInstance().start(task)
+
+    def check_application_update(self):
+        from .updater import latest_release
+        self.update_status.setText('Checking GitHub releases…')
+        def complete(release):
+            self.application_release = release
+            self.check_update_button.setEnabled(True)
+            tag = release['tag_name']
+            repo = os.environ.get('PLAYLITE_PROFILE') == 'repo'
+            current = tag.lstrip('v') == self.application_version
+            message = ' · Update this checkout through Git.' if repo else ' · Already up to date.' if current else ' · Ready to install.'
+            self.update_status.setText('Latest release: ' + tag + message)
+            self.install_update_button.setEnabled(not repo and not current)
+        self.update_task(latest_release, complete)
+
+    def install_application_update(self):
+        from .updater import prepare_update, launch_update
+        release = getattr(self, 'application_release', None)
+        if release is None or os.environ.get('PLAYLITE_PROFILE') == 'repo':
+            return
+        self.update_status.setText('Downloading and verifying the installer…')
+        def complete(directory):
+            import shutil
+            window = self.parentWidget()
+            self.save()
+            if self.result() != QDialog.DialogCode.Accepted:
+                shutil.rmtree(directory)
+                self.check_update_button.setEnabled(True)
+                return
+            if window is None or not window.close():
+                shutil.rmtree(directory)
+                return
+            launch_update(directory, release['tag_name'])
+            from PyQt6.QtWidgets import QApplication
+            QApplication.instance().quit()
+        self.update_task(lambda: prepare_update(release), complete)
+
     def delete_selected_plugins(self):
         from .plugin_manager import delete_plugins
         from .metadata_dialog import Task
@@ -649,6 +748,27 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                       for index in self.installed_plugins.selectionModel().selectedRows()]
         if not identities:
             return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Uninstall plugins')
+        layout = QVBoxLayout(dialog)
+        label = QLabel('Uninstall selected plugins? External games and libraries are kept.')
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        keep = QCheckBox('Keep user settings for reinstalling')
+        keep.setChecked(True)
+        layout.addWidget(keep)
+        hint = QLabel('Stored wallet credentials and private Steam data are managed separately. Settings for unknown third-party plugins are retained.')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText('Uninstall')
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        from .lifecycle import run_dialog
+        if run_dialog(dialog) != QDialog.DialogCode.Accepted:
+            return
+        keep_settings = keep.isChecked()
         from .plugin_lifecycle import prepare_removal
         if not prepare_removal(identities, self, self.plugin_operation_status.appendPlainText):
             return
@@ -657,7 +777,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.install_selected_button.setEnabled(False)
         self.delete_plugin_button.setEnabled(False)
         self.plugin_operation_status.clear()
-        task = Task(lambda: delete_plugins(identities, task.signals.progress.emit))
+        task = Task(lambda: delete_plugins(identities, task.signals.progress.emit, keep_settings=keep_settings))
         self.batch_delete_task = task
         task.signals.progress.connect(self.plugin_operation_status.appendPlainText)
         def complete(results):
@@ -905,6 +1025,13 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.link_names = dialog.names
 
     def save(self):
+        prefix_folder = self.default_prefix_folder.text().strip()
+        if prefix_folder and not Path(prefix_folder).expanduser().is_absolute():
+            self.error.setText('Default Wine prefix parent folder must be an absolute path.')
+            return
+        install_folder=self.default_install_folder.text().strip()
+        if install_folder and not Path(install_folder).expanduser().is_absolute():
+            self.error.setText('Choose an absolute default installation folder.');return
         if getattr(self, 'installing_plugins', False) or getattr(self, 'deleting_plugins', False):
             self.error.setText('Wait for the plugin operation to finish before saving settings.')
             return
@@ -921,6 +1048,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         default_method = next((identity for identity, checkbox in self.default_method_checks.items()
                                if checkbox.isChecked() and self.default_method_owners[identity] not in self.deleted_plugin_ids), 'Manual')
         self.settings.setValue('installation/defaultMethod', default_method)
+        self.settings.setValue('installation/defaultPrefixFolder', str(Path(prefix_folder).expanduser()) if prefix_folder else '')
+        self.settings.setValue('installation/defaultFolder',str(Path(install_folder).expanduser()) if install_folder else '')
         self.settings.setValue('descriptions/hideRepeatedSentences', self.hide_description_overlap.isChecked())
         self.settings.setValue('app/defaultView', self.default_view.currentData())
         self.settings.setValue('links/friendlyNames', json.dumps(self.link_names))

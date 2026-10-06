@@ -20,11 +20,17 @@ class InstallerTests(unittest.TestCase):
             dialog.default_view.setCurrentIndex(dialog.default_view.findData('grid'))
             dialog.close_to_tray.setChecked(False)
             dialog.reset_filters.setChecked(True)
+            dialog.default_install_folder.setText(str(Path(directory) / 'games'))
+            dialog.default_prefix_folder.setText(str(Path(directory) / 'prefixes'))
             dialog.finish_setup()
             self.assertTrue(repo.value('onboarding/completed', False, type=bool))
             self.assertEqual(repo.value('app/defaultView'), 'grid')
             self.assertFalse(repo.value('app/closeToTray', type=bool))
             self.assertTrue(repo.value('app/resetSortingFilters', type=bool))
+            self.assertEqual(repo.value('installation/defaultFolder'), str(Path(directory) / 'games'))
+            self.assertEqual(repo.value('installation/defaultPrefixFolder'), str(Path(directory) / 'prefixes'))
+            self.assertFalse(release.contains('installation/defaultPrefixFolder'))
+            self.assertFalse(release.contains('installation/defaultFolder'))
             self.assertFalse(release.contains('onboarding/completed'))
 
     def test_dismissal_leaves_setup_pending_and_preferences_unchanged(self):
@@ -68,3 +74,21 @@ class InstallerTests(unittest.TestCase):
             plugin.post_install.assert_called_once_with(None)
             plugin.prepare_uninstall.return_value=False
             self.assertFalse(prepare_removal(['SteamDepotDownloader'],None,Mock()))
+
+    def test_default_folder_load_browse_and_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat)
+            settings.setValue('installation/defaultFolder', directory)
+            dialog = InstallerDialog(settings=settings)
+            self.assertEqual(dialog.default_install_folder.text(), directory)
+            from PyQt6.QtWidgets import QPushButton
+            with patch('playlite.lifecycle.choose_directory', return_value=directory + '/games'):
+                next(button for button in dialog.findChildren(QPushButton) if button.text() == 'Browse…').click()
+            self.assertEqual(dialog.default_install_folder.text(), directory + '/games')
+            dialog.default_install_folder.setText('relative/folder')
+            dialog.finish_setup()
+            self.assertFalse(settings.contains('onboarding/completed'))
+            self.assertEqual(settings.value('installation/defaultFolder'), directory)
+            dialog.default_install_folder.clear()
+            dialog.finish_setup()
+            self.assertEqual(settings.value('installation/defaultFolder'), '')

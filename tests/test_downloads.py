@@ -22,6 +22,27 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(a.state,'Failed');second.start.assert_called_once()
         queue.finish(b,True,'Validated');self.assertEqual(b.state,'Complete')
 
+    def test_reordering_changes_next_download_and_retains_active(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'downloads.json'
+            queue=DownloadQueue(storage=path)
+            controllers=[Mock(),Mock(),Mock()]
+            active=queue.enqueue('Active','/tmp/reorder-active',lambda *_:controllers[0])
+            first=queue.enqueue('First','/tmp/reorder-first',lambda *_:controllers[1])
+            second=queue.enqueue('Second','/tmp/reorder-second',lambda *_:controllers[2])
+            self.app.processEvents()
+            queue.move_queued(second,-1)
+            self.assertEqual(queue.ordered(),[active,second,first])
+            self.assertIs(queue.active,active)
+            self.assertEqual([r.name for r in DownloadQueue(storage=path).entries],['Active','Second','First'])
+            queue.move_queued(active,1)
+            queue.move_queued(second,-1)
+            self.assertEqual(queue.ordered(),[active,second,first])
+            queue.finish(active,True,'Done');self.app.processEvents()
+            self.assertIs(queue.active,second)
+            controllers[2].start.assert_called_once()
+            controllers[1].start.assert_not_called()
+
     def test_cancel_waiting_job_does_not_start_it_and_active_waits_for_worker(self):
         queue=DownloadQueue();controller=Mock();factory=Mock()
         a=queue.enqueue('Active','/tmp/active',lambda *_:controller)
@@ -50,6 +71,24 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(panel.width(),500)
         panel.animation.setCurrentTime(panel.animation.duration())
         self.assertFalse(panel.isVisible())
+        host.close()
+
+    def test_download_pane_reserves_scroll_space_and_restores_it_on_close(self):
+        from PyQt6.QtWidgets import QScrollArea
+        host=QScrollArea();host.resize(700,650)
+        content=QWidget();content.setFixedSize(600,1600);host.setWidget(content)
+        panel=DownloadsPanel(host,DownloadQueue());host.show();self.app.processEvents()
+        original=host.viewport().height()
+        panel.set_open(True);panel.animation.setCurrentTime(panel.animation.duration());self.app.processEvents()
+        self.assertLess(host.viewport().height(),original)
+        self.assertGreater(host.viewportMargins().bottom(),0)
+        host.verticalScrollBar().setValue(host.verticalScrollBar().maximum())
+        self.assertEqual(host.verticalScrollBar().value(),host.verticalScrollBar().maximum())
+        self.assertLessEqual(host.viewport().geometry().bottom(),panel.y())
+        host.resize(700,500);self.app.processEvents()
+        self.assertLessEqual(host.viewport().geometry().bottom(),panel.y())
+        panel.set_open(False);panel.animation.setCurrentTime(panel.animation.duration());self.app.processEvents()
+        self.assertEqual(host.viewportMargins().bottom(),0)
         host.close()
 
     def test_sidebar_footer_reserves_space_and_compact_label_has_tooltip(self):

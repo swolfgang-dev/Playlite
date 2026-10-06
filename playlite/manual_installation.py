@@ -1,5 +1,5 @@
 from pathlib import Path
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtWidgets import QWidget, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QLabel
 from playlite.providers import InstallationPlugin
 from playlite.lifecycle import choose_file, choose_directory
@@ -20,7 +20,12 @@ class ManualInstallation(InstallationPlugin):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         widget.fields = {}
-        directory_defaults = directory_defaults or {}
+        directory_defaults = dict(directory_defaults or {})
+        if getattr(editor, 'data', None):
+            general = QSettings(str(Path(editor.data) / 'ui.ini'), QSettings.Format.IniFormat)
+            for key, setting in [('InstallDirectory', 'defaultFolder'), ('Prefix', 'defaultPrefixFolder')]:
+                if not directory_defaults.get(key):
+                    directory_defaults[key] = general.value('installation/' + setting, '', type=str)
         for key, label in [('Executable', 'Executable'), ('InstallDirectory', 'Installation folder'),
                            ('Prefix', 'Wine prefix'), ('LaunchArguments', 'Launch arguments'),
                            ('LutrisId', 'Lutris game ID'), ('SteamId', 'Steam ID')]:

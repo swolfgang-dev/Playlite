@@ -42,7 +42,11 @@ def main(argv=None):
     parser.add_argument('--purge-data',action='store_true',help='Also delete scoped user data, including private Steam games and logins. External game folders remain untouched.')
     parser.add_argument('--purge-secrets',action='store_true',help='Also remove the Playlite Steam Downloader folder from KWallet (may ask to unlock the wallet).')
     parser.add_argument('--remove-steam-image',action='store_true',help='Also remove the dedicated Steam runtime image; shared Docker images remain.')
+    preferences=parser.add_mutually_exclusive_group()
+    preferences.add_argument('--keep-settings',action='store_true',help='Retain user and plugin settings for reinstalling (default).')
+    preferences.add_argument('--remove-settings',action='store_true',help='Remove known Playlite and plugin preferences; keep library data and external games.')
     args=parser.parse_args(argv)
+    if args.keep_settings and args.purge_data:parser.error('--keep-settings cannot be combined with --purge-data.')
     if os.environ.get('PLAYLITE_PROFILE')=='repo':
         parser.error('Run this release uninstaller from a normal terminal, outside the repo profile.')
     if os.getuid()==0:parser.error('Run as the user who installed Playlite, without sudo.')
@@ -245,6 +249,17 @@ finally:call('close',handle,False,'Playlite Uninstaller')
             for path in (data/'plugins',data):
                 try:path.rmdir()
                 except OSError:pass
+    if args.remove_settings or args.purge_data:
+        if not args.steam_only:
+            remove(data/'ui.ini')
+            for name in ('Lutris','Steam','SteamDownloader','SteamAutoCrack','Archiver'):
+                path=config/'Playlite'/(name+'.conf')
+                if path.is_file() or path.is_symlink():remove(path)
+            credential=home/'.config/playlite/igdb.json'
+            if credential.is_file() or credential.is_symlink():remove(credential)
+        else:
+            remove(config/'Playlite/SteamDownloader.conf')
+    else:print('User and plugin settings retained for reinstalling.')
     print('External game folders, Wine prefixes outside Playlite data, repositories, Docker, and shared system packages are retained.')
     if not args.purge_data:print('User data and private Steam volume retained. Use --purge-data to reset known application data and owned private Steam data.')
     if not args.purge_secrets:print('KWallet credentials retained. Use --purge-secrets to remove downloader credentials.')

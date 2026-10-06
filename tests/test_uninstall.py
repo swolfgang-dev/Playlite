@@ -107,3 +107,18 @@ class UninstallTests(unittest.TestCase):
         self.assertFalse((managed/'plugin.py').exists())
         self.assertTrue((managed/'user-note.txt').exists())
         self.assertTrue((manual/'plugin.py').exists())
+
+    def test_settings_choice_preserves_library_and_external_files(self):
+        settings = self.home / '.config/Playlite/Lutris.conf'
+        settings.parent.mkdir(parents=True)
+        settings.write_text('preferences')
+        external = settings.parent / 'OtherApp.conf'
+        external.write_text('external')
+        (self.data / 'ui.ini').write_text('preferences')
+        self.assertEqual(uninstall.main(['--dry-run', '--remove-settings']), 0)
+        self.assertTrue(settings.exists())
+        self.assertEqual(uninstall.main(['--remove-settings']), 0)
+        self.assertFalse(settings.exists())
+        self.assertFalse((self.data / 'ui.ini').exists())
+        self.assertTrue((self.data / 'library.json').exists())
+        self.assertTrue(external.exists())

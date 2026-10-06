@@ -84,7 +84,7 @@ class BulkPluginTests(unittest.TestCase):
                     for row in range(2):
                         table.selectionModel().select(table.model().index(row,0),QItemSelectionModel.SelectionFlag.Select|QItemSelectionModel.SelectionFlag.Rows)
                     self.assertEqual(len(table.selectionModel().selectedRows()),2)
-                with patch('PyQt6.QtCore.QThreadPool.globalInstance', return_value=Mock()):
+                with patch('PyQt6.QtCore.QThreadPool.globalInstance', return_value=Mock()), patch('playlite.lifecycle.run_dialog', return_value=1):
                     window.delete_plugin_button.click()
                     window.batch_delete_task.run()
                 self.assertEqual(window.installed_plugins.rowCount(),0)
@@ -179,3 +179,21 @@ class BulkPluginTests(unittest.TestCase):
                 self.assertEqual([index.row() for index in table.selectionModel().selectedRows()], [2])
             finally:
                 window.reject()
+
+    def test_plugin_removal_settings_choice_is_scoped(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            plugins = root / 'plugins'
+            target = plugins / 'lutris'
+            target.mkdir(parents=True)
+            manifest = dict(id='LutrisIntegration', name='Lutris', version='1')
+            (target / 'manifest.json').write_text(json.dumps(manifest))
+            settings = QSettings(str(root / 'preferences.ini'), QSettings.Format.IniFormat)
+            settings.setValue('LibraryDirectory', '/external/lutris')
+            with patch('PyQt6.QtCore.QSettings', return_value=settings):
+                delete_plugin('LutrisIntegration', plugins)
+                self.assertEqual(settings.value('LibraryDirectory'), '/external/lutris')
+                target.mkdir()
+                (target / 'manifest.json').write_text(json.dumps(manifest))
+                delete_plugin('LutrisIntegration', plugins, keep_settings=False)
+                self.assertFalse(settings.contains('LibraryDirectory'))

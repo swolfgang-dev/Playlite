@@ -1127,7 +1127,6 @@ class LibraryWindow(QMainWindow):
                 self.logo_menu.addAction(action_label).triggered.connect(callback)
         self.logo_menu.addSeparator()
         self.logo_menu.addAction('Settings…').triggered.connect(self.open_settings)
-        self.logo_menu.addAction('Get started…').triggered.connect(self.open_get_started)
         self.logo.setMenu(self.logo_menu)
         self.logo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.logo.customContextMenuRequested.connect(lambda position: self.logo_menu.popup(self.logo.mapToGlobal(position)))

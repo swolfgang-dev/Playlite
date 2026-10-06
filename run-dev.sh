@@ -2,6 +2,11 @@
 # Private development profile: never read the release installation's user files.
 set -euo pipefail
 playlite_source="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+export PLAYLITE_HOST_HOME="${PLAYLITE_HOST_HOME:-$HOME}"
+for playlite_xdg_name in DATA CONFIG CACHE STATE; do
+    playlite_xdg_variable="XDG_${playlite_xdg_name}_HOME"
+    export "PLAYLITE_HOST_${playlite_xdg_variable}=${!playlite_xdg_variable-}"
+done
 export PLAYLITE_PROFILE=repo
 export HOME="$playlite_source/.dev/home"
 export XDG_DATA_HOME="$HOME/.local/share"

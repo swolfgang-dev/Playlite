@@ -30,6 +30,13 @@ ROLES = {
     'play_surface': ('Play button background', '#f0f0f0'),
     'play_text': ('Play button text', '#151515'),
     'shadow': ('Artwork shadow', '#000000'),
+    'download_card': ('Download cards', '#292b2e'),
+    'download_button': ('Download buttons', '#3b4654'),
+    'download_button_border': ('Download button borders', '#566477'),
+    'download_button_hover': ('Download button hover', '#4b5b70'),
+    'download_button_pressed': ('Download button pressed', '#303c4b'),
+    'download_button_disabled': ('Disabled download buttons', '#30343a'),
+    'download_button_disabled_text': ('Disabled download button text', '#7f8791'),
 }
 # Compatibility for existing styles, painted widgets, SVGs and saved palettes.
 ALIASES = {default: role for role, (_, default) in ROLES.items()}

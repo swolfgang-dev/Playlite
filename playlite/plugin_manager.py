@@ -70,7 +70,7 @@ def set_plugin_enabled(identity, enabled, directory=None):
     return manifest
 
 
-def delete_plugin(identity, directory=None):
+def delete_plugin(identity, directory=None, keep_settings=True):
     directory = Path(directory or plugin_directory())
     entry = next((item for item in installed_plugins(directory) if item.get('id') == identity), None)
     if entry is None:
@@ -78,6 +78,9 @@ def delete_plugin(identity, directory=None):
     target = Path(entry['manifest_path']).parent
     if target.is_symlink() or target.resolve().parent != directory.resolve():
         raise ValueError('Plugin directory is outside the installed plugin folder.')
+    if not keep_settings:
+        from .plugin_settings import clear_plugin_settings
+        clear_plugin_settings(identity)
     if (target / RECEIPT).exists():
         remove_owned(target)
     else:
@@ -86,13 +89,13 @@ def delete_plugin(identity, directory=None):
     return entry
 
 
-def delete_plugins(identities, progress=None):
+def delete_plugins(identities, progress=None, keep_settings=True):
     results = []
     for identity in dict.fromkeys(identities):
         if progress:
             progress('Deleting ' + identity + '…')
         try:
-            plugin = delete_plugin(identity)
+            plugin = delete_plugin(identity, keep_settings=keep_settings)
             results.append((identity, plugin, ''))
         except (ValueError, OSError) as error:
             results.append((identity, None, str(error)))

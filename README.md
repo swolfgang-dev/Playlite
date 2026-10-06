@@ -14,9 +14,9 @@ bash install.sh
 
 The installer sets up dependencies automatically. Launch **Playlite** from your applications menu, or run `~/.local/bin/playlite`.
 
-On first launch, **Get started** lets you choose library and tray preferences and install optional plugins. Installing Steam Downloader opens its isolated Steam setup. Reopen this workflow from **Playlite menu → Get started…**; newly installed plugins become available after restarting Playlite. Each profile keeps its own setup status.
+On first launch, **Get started** lets you choose library and tray preferences and install optional plugins. Installing Steam Downloader opens its isolated Steam setup. These preferences remain available in **Settings → General**, and plugins can be managed in **Settings → Plugins**. Newly installed plugins become available after restarting Playlite. Each profile keeps its own setup status.
 
-To update, close Playlite and run the latest installer again. Your library and settings are retained. GitHub CLI and a GitHub login are not required for public releases.
+To update, use **Settings → General → Updates → Check for updates**, then **Install update and restart**. The installed app closes, runs the verified release installer, and reopens on success. If installation fails, inspect `~/.local/share/playlite/update.log` (or the equivalent custom XDG data path). Repo builds only check releases and must be updated through Git. You can also close Playlite and run the latest installer again. Your library and settings are retained. GitHub CLI and a GitHub login are not required for public releases.
 
 ## Uninstall
 
@@ -32,7 +32,7 @@ Remove the application and its tracked plugins:
 bash ~/.local/share/playlite/uninstall.sh
 ```
 
-This keeps your library/settings, private Steam data and saved credentials. To also remove known application data, owned private Steam data/image, and the downloader’s saved credentials, use:
+The script asks whether to keep user settings, defaulting to **Yes**. For unattended removal, use `--keep-settings` or `--remove-settings`. Removing settings clears known Playlite and plugin preferences while keeping your library, external games, private Steam data, and wallet credentials. Individual plugin removal offers the same checked-by-default option; settings for unknown third-party plugins are retained. To also remove known application data, owned private Steam data/image, and the downloader’s saved credentials, use:
 
 ```sh
 bash ~/.local/share/playlite/uninstall.sh --purge-data --purge-secrets --remove-steam-image

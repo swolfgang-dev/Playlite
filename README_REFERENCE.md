@@ -74,7 +74,8 @@ An authenticated GitHub release download is used instead of public raw-file URLs
 On first launch, Playlite shows plugin checkboxes
 and installation logs in the **Get started** workflow. Preferences
 include the default library view, close-to-tray behavior, and resetting filters
-on launch. Reopen it through **Playlite menu → Get started…**. Completion is
+on launch. Change these later in **Settings → General** and manage plugins in
+**Settings → Plugins**. Completion is
 saved separately for each profile. The installer itself installs only the core;
 `./install.sh --gui` additionally launches Playlite, while `--no-gui` retains
 unattended installation behavior.
