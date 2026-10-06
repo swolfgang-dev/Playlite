@@ -538,24 +538,46 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.available_cache.refresh()
 
     def render_available_plugins(self):
+        from PyQt6.QtCore import QVersionNumber
         from .plugin_manager import installed_plugins
         installed = installed_plugins()
-        identities = {plugin['id'] for plugin in installed}
-        repositories = {plugin.get(field, '').casefold() for plugin in installed
-                        for field in ('repository', 'distribution_repository')}
+        identities = {plugin['id']: plugin for plugin in installed}
+        repositories = {plugin[field].casefold(): plugin for plugin in installed
+                        for field in ('repository', 'distribution_repository') if plugin.get(field)}
         cache = self.available_cache
+        updates = {}
         self.available_plugins.setRowCount(0)
         self.available_refresh_button.setEnabled(not cache.loading)
         for plugin in sorted(cache.plugins, key=lambda plugin: plugin['name'].casefold()):
-            if (plugin.get('id') in identities
-                    or plugin['repository'].casefold() in repositories):
-                continue
+            current = identities.get(plugin.get('id')) or repositories.get(plugin['repository'].casefold())
+            if current:
+                latest = QVersionNumber.fromString(plugin['version'].lstrip('v'))[0]
+                previous = QVersionNumber.fromString(current['version'].lstrip('v'))[0]
+                if latest.isNull() or previous.isNull() or QVersionNumber.compare(latest, previous) <= 0:
+                    continue
+                updates[current['id']] = plugin
             row = self.available_plugins.rowCount()
             self.available_plugins.insertRow(row)
             for column, key in enumerate(('name', 'version', 'description')):
                 item = QTableWidgetItem(plugin[key])
+                if current:
+                    item.setToolTip(f"Update available: {current['version']} → {plugin['version']}")
+                    if column == 0:
+                        item.setIcon(QIcon(str(Path(__file__).parent / 'assets/plugin-update.svg')))
+                    elif column == 1:
+                        item.setText(f"{current['version']} → {plugin['version']}")
                 item.setData(Qt.ItemDataRole.UserRole, plugin['repository'])
                 self.available_plugins.setItem(row, column, item)
+        self.install_selected_button.setText('Install / update selected…')
+        for row in range(self.installed_plugins.rowCount()):
+            item = self.installed_plugins.item(row, 0)
+            current = item.data(Qt.ItemDataRole.UserRole)
+            update = updates.get(current['id'])
+            item.setIcon(QIcon(str(Path(__file__).parent / 'assets/plugin-update.svg')) if update else QIcon())
+            tooltip = item.toolTip().split('\nUpdate available:')[0]
+            if update:
+                tooltip += f"\nUpdate available: {current['version']} → {update['version']}"
+            item.setToolTip(tooltip)
         self.update_available_status()
 
     def update_installed_status(self):
