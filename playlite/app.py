@@ -33,6 +33,12 @@ DATA = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) 
 STYLE = '''
 QToolTip { background: #242527; color: #e9e9e9; border: 1px solid #62646a; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 QWidget { background: #101112; color: #e9e9e9; font-family: "DejaVu Sans"; font-size: 13px; }
+QWidget:disabled { color: #777; }
+QCheckBox::indicator, QAbstractItemView::indicator { width: 14px; height: 14px; border: 1px solid #777; border-radius: 4px; background: #2c2d2f; }
+QCheckBox::indicator:checked, QAbstractItemView::indicator:checked { border-color: #2196f3; background: #2196f3; image: url("{ASSET_DIR}/checkbox-check.svg"); }
+QCheckBox::indicator:indeterminate, QAbstractItemView::indicator:indeterminate { border-color: #2196f3; background: #2196f3; image: url("{ASSET_DIR}/checkbox-partial.svg"); }
+QCheckBox::indicator:disabled, QAbstractItemView::indicator:disabled { border-color: #404144; background: #292a2b; }
+QCheckBox::indicator:checked:disabled, QAbstractItemView::indicator:checked:disabled { image: url("{ASSET_DIR}/checkbox-check-disabled.svg"); }
 QMainWindow, QWidget#toolbar { background: #171819; }
 QWidget#rail { background: #151617; border-right: 1px solid #252628; }
 QLabel { background: transparent; }
@@ -90,12 +96,9 @@ QComboBox QAbstractItemView { background: #242527; selection-background-color: #
 STYLE += DROPDOWN_STYLE
 
 
+STYLE = STYLE.replace('{ASSET_DIR}', (Path(__file__).parent / 'assets').as_posix())
+
 def toolbar_icon(kind):
-    names = {'ascending': 'view-sort-ascending', 'descending': 'view-sort-descending',
-             'filters': 'view-filter', 'list': 'view-list-details', 'grid': 'view-grid', 'compact': 'view-list-icons'}
-    themed = QIcon.fromTheme(names[kind])
-    if kind not in ('list', 'grid', 'compact') and not themed.isNull():
-        return themed
     pixmap = QPixmap(48, 48)
     pixmap.setDevicePixelRatio(2)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -1732,14 +1735,6 @@ class LibraryWindow(QMainWindow):
         installation.setProperty('installationPanel', True)
         heading = QHBoxLayout()
         heading.addWidget(label('Installation', 'section'))
-        if game.get('ArchivePath'):
-            badge = QLabel('Archived')
-            badge.setObjectName('archiveIndicator')
-            badge.setToolTip(game['ArchivePath'])
-            archive_icon = QLabel()
-            archive_icon.setPixmap(QIcon(str(Path(__file__).parent / 'assets/archive.svg')).pixmap(20, 20))
-            heading.addWidget(archive_icon)
-            heading.addWidget(badge)
         heading.addStretch()
         folder_layout.addLayout(heading)
         installation_form = QFormLayout()
@@ -1747,11 +1742,8 @@ class LibraryWindow(QMainWindow):
         installation_form.setVerticalSpacing(8)
         installation_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         installation_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        if game.get('ArchivePath'):
-            archived = QPushButton(game['ArchivePath'])
-            archived.setToolTip(game['ArchivePath'])
-            archived.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(game['ArchivePath'])))
-            installation_form.addRow(label('Archive', 'muted'), archived)
+        for plugin in self.generic_plugins:
+            plugin.augment_game_view(self, game, heading, installation_form)
         if game.get('InstallDirectory'):
             folder = QPushButton(game['InstallDirectory'])
             folder.setObjectName('folder')
@@ -2378,6 +2370,8 @@ def main():
     parser.add_argument('--screenshot', type=Path, help='Render an offscreen preview and exit.')
     args = parser.parse_args()
     app = QApplication(['playlite'])
+    from .native_style import configure
+    configure(app)
     app.setApplicationName('playlite')
     repo_profile = os.environ.get('PLAYLITE_PROFILE') == 'repo'
     app.setApplicationDisplayName('Playlite (Repo)' if repo_profile else 'Playlite')

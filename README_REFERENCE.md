@@ -244,3 +244,22 @@ The current plugin moves folders without compression and rejects symlinks and
 special files.
 
 Select multiple games with Ctrl-click or Shift-click in list or grid view. Right-click the selection for batch deletion and supported plugin actions. Deleting entries keeps installation folders, archives, and Wine prefixes. Archived games show an archive icon and location in the installation panel. Edit → Installation → Archive information records an existing archive without moving files.
+
+### Plugin ownership contract
+
+Playlite exposes generic extension points; plugins own their controls, validation,
+setup, resource lifecycle and preferences. A manifest can declare `game_fields`
+with `key`, `label`, optional `metadata_provider` and `positive_id`. Installed
+plugins supply these fields; removing a plugin keeps existing library data.
+Generic plugins can implement `augment_editor`, `collect_editor`,
+`prepare_edit_save` and `augment_game_view` to contribute and validate their UI.
+
+Manifests declare `settings_groups` (Playlite QSettings application names) and
+`settings_files` (relative paths inside the profile's `playlite` configuration
+folder). Only declared settings are cleared when requested. An `uninstall_hook`
+is a standalone Python file at the plugin root exposing
+`cleanup(data, config, args, remove, run, docker_action, failures)`. Hooks must
+respect dry-run, settings retention and resource ownership. Playlite retains an
+owned copies of cleanup hooks and settings declarations so resources and
+preferences retained during individual removal remain available to the full
+uninstaller.

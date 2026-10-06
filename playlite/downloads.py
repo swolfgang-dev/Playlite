@@ -144,7 +144,7 @@ class DownloadQueue(QObject):
     def confirm_close(self,parent):
         if not any(row.state in ('Queued','Downloading','Paused') for row in self.entries):return True
         return QMessageBox.warning(parent,'Downloads are unfinished',
-            'Closing Playlite will pause unfinished downloads and stop isolated Steam and the VPN. Your download list and partial files will be kept.',
+            'Closing Playlite will pause unfinished downloads. Your download list and partial files will be kept.',
             QMessageBox.StandardButton.Close|QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel)==QMessageBox.StandardButton.Close
 
@@ -219,7 +219,7 @@ class DownloadsPanel(QFrame):
                 line.addWidget(up);line.addWidget(down)
                 action=QPushButton();action.clicked.connect(lambda checked=False,row=row:self.action(row))
                 library=QPushButton('Add to Playlite')
-                library.clicked.connect(lambda checked=False,row=row:row.controller.add_to_library())
+                library.clicked.connect(lambda checked=False,row=row:self.add_to_library(row))
                 pause=QPushButton('Pause');pause.clicked.connect(lambda checked=False,row=row:self.queue.pause(row))
                 retry=QPushButton();retry.clicked.connect(lambda checked=False,row=row:self.retry(row))
                 line.addWidget(pause);line.addWidget(retry)
@@ -237,6 +237,9 @@ class DownloadsPanel(QFrame):
             retry.setText('Resume' if row.state=='Paused' else 'Retry')
             retry.setVisible(row.state in ('Failed','Cancelled','Paused'));retry.setEnabled(callable(row.factory))
             library.setVisible(row.state=='Complete' and callable(getattr(row.controller,'add_to_library',None)))
+            added = bool(row.metadata.get('library_game_id'))
+            library.setText('Added' if added else 'Add to Playlite')
+            library.setEnabled(not added)
             name.setToolTip(row.destination)
             name.setText(row.name);name.setTextFormat(Qt.TextFormat.PlainText)
             status.setText(f'{"Stopped" if row.state=="Cancelled" else row.state} · {row.status}');status.setTextFormat(Qt.TextFormat.PlainText)
@@ -244,6 +247,14 @@ class DownloadsPanel(QFrame):
             bar.setValue(round((row.progress or 0)*10));bar.setVisible(row.state in ('Downloading','Complete'))
             action.setText('Open folder' if row.state=='Complete' else 'Cancel')
             action.setVisible(row.state in ('Queued','Downloading','Complete','Paused'));action.setEnabled(not row.cancelled or row.state=='Paused')
+
+    def add_to_library(self, row):
+        if row.metadata.get('library_game_id'):
+            return
+        identity = row.controller.add_to_library()
+        if isinstance(identity, str) and identity:
+            row.metadata['library_game_id'] = identity
+            self.queue.changed.emit()
 
     def action(self,row):
         if row.state=='Complete':QDesktopServices.openUrl(QUrl.fromLocalFile(row.destination))

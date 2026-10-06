@@ -3,7 +3,7 @@ import hashlib
 import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication
 
 
@@ -41,6 +41,7 @@ ROLES = {
 # Compatibility for existing styles, painted widgets, SVGs and saved palettes.
 ALIASES = {default: role for role, (_, default) in ROLES.items()}
 ALIASES.update({
+    '#777777': 'disabled_text',
     '#202123': 'panel', '#45474b': 'border',
     '#151617': 'sidebar', '#171819': 'sidebar', '#222325': 'hover', '#343638': 'selection', '#3b3d41': 'selection',
     '#48566c': 'selection', '#363638': 'control', '#62646a': 'border',
@@ -102,7 +103,7 @@ def load(settings):
 
 def themed_asset(filename):
     source = Path(filename)
-    if source.name not in ('chevron-down.svg', 'chevron-down-dark.svg', 'game-placeholder.svg', 'cover-placeholder.svg'):
+    if source.name not in ('chevron-down.svg', 'chevron-down-dark.svg', 'checkbox-check.svg', 'checkbox-check-disabled.svg', 'checkbox-partial.svg', 'game-placeholder.svg', 'cover-placeholder.svg'):
         return str(filename)
     content = re.sub(r'#[0-9a-fA-F]{6}\b', lambda match: colour(match[0]), source.read_text())
     target = Path(_assets.name) / (hashlib.sha256(content.encode()).hexdigest() + '.svg')
@@ -132,6 +133,29 @@ def apply(settings):
     app = QApplication.instance()
     if app is None:
         return
+    native = QPalette()
+    roles = {
+        'Window': 'window', 'WindowText': 'text', 'Base': 'window',
+        'AlternateBase': 'panel', 'Text': 'text', 'Button': 'control',
+        'ButtonText': 'text', 'Highlight': 'accent', 'HighlightedText': 'text',
+        'ToolTipBase': 'popup', 'ToolTipText': 'text', 'PlaceholderText': 'secondary_text',
+        'Link': 'accent', 'LinkVisited': 'secondary_text',
+    }
+    for name, role in roles.items():
+        native.setColor(getattr(QPalette.ColorRole, name), QColor(colour(role)))
+    for name in ('WindowText', 'Text', 'ButtonText', 'HighlightedText'):
+        native.setColor(QPalette.ColorGroup.Disabled, getattr(QPalette.ColorRole, name), QColor(colour('disabled_text')))
+    app.setPalette(native)
+    from PyQt6.QtWidgets import QDialogButtonBox
+    for box in app.allWidgets():
+        if isinstance(box, QDialogButtonBox):
+            for button in box.buttons():
+                standard = box.standardButton(button)
+                name = 'SP_Dialog' + standard.name + 'Button'
+                from PyQt6.QtWidgets import QStyle
+                icon = getattr(QStyle.StandardPixmap, name, None)
+                if icon is not None:
+                    button.setIcon(app.style().standardIcon(icon))
     for widget in [app, *app.allWidgets()]:
         template = widget.property('_theme_stylesheet')
         if isinstance(template, str):

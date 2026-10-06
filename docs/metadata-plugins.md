@@ -341,3 +341,10 @@ plugin folders use the same `playlite-plugin-` name.
 Plugin settings stores retain their existing namespaces for configured folders
 and credentials. Updates match installed plugins by their current IDs and
 preserve the enabled state.
+
+Plugins may declare `image_defaults` in their manifest, keyed by image type.
+Each entry uses `artwork`, `shape`, and `resolution` lists with values from
+`playlite.image_filters.OPTIONS`. The declaring plugin becomes that image type's
+initial provider. Installation seeds preferences only when they are unset;
+updates and additional installations preserve explicit user choices. Installed
+plugin declarations also supply defaults for profiles without saved preferences.

@@ -155,6 +155,18 @@ class GenericPlugin(Plugin):
         """Contribute controls to both Edit and Add game windows."""
         pass
 
+    def collect_editor(self, editor, game):
+        """Validate and collect plugin controls into the edited game."""
+        pass
+
+    def prepare_edit_save(self, previous, game):
+        """Merge plugin-owned state against the latest library entry."""
+        pass
+
+    def augment_game_view(self, window, game, heading, installation_form):
+        """Contribute game details to the installation panel."""
+        pass
+
     def augment_add_editor(self, editor):
         pass
 
@@ -211,7 +223,7 @@ def discover_plugins(directory=None, *, include_disabled=False):
              Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite/plugins']
     providers = {}
     for root in roots:
-        for manifest_path in sorted(root.glob('*/manifest.json'), key=lambda path: (path.parent.name not in ('steam', 'playlite-plugin-steam-metadata'), str(path))):
+        for manifest_path in sorted(root.glob('*/manifest.json')):
             try:
                 manifest = json.loads(manifest_path.read_text())
                 if manifest.get('enabled', True) is False and not include_disabled:
@@ -252,6 +264,9 @@ def discover_plugins(directory=None, *, include_disabled=False):
                 provider.type = plugin_type
                 provider.enabled = manifest.get('enabled', True)
                 provider.manifest_path = manifest_path
+                from .plugin_fields import validate_declarations
+                provider.game_fields = validate_declarations(manifest.get('game_fields', []))
+                provider.image_defaults = manifest.get('image_defaults', {})
                 provider.description = manifest.get('description', getattr(provider, 'description', ''))
                 providers[plugin_id] = provider
             except Exception:

@@ -69,9 +69,9 @@ class AddGameEditor(MetadataEditor):
         previous = self.installation_widget
         values = {key: field.text() for key, field in previous.fields.items()}
         game = copy.deepcopy(self.game)
-        game.update({key: value for key, value in values.items() if key != 'SteamId'})
-        game['MetadataIds'] = dict(game.get('MetadataIds') or {})
-        game['MetadataIds']['SteamMetadata'] = values.get('SteamId', '')
+        game.update({key: value for key, value in values.items() if not previous.fields[key].property('metadata_provider')})
+        from .plugin_fields import collect_fields
+        collect_fields(previous.fields, game, validate=False)
         self.installation_plugin = self.installation_plugins[self.installation_method.currentData()]
         self.installation_controls.removeWidget(previous)
         previous.hide()
@@ -112,7 +112,8 @@ class AddGameEditor(MetadataEditor):
             actions = actions_for(game, providers)
             if actions:
                 game['PlayActions'] = actions
-                for key in ('Executable', 'Prefix', 'LaunchArguments', 'LutrisId', 'ProviderGameId'):
+                from .plugin_fields import legacy_action_fields
+                for key in legacy_action_fields(providers):
                     game.pop(key, None)
             self.result_game = game
         except (ValueError, OSError, sqlite3.Error) as error:

@@ -88,7 +88,7 @@ def delete_plugin(identity, directory=None, keep_settings=True):
         raise ValueError('Plugin directory is outside the installed plugin folder.')
     if not keep_settings:
         from .plugin_settings import clear_plugin_settings
-        clear_plugin_settings(identity)
+        clear_plugin_settings(entry)
     if (target / RECEIPT).exists():
         remove_owned(target)
     else:
@@ -165,6 +165,11 @@ def install_archive(archive, directory=None, repository=''):
             raise ValueError('Unsupported plugin type.')
         if not isinstance(manifest.get('name'), str) or not isinstance(manifest.get('version'), str):
             raise ValueError('Plugin name and version are required.')
+        hook = manifest.get('uninstall_hook')
+        if hook:
+            hook_path = PurePosixPath(hook)
+            if hook_path.is_absolute() or len(hook_path.parts) != 1 or hook_path.suffix != '.py' or not (stage / hook).is_file():
+                raise ValueError('Plugin cleanup must be a standalone file at its root.')
         requirements = manifest.get('requirements') or []
         if requirements:
             import sys
@@ -196,7 +201,8 @@ def install_archive(archive, directory=None, repository=''):
             raise ValueError('Plugin directory is outside the installed plugin folder.')
         if repository:
             manifest['repository'] = repository
-        destination = directory / plugin_folder(manifest)
+        existing_folder = next((Path(entry['manifest_path']).parent for entry in installed_plugins(directory) if entry.get('id') == manifest['id']), None)
+        destination = existing_folder or directory / plugin_folder(manifest)
         if destination.exists() and destination != existing:
             raise ValueError('Plugin destination folder is already occupied.')
         if existing:
@@ -218,6 +224,21 @@ def install_archive(archive, directory=None, repository=''):
             raise
         if backup.exists():
             shutil.rmtree(backup)
+    # Keep declarations and cleanup available after individual plugin removal.
+    cleanup = directory.parent / 'plugin-cleanup' / identity
+    if cleanup.is_symlink() or cleanup.parent.is_symlink():
+        raise ValueError('Plugin cleanup registration cannot be a symlink.')
+    cleanup.mkdir(parents=True, exist_ok=True)
+    generated = {'manifest.json', hook} - {None}
+    external = file_inventory(cleanup) - generated - {RECEIPT}
+    if hook:
+        if (cleanup / hook).is_symlink():
+            raise ValueError('Plugin cleanup script cannot be a symlink.')
+        (cleanup / hook).write_bytes((destination / hook).read_bytes())
+    atomic_json(cleanup / 'manifest.json', manifest)
+    record_tree(cleanup, excluded=external)
+    from .image_filters import apply_install_defaults
+    apply_install_defaults(manifest, directory.parent)
     return manifest
 
 

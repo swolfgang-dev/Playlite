@@ -316,30 +316,6 @@ class MetadataEditor(QDialog):
             explanation.setWordWrap(True)
             set_style(explanation, 'color: #999a9d;')
             installation.addRow(explanation)
-        if not hasattr(self, 'installation_plugin'):
-            installation.addRow(QLabel('Archive information'))
-            self.archived = QCheckBox('Archived')
-            self.archived.setChecked(bool(game.get('ArchivePath')))
-            self.archive_path = QLineEdit(game.get('ArchivePath') or '')
-            self.archive_path.setPlaceholderText('Folder containing this archived game')
-            archive_row = QHBoxLayout()
-            archive_row.setContentsMargins(0, 0, 0, 0)
-            archive_row.setSpacing(8)
-            archive_row.addWidget(self.archive_path)
-            archive_browse = QPushButton('Browse…')
-            archive_browse.setFixedHeight(40)
-            def choose_archive():
-                from .lifecycle import choose_directory
-                path = choose_directory(self, 'Archived game folder', self.archive_path.text())
-                if path:
-                    self.archive_path.setText(path)
-            archive_browse.clicked.connect(choose_archive)
-            archive_row.addWidget(archive_browse)
-            installation.addRow(self.archived)
-            installation.addRow('Archive folder', archive_row)
-            note = QLabel('This records archive information. Changing these fields does not move files. Restore returns the game to its installation folder.')
-            note.setWordWrap(True)
-            installation.addRow(note)
         installation_page = tabs.widget(2)
         tabs.removeTab(2)
         tabs.insertTab(0, installation_page, 'Installation')
@@ -380,9 +356,9 @@ class MetadataEditor(QDialog):
         update_download_buttons(tabs.currentIndex())
         self.finished.connect(self.cleanup_downloads)
         from .providers import discover_plugins, GenericPlugin
-        for plugin in discover_plugins().values():
-            if isinstance(plugin, GenericPlugin):
-                plugin.augment_editor(self)
+        self.editor_plugins = [plugin for plugin in discover_plugins().values() if isinstance(plugin, GenericPlugin)]
+        for plugin in self.editor_plugins:
+            plugin.augment_editor(self)
 
     def attach_installation_header(self, widget):
         previous = getattr(self, 'installation_header_form', None)
@@ -400,9 +376,8 @@ class MetadataEditor(QDialog):
             import_button.ensurePolished()
             width = max(width, import_button.sizeHint().width())
         self.installation_method.setFixedWidth(width)
-        for key in ('LutrisId', 'SteamId'):
-            field = widget.fields.get(key)
-            if field is not None:
+        for field in widget.fields.values():
+            if field.property('metadata_provider') or field.property('positive_id'):
                 field.setFixedWidth(width)
         if import_button is not None:
             import_button.setFixedWidth(width)
@@ -444,10 +419,8 @@ class MetadataEditor(QDialog):
         current = copy.deepcopy(self.game)
         current['Name'] = self.fields['Name'].text()
         current['Links'] = self.current_links()
-        if 'SteamId' in self.fields:
-            ids = dict(current.get('MetadataIds') or {})
-            ids['SteamMetadata'] = self.fields['SteamId'].text().strip()
-            current['MetadataIds'] = ids
+        from .plugin_fields import collect_fields
+        collect_fields(self.fields, current, validate=False)
         return current
 
     def download_images(self):
@@ -466,14 +439,8 @@ class MetadataEditor(QDialog):
         current = copy.deepcopy(self.game)
         for key, field in self.fields.items():
             current[key] = field.toPlainText().splitlines() if isinstance(field, (QPlainTextEdit, ListField)) else field.text()
-        if 'SteamId' in self.fields:
-            ids = dict(current.get('MetadataIds') or {})
-            steam_id = self.fields['SteamId'].text().strip()
-            if steam_id:
-                ids['SteamMetadata'] = steam_id
-            else:
-                ids.pop('SteamMetadata', None)
-            current['MetadataIds'] = ids
+        from .plugin_fields import collect_fields
+        collect_fields(self.fields, current, validate=False)
         current['Description'] = self.description.toPlainText()
         current['FullDescription'] = self.full_description.toPlainText()
         current['Links'] = self.current_links()
@@ -502,8 +469,8 @@ class MetadataEditor(QDialog):
             shutil.copy2(path, self.data / 'library.json.bak')
             atomic_json(path, games)
         self.game['MetadataIds'] = dict(ids)
-        if 'SteamId' in self.fields:
-            self.fields['SteamId'].setText(str(ids.get('SteamMetadata') or ''))
+        from .plugin_fields import refresh_fields
+        refresh_fields(self.fields, ids)
         parent = self.parent()
         for entry in getattr(parent, 'games', []):
             if entry['Id'] == self.game['Id']:
@@ -513,8 +480,8 @@ class MetadataEditor(QDialog):
         for key, value in metadata.items():
             if key == 'MetadataIds':
                 self.game[key] = dict(value)
-                if 'SteamId' in self.fields:
-                    self.fields['SteamId'].setText(str(value.get('SteamMetadata') or ''))
+                from .plugin_fields import refresh_fields
+                refresh_fields(self.fields, value)
             elif key == 'FullDescription':
                 self.full_description.setPlainText(value)
             elif key == 'Description':
@@ -586,39 +553,13 @@ class MetadataEditor(QDialog):
             if value and not Path(value).is_absolute():
                 raise ValueError(f'{key} must be an absolute Linux path.')
             result[key] = value
-        if hasattr(self, 'archived'):
-            if self.archived.isChecked():
-                archive = self.archive_path.text().strip()
-                original = result.get('InstallDirectory') or ''
-                if not archive or not Path(archive).is_absolute() or not original or not Path(original).is_absolute():
-                    raise ValueError('Archived games need absolute archive and original installation folders.')
-                source, target = Path(original).resolve(), Path(archive).resolve()
-                if source == target or source in target.parents or target in source.parents:
-                    raise ValueError('Archive and installation folders must be separate.')
-                result.update(ArchivePath=archive, ArchiveOriginalDirectory=original, IsInstalled=False)
-                result['Tags'] = list(dict.fromkeys((result.get('Tags') or []) + ['Archived']))
-            else:
-                result.pop('ArchivePath', None)
-                result.pop('ArchiveOriginalDirectory', None)
-                result['Tags'] = [tag for tag in result.get('Tags') or [] if tag != 'Archived']
-                if self.game.get('ArchivePath'):
-                    result['IsInstalled'] = True
-            archive_keys = ('ArchivePath', 'ArchiveOriginalDirectory')
-            if any(result.get(key) != self.game.get(key) for key in archive_keys):
-                result['_ArchiveEditBase'] = {key: self.game.get(key) for key in archive_keys}
-        lutris = self.fields['LutrisId'].text().strip() if 'LutrisId' in self.fields else str(result.get('LutrisId') or '')
-        if lutris and (not lutris.isascii() or not lutris.isdigit() or int(lutris) < 1):
-            raise ValueError('Lutris game ID must be a positive whole number.')
-        result['LutrisId'] = lutris or None
         if hasattr(self, 'play_actions'):
             result['PlayActions'] = self.play_actions.collect()
             # Retain the legacy field for integrations that read it on import.
             result['GameProvider'] = result['PlayActions'][0]['Integration'] if result['PlayActions'] else None
-            for action in result['PlayActions']:
-                if action['Integration'] == 'LutrisIntegration' and not action.get('GameId'):
-                    raise ValueError('Enter a Lutris game ID for each Lutris play action.')
             if result['PlayActions'] or self.play_actions.had_actions or 'PlayActions' in self.game:
-                for key in ('Executable', 'Prefix', 'LaunchArguments', 'LutrisId', 'ProviderGameId'):
+                from .plugin_fields import legacy_action_fields
+                for key in legacy_action_fields(self.play_actions.providers):
                     result.pop(key, None)
         result['Description'] = self.description.toPlainText()
         result['FullDescription'] = self.full_description.toPlainText()
@@ -647,6 +588,8 @@ class MetadataEditor(QDialog):
             for key in ('Playtime', 'PlayCount', 'LastActivity'):
                 if result.get(key) == self.game.get(key) and key in latest:
                     result[key] = latest[key]
+        for plugin in self.editor_plugins:
+            plugin.collect_editor(self, result)
         return result
 
     def save(self):
@@ -678,21 +621,10 @@ def _save_game(data, games, updated):
     names = {'Icon': 'icon', 'HeaderImage': 'header', 'CoverImage': 'cover-art', 'BackgroundImage': 'background'}
     directory = data / 'artwork' / result['Id']
     previous = next((game for game in games if game['Id'] == result['Id']), {})
-    archive_edit = result.pop('_ArchiveEditBase', None)
-    if archive_edit is not None:
-        current_archive = {key: previous.get(key) for key in ('ArchivePath', 'ArchiveOriginalDirectory')}
-        if current_archive != archive_edit:
-            raise ValueError('Archive information changed while editing. Reopen the editor before changing it.')
-    if previous and archive_edit is None:
-        # Archive state belongs to the archiver, not a stale editor snapshot.
-        for key in ('ArchivePath', 'ArchiveOriginalDirectory'):
-            if key in previous:
-                result[key] = previous[key]
-            else:
-                result.pop(key, None)
-        if previous.get('ArchivePath'):
-            result['IsInstalled'] = False
-            result['Tags'] = list(dict.fromkeys((result.get('Tags') or []) + ['Archived']))
+    from .providers import discover_plugins, GenericPlugin
+    for plugin in discover_plugins().values():
+        if isinstance(plugin, GenericPlugin):
+            plugin.prepare_edit_save(previous, result)
     if not result.get('Added'):
         if previous.get('Added'):
             result['Added'] = previous['Added']

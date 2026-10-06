@@ -69,3 +69,23 @@ class PluginInstallationTests(unittest.TestCase):
                 archive.writestr('plugin.py', 'pass')
             with self.assertRaises(ValueError):
                 install_archive(path, root / 'plugins')
+
+    def test_cleanup_survives_individual_plugin_removal(self):
+        from playlite.plugin_manager import delete_plugin
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / 'resource-plugin.zip'
+            script = "def cleanup(*args):\n    pass\n"
+            with ZipFile(archive, 'w') as bundle:
+                bundle.writestr('manifest.json', json.dumps(dict(id='Example', name='Example', version='1',
+                    api_version=1, type='generic', uninstall_hook='cleanup.py')))
+                bundle.writestr('plugin.py', 'from playlite.providers import GenericPlugin\nclass Plugin(GenericPlugin):\n    pass\n')
+                bundle.writestr('cleanup.py', script)
+            plugins = root / 'plugins'
+            install_archive(archive, plugins)
+            registration = root / 'plugin-cleanup/Example'
+            self.assertEqual((registration / 'cleanup.py').read_text(), script)
+            entry = installed_plugins(plugins)[0]
+            delete_plugin(entry['id'], plugins)
+            self.assertFalse(Path(entry['manifest_path']).exists())
+            self.assertEqual((registration / 'cleanup.py').read_text(), script)

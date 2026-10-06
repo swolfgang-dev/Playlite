@@ -107,7 +107,7 @@ class ImageDownloader(QDialog):
         self.controls = {}
         self.tabs = QTabWidget()
         self.image_keys = ('Icon', 'CoverImage', 'HeaderImage', 'BackgroundImage', 'Logo')
-        self.filter_defaults = {key: defaults(settings, key) for key in self.image_keys}
+        self.filter_defaults = {key: defaults(settings, key, self.providers) for key in self.image_keys}
         self.image_lists = {}
         for key, label in zip(self.image_keys, ('Icon', 'Cover', 'Header', 'Background', 'Logos')):
             page = QWidget()
@@ -116,7 +116,9 @@ class ImageDownloader(QDialog):
             source = QComboBox()
             for provider_id, provider in self.providers.items():
                 source.addItem(provider.name, provider_id)
-            fallback = next((identity for identity, provider in self.providers.items() if key in provider.image_types), 'SteamMetadata') if key == 'Logo' else 'SteamMetadata'
+            fallback = next((identity for identity, provider in self.providers.items() if key in provider.image_types), '')
+            from .image_filters import declared_defaults
+            fallback = declared_defaults(key, self.providers)[0] or fallback
             preferred = settings.value(f'images/defaultProvider/{key}', fallback) if settings else fallback
             source.setCurrentIndex(max(0, source.findData(preferred)))
             query = QLineEdit()
@@ -207,6 +209,7 @@ class ImageDownloader(QDialog):
         return self.image_keys[self.tabs.currentIndex()]
 
     def activate_tab(self, *_):
+        self.reset_filters(self.active_key)
         self.update_download_priority()
         self.update_load_more()
         self.filter_images(self.active_key)

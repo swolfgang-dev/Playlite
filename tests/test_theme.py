@@ -110,3 +110,29 @@ class ThemeTests(unittest.TestCase):
         for path in [*root.rglob('*.py'), *root.joinpath('assets').glob('*.svg')]:
             used.update(value.lower() for value in re.findall(r'#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b', path.read_text()))
         self.assertTrue(used <= set(theme.COLOURS), used - set(theme.COLOURS))
+
+    def test_native_palette_tracks_enabled_disabled_and_accent_colours(self):
+        from PyQt6.QtGui import QPalette
+        with TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat)
+            theme.apply(settings)
+            self.assertEqual(APP.palette().color(QPalette.ColorRole.ButtonText), QColor(theme.colour('text')))
+            self.assertEqual(APP.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText), QColor(theme.colour('disabled_text')))
+            self.assertEqual(APP.palette().color(QPalette.ColorRole.Highlight), QColor(theme.colour('accent')))
+
+    def test_standard_dialog_symbols_use_app_colours_in_both_states(self):
+        from PyQt6.QtWidgets import QStyle
+        from PyQt6.QtGui import QIcon
+        from playlite.native_style import ApplicationStyle
+        style = ApplicationStyle()
+        self.assertTrue(style.styleHint(QStyle.StyleHint.SH_DialogButtonBox_ButtonsHaveIcons))
+        with TemporaryDirectory() as directory:
+            theme.load(QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat))
+            for symbol in (QStyle.StandardPixmap.SP_DialogSaveButton, QStyle.StandardPixmap.SP_DialogCancelButton):
+                icon = style.standardIcon(symbol)
+                for mode, role in ((QIcon.Mode.Normal, 'text'), (QIcon.Mode.Disabled, 'disabled_text')):
+                    image = icon.pixmap(24, 24, mode).toImage()
+                    pixels = [image.pixelColor(x, y) for x in range(image.width()) for y in range(image.height())]
+                    opaque = max(pixels, key=lambda pixel: pixel.alpha())
+                    self.assertGreater(opaque.alpha(), 200)
+                    self.assertEqual(opaque.name(), QColor(theme.colour(role)).name())

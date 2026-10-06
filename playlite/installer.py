@@ -71,7 +71,7 @@ class InstallerDialog(QDialog):
         tabs.addTab(preferences, '1. Preferences')
         plugin_page = QWidget()
         plugin_layout = QVBoxLayout(plugin_page)
-        hint = QLabel('Select plugins and click Install selected plugins. Steam Downloader opens its isolated Steam setup after installation. Configure existing plugins in Settings → Plugins.')
+        hint = QLabel('Select plugins and click Install selected plugins. Plugins may open their own setup after installation. Configure installed plugins in Settings → Plugins.')
         hint.setWordWrap(True)
         plugin_layout.addWidget(hint)
         self.plugins = QListWidget()
@@ -186,8 +186,14 @@ class InstallerDialog(QDialog):
 
 def main():
     app = QApplication(sys.argv)
+    from .native_style import configure
+    configure(app)
     app.setApplicationName('playlite')
     dialog = InstallerDialog()
+    from .app import STYLE
+    from .theme import apply, set_style
+    apply(dialog.settings)
+    set_style(app, STYLE)
     dialog.exec()
 
 

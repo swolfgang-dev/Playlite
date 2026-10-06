@@ -17,7 +17,7 @@ def main(argv=None):
         if isinstance(plugin, InstallationPlugin) and hasattr(plugin, 'configure_cli'):
             command = commands.add_parser(plugin.cli_name, help=plugin.description)
             plugin.configure_cli(command)
-            command.add_argument('--dry-run', action='store_true', help='Validate and print without saving or changing Lutris')
+            command.add_argument('--dry-run', action='store_true', help='Validate and print without saving or changing external applications')
             command.set_defaults(plugin=plugin)
     args = parser.parse_args(argv)
     try:
@@ -37,8 +37,9 @@ def main(argv=None):
             args.data.mkdir(parents=True, exist_ok=True)
             path = args.data / 'library.json'
             games = json.loads(path.read_text()) if path.exists() else []
-            if game.get('LutrisId') and any(str(entry.get('LutrisId')) == str(game['LutrisId']) for entry in games):
-                raise ValueError('This Lutris game is already in Playlite.')
+            validate = getattr(args.plugin, 'validate_cli_library', None)
+            if validate:
+                validate(game, games)
             if hasattr(args.plugin, 'cli_commit'):
                 game = args.plugin.cli_commit(args, game, plugins)
             from .editor import save_game

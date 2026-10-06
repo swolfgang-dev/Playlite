@@ -94,7 +94,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         prefix_row.addWidget(self.default_prefix_folder, 1)
         prefix_row.addWidget(browse_prefix)
         installation.addLayout(prefix_row)
-        installation.addWidget(self.hint('Lutris creates a separate prefix for each game under this folder. Plugin-specific prefix folders take precedence.'))
+        installation.addWidget(self.hint('Installation plugins can create separate Wine prefixes under this folder. Plugin-specific prefix folders take precedence.'))
         updates = self.card(general, 'Updates')
         from importlib.metadata import version, PackageNotFoundError
         try:
@@ -338,14 +338,16 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                     for plugin in self.plugins.values():
                         if plugin.type == 'metadata' and getattr(plugin, 'image_types', ()):
                             source.addItem(plugin.name, plugin.id)
-                    fallback = next((plugin.id for plugin in self.plugins.values() if key in getattr(plugin, 'image_types', ())), 'SteamMetadata') if key == 'Logo' else 'SteamMetadata'
+                    fallback = next((plugin.id for plugin in self.plugins.values() if key in getattr(plugin, 'image_types', ())), '')
+                    from .image_filters import declared_defaults
+                    fallback = declared_defaults(key, self.plugins)[0] or fallback
                     preferred = settings.value(f'images/defaultProvider/{key}', fallback)
                     source.setCurrentIndex(max(0, source.findData(preferred)))
                     source.setEnabled(source.count() > 0)
                     self.image_sources[key] = source
                     grid.addWidget(source, row, 1, Qt.AlignmentFlag.AlignTop)
                     self.image_filter_defaults[key] = {}
-                    saved = image_filter_defaults(settings, key)
+                    saved = image_filter_defaults(settings, key, self.plugins)
                     for column, (name, choices) in enumerate(OPTIONS.items(), 2):
                         selector = FilterChecks(name, saved[name])
                         if name == 'resolution':
@@ -353,6 +355,10 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                         self.image_filter_defaults[key][name] = selector
                         grid.addWidget(selector, row, column, Qt.AlignmentFlag.AlignTop)
                 form.addRow(table)
+                # Include both tab frames, page margins and the vertical scrollbar.
+                required_width = table.minimumSizeHint().width() + 100
+                available_width = self.screen().availableGeometry().width() - 40
+                self.resize(min(max(self.width(), required_width), available_width), self.height())
             else:
                 form.addRow(QLabel('Settings for these plugins are configured individually below.'))
             sections.addWidget(shared)
@@ -362,7 +368,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                                   if ('installation' if getattr(plugin, 'settings_group', plugin.type)
                                       in ('installation', 'integration', 'game')
                                       else getattr(plugin, 'settings_group', plugin.type)) == kind),
-                                 key=lambda plugin: (0 if plugin.id == 'Manual' else 1 if plugin.id == 'LutrisIntegration' else 2,
+                                 key=lambda plugin: (0 if plugin.id == 'Manual' else 1,
                                                      plugin.name)):
                 widget = plugin.create_settings(page)
                 from .providers import IntegrationPlugin
@@ -757,7 +763,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         keep = QCheckBox('Keep user settings for reinstalling')
         keep.setChecked(True)
         layout.addWidget(keep)
-        hint = QLabel('Stored wallet credentials and private Steam data are managed separately. Settings for unknown third-party plugins are retained.')
+        hint = QLabel('Stored credentials and private plugin data are managed separately. Only settings declared by each plugin can be removed.')
         hint.setWordWrap(True)
         layout.addWidget(hint)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)

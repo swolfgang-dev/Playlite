@@ -148,3 +148,22 @@ class DownloadTests(unittest.TestCase):
             self.assertEqual(warning.call_args.args[-1],QMessageBox.StandardButton.Cancel)
         with patch('playlite.downloads.QMessageBox.warning',return_value=QMessageBox.StandardButton.Close):
             self.assertTrue(queue.confirm_close(None))
+
+    def test_successful_library_add_is_labelled_and_persisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'downloads.json'
+            queue = DownloadQueue(storage=path)
+            controller = Mock(); controller.add_to_library.return_value = None
+            row = queue.enqueue('Game', '/tmp/added-download', lambda *_: controller)
+            self.app.processEvents(); queue.finish(row, True, 'Complete')
+            host = QWidget(); panel = DownloadsPanel(host, queue)
+            button = panel.cards[row.id][5]
+            button.click()
+            self.assertEqual(button.text(), 'Add to Playlite')
+            self.assertTrue(button.isEnabled())
+            controller.add_to_library.return_value = 'saved-game-id'
+            button.click()
+            self.assertEqual(button.text(), 'Added')
+            self.assertFalse(button.isEnabled())
+            self.assertEqual(DownloadQueue(storage=path).entries[0].metadata['library_game_id'], 'saved-game-id')
+            host.close()

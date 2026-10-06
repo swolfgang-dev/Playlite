@@ -76,25 +76,16 @@ class UninstallTests(unittest.TestCase):
         self.assertTrue(launcher.exists())
         self.assertTrue(dev.is_symlink())
 
-    def test_container_ownership_and_dry_run(self):
-        from subprocess import CompletedProcess
-        calls = []
-        def fake_run(arguments):
-            calls.append(arguments)
-            if arguments[1] == 'ps':
-                return CompletedProcess(arguments, 0, 'owned unrelated', '')
-            if arguments[1] == 'inspect':
-                labels = {uninstall.LABEL: str(os.getuid())} if arguments[2] == 'owned' else {}
-                import json
-                return CompletedProcess(arguments, 0, json.dumps([{'Config': {'Labels': labels}}]), '')
-            return CompletedProcess(arguments, 0, '', '')
-        with patch.object(uninstall.shutil, 'which', return_value='docker'), patch.object(uninstall, 'run', side_effect=fake_run):
-            self.assertEqual(uninstall.main(['--dry-run']), 1)
-            self.assertFalse(any(call[1] == 'rm' for call in calls))
-            calls.clear()
-            self.assertEqual(uninstall.main([]), 1)
-        self.assertIn(['docker', 'rm', '-f', 'owned'], calls)
-        self.assertNotIn(['docker', 'rm', '-f', 'unrelated'], calls)
+    def test_plugin_owned_resource_cleanup_hook_and_dry_run(self):
+        import json
+        plugin=self.data/'plugins/example';plugin.mkdir(parents=True)
+        (plugin/'manifest.json').write_text(json.dumps(dict(id='Example',uninstall_hook='cleanup.py')))
+        (plugin/'cleanup.py').write_text("def cleanup(data, config, args, remove, run, docker_action, failures):\n    remove(data/'example-resource')\n")
+        resource=self.data/'example-resource';resource.write_text('owned')
+        self.assertEqual(uninstall.main(['--dry-run']),0)
+        self.assertTrue(resource.exists())
+        self.assertEqual(uninstall.main([]),0)
+        self.assertFalse(resource.exists())
 
     def test_global_uninstall_removes_managed_plugins_only(self):
         managed=self.data/'plugins/managed';managed.mkdir(parents=True)
@@ -112,6 +103,9 @@ class UninstallTests(unittest.TestCase):
         settings = self.home / '.config/Playlite/Lutris.conf'
         settings.parent.mkdir(parents=True)
         settings.write_text('preferences')
+        import json
+        plugin=self.data/'plugins/example';plugin.mkdir(parents=True)
+        (plugin/'manifest.json').write_text(json.dumps(dict(id='Example',settings_groups=['Lutris'])))
         external = settings.parent / 'OtherApp.conf'
         external.write_text('external')
         (self.data / 'ui.ini').write_text('preferences')
@@ -122,3 +116,16 @@ class UninstallTests(unittest.TestCase):
         self.assertFalse((self.data / 'ui.ini').exists())
         self.assertTrue((self.data / 'library.json').exists())
         self.assertTrue(external.exists())
+
+    def test_retained_cleanup_runs_after_plugin_was_removed(self):
+        import json
+        registration = self.data / 'plugin-cleanup/Example'
+        registration.mkdir(parents=True)
+        (registration / 'manifest.json').write_text(json.dumps(dict(id='Example', uninstall_hook='cleanup.py')))
+        (registration / 'cleanup.py').write_text("def cleanup(data, config, args, remove, run, docker_action, failures):\n    remove(data/'retained-resource')\n")
+        record_tree(registration)
+        resource = self.data / 'retained-resource'
+        resource.write_text('owned')
+        self.assertEqual(uninstall.main([]), 0)
+        self.assertFalse(resource.exists())
+        self.assertFalse(registration.exists())

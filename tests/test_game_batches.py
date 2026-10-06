@@ -39,6 +39,8 @@ class GameBatchTests(unittest.TestCase):
         self.addCleanup(self.window.close)
 
     def test_archive_information_is_only_shown_when_editing(self):
+        from plugin_test_support import require_plugin
+        require_plugin('GameArchiver')
         from playlite.add_game import AddGameEditor
         from PyQt6.QtWidgets import QLabel, QPushButton
         added = AddGameEditor(None, self.data, installation_method='Manual')
@@ -88,7 +90,7 @@ class GameBatchTests(unittest.TestCase):
         window.list.item(0).setSelected(True)
         window.list.item(1).setSelected(True)
         captured = []
-        plugin = SimpleNamespace(name='Example', game_actions=lambda w, game: [], batch_game_actions=lambda w, games: captured.append(games) or [('Batch', lambda: None)])
+        plugin = SimpleNamespace(augment_game_view=lambda *args: None, name='Example', game_actions=lambda w, game: [], batch_game_actions=lambda w, games: captured.append(games) or [('Batch', lambda: None)])
         window.generic_plugins = [plugin]
         menu = QMenu(window)
         with patch('playlite.app.game_context_menu', return_value=menu) as build:
@@ -123,6 +125,8 @@ class GameBatchTests(unittest.TestCase):
         self.assertEqual(json.loads((self.data / 'library.json').read_text()), self.games)
 
     def test_archive_editor_records_state_without_moving_files(self):
+        from plugin_test_support import require_plugin
+        require_plugin('GameArchiver')
         game = dict(Id='a', Name='Example', InstallDirectory=str(self.data / 'original'))
         editor = MetadataEditor(game, self.data)
         editor.archived.setChecked(True)

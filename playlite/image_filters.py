@@ -94,9 +94,46 @@ QPushButton#filterDropdown::menu-indicator {{ image: url("{CHEVRON}");
         self.changed.emit()
 
 
-def defaults(settings, image_type):
+def declared_defaults(image_type, plugins=None):
+    if plugins is None:
+        from .providers import discover_plugins
+        plugins = discover_plugins()
+    for plugin in plugins.values():
+        declarations = getattr(plugin, 'image_defaults', {})
+        if not isinstance(declarations, dict):
+            continue
+        declaration = declarations.get(image_type)
+        if isinstance(declaration, dict) and image_type in getattr(plugin, 'image_types', ()):
+            return plugin.id, declaration
+    return '', {}
+
+
+def apply_install_defaults(manifest, data):
+    """Seed plugin-declared defaults without replacing saved user preferences."""
+    from PyQt6.QtCore import QSettings
+    settings = QSettings(str(data / 'ui.ini'), QSettings.Format.IniFormat)
+    for key, declaration in manifest.get('image_defaults', {}).items():
+        if key not in dict(OPTIONS['artwork']).values():
+            continue
+        path = f'images/defaultProvider/{key}'
+        if not settings.contains(path):
+            settings.setValue(path, manifest['id'])
+        for name, values in declaration.items():
+            if name not in OPTIONS or not isinstance(values, list):
+                continue
+            path = f'images/defaultFilters/{key}/{name}'
+            if not settings.contains(path) and not settings.contains(path + '/selected'):
+                settings.setValue(path + '/selected', [value for _, value in OPTIONS[name] if value in values])
+    settings.sync()
+
+
+def defaults(settings, image_type, plugins=None):
     values = {name: [value for _, value in choices] for name, choices in OPTIONS.items()}
     values['artwork'] = [image_type]
+    _, declaration = declared_defaults(image_type, plugins)
+    for name, selected in declaration.items():
+        if name in OPTIONS:
+            values[name] = [value for _, value in OPTIONS[name] if value in selected]
     if settings:
         for name, fallback in values.items():
             path = f'images/defaultFilters/{image_type}/{name}'

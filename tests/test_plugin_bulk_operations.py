@@ -186,7 +186,7 @@ class BulkPluginTests(unittest.TestCase):
             plugins = root / 'plugins'
             target = plugins / 'lutris'
             target.mkdir(parents=True)
-            manifest = dict(id='LutrisIntegration', name='Lutris', version='1')
+            manifest = dict(id='LutrisIntegration', name='Lutris', version='1', settings_groups=['Lutris'])
             (target / 'manifest.json').write_text(json.dumps(manifest))
             settings = QSettings(str(root / 'preferences.ini'), QSettings.Format.IniFormat)
             settings.setValue('LibraryDirectory', '/external/lutris')
