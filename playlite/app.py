@@ -1328,6 +1328,10 @@ class LibraryWindow(QMainWindow):
         split.setSizes([410, 1130])
         outer.addWidget(self.game_background, 1)
         self.setCentralWidget(root)
+        from .downloads import DownloadQueue, DownloadsPanel, DownloadsButton
+        self.download_queue = DownloadQueue(self)
+        self.downloads_panel = DownloadsPanel(self.game_scroll, self.download_queue)
+        self.downloads_button = DownloadsButton(self.list, self.downloads_panel, self.download_queue)
         self.apply_panel_appearance()
         self.split.splitterMoved.connect(self.remember_library_width)
         self.configure_view()
@@ -2182,6 +2186,7 @@ class LibraryWindow(QMainWindow):
         self.settings.sync()
 
     def closeEvent(self, event):
+        self.download_queue.shutdown()
         if hasattr(self, 'selection_settings_timer'):
             self.selection_settings_timer.stop()
         self.game_detection.stop()
