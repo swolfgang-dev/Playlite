@@ -3,9 +3,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import uuid
 import json
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QEvent, QVariantAnimation, QEasingCurve, Qt, QUrl, QSize
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QEvent, QVariantAnimation, QEasingCurve, Qt, QUrl, QSize, QPoint
 from PyQt6.QtGui import QDesktopServices, QColor, QIcon
-from PyQt6.QtWidgets import QFrame, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QProgressBar, QMessageBox
+from PyQt6.QtWidgets import QFrame, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QProgressBar, QMessageBox, QGraphicsOpacityEffect
 from .theme import set_style, colour
 from .desktop import open_folder
 
@@ -27,6 +27,7 @@ class Download:
 
 class DownloadQueue(QObject):
     changed = pyqtSignal()
+    added = pyqtSignal(object)
 
     def __init__(self,parent=None,storage=None):
         super().__init__(parent)
@@ -75,7 +76,7 @@ class DownloadQueue(QObject):
         if any(row.destination==destination and row.state in ('Queued','Downloading') for row in self.entries):
             raise ValueError('That download folder is already queued.')
         row=Download(name,destination,factory,metadata=metadata or {});self.entries.append(row)
-        self.changed.emit();QTimer.singleShot(0,self.pump)
+        self.changed.emit();self.added.emit(row);QTimer.singleShot(0,self.pump)
         return row
 
     def pump(self):
@@ -167,15 +168,11 @@ class DownloadsPanel(QFrame):
         strip_line=QHBoxLayout()
         self.active_label=QLabel();self.active_label.setTextFormat(Qt.TextFormat.PlainText)
         strip_line.addWidget(self.active_label,1)
-        self.expand_button=QPushButton()
-        self.expand_button.setIcon(QIcon(str(Path(__file__).parent/'assets/downloads.svg')))
-        self.expand_button.setIconSize(QSize(24,24))
-        self.expand_button.setFixedSize(40,40)
-        set_style(self.expand_button,'padding: 0;')
-        self.expand_button.setToolTip('Show downloads')
-        self.expand_button.setAccessibleName('Show downloads')
-        self.expand_button.clicked.connect(lambda:self.set_open(not self.opened))
-        strip_line.addWidget(self.expand_button);strip_layout.addLayout(strip_line)
+        self.active_percent=QLabel()
+        self.active_percent.setMinimumWidth(44)
+        self.active_percent.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        strip_line.addWidget(self.active_percent)
+        strip_layout.addLayout(strip_line)
         self.active_progress=QProgressBar();self.active_progress.setFixedHeight(8);self.active_progress.setTextVisible(False)
         progress_policy=self.active_progress.sizePolicy()
         progress_policy.setRetainSizeWhenHidden(True)
@@ -183,16 +180,43 @@ class DownloadsPanel(QFrame):
         strip_layout.addWidget(self.active_progress)
         self.active_strip.hide()
         self.strip_present=False
+        self.pinned_id=None
+        self.completed_shown=set()
+        self.completion_timer=QTimer(self);self.completion_timer.setSingleShot(True)
+        self.completion_timer.timeout.connect(self.release_completed)
+        self.card_fade=QVariantAnimation(self);self.card_fade.setDuration(260)
+        self.card_fade.valueChanged.connect(self.set_card_opacity)
+        self.card_fade.finished.connect(self.finish_card_fade)
+        self.card_opacity=1.
+        self.card_slot=QWidget()
+        self.card_slot.setObjectName('downloadCardSlot')
+        self.card_slot.setAutoFillBackground(False)
+        set_style(self.card_slot,'QWidget#downloadCardSlot { background: transparent; border: 0; }')
+        self.panel_opacity=QGraphicsOpacityEffect(self)
+        self.panel_opacity.setOpacity(0)
+        self.setGraphicsEffect(self.panel_opacity)
+        self.added_name=''
+        self.confirmation_timer=QTimer(self);self.confirmation_timer.setSingleShot(True)
+        self.confirmation_timer.timeout.connect(self.clear_confirmation)
+        queue.added.connect(self.confirm_added)
         self.setObjectName('downloadsPanel')
         set_style(self,f'QFrame#downloadsPanel {{ background: {colour("#202123")}; border: 1px solid {colour("#45474b")}; border-top-left-radius: 12px; border-top-right-radius: 12px; }}')
         layout=QVBoxLayout(self);layout.setContentsMargins(20,16,20,16);layout.setSpacing(12)
         title=QLabel('Downloads');title.setStyleSheet('font-weight: bold; font-size: 17px;')
         clear=QPushButton('Clear finished');clear.clicked.connect(queue.clear_finished)
-        close=QPushButton('Close');close.clicked.connect(lambda:self.set_open(False))
+        close=QPushButton();close.setIcon(QIcon(str(Path(__file__).parent/'assets/downloads.svg')))
+        close.setIconSize(QSize(24,24));close.setFixedSize(40,40)
+        close.setToolTip('Hide downloads');close.setAccessibleName('Hide downloads')
+        set_style(close,'padding: 0;')
+        close.clicked.connect(lambda:self.set_open(False))
+        self.close_button=close
         header=QHBoxLayout();header.setSpacing(10);header.addWidget(title);header.addStretch();header.addWidget(clear);header.addWidget(close)
         layout.addLayout(header)
         self.summary=QLabel('No downloads queued');layout.addWidget(self.summary)
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.rows_scroll=scroll
+        scroll.viewport().setAutoFillBackground(False)
+        set_style(scroll.viewport(),'background: transparent;')
         set_style(scroll,'QScrollArea { background: transparent; border: 0; } QScrollArea > QWidget > QWidget { background: transparent; }')
         content=QWidget();self.rows=QVBoxLayout(content);self.rows.setContentsMargins(12,12,12,12);self.rows.setSpacing(12);self.rows.addStretch()
         scroll.setWidget(content);layout.addWidget(scroll,1)
@@ -202,7 +226,25 @@ class DownloadsPanel(QFrame):
 
     def eventFilter(self,watched,event):
         if watched is self.parentWidget() and event.type()==QEvent.Type.Resize:self.place()
+        pinned=self.cards.get(self.pinned_id)
+        if pinned and watched is pinned[0] and not self.opened:
+            if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
+                self.card_press=event.position().toPoint()
+            elif event.type()==QEvent.Type.MouseButtonRelease and event.button()==Qt.MouseButton.LeftButton:
+                start=getattr(self,'card_press',None);self.card_press=None
+                if start is not None and (event.position().toPoint()-start).manhattanLength()<5:
+                    self.set_open(True)
+                    return True
         return super().eventFilter(watched,event)
+
+    def confirm_added(self,row):
+        self.added_name=row.name
+        self.confirmation_timer.start(4000)
+        self.refresh()
+
+    def clear_confirmation(self):
+        self.added_name=''
+        self.refresh()
 
     def transparent_colour(self,value):
         red,green,blue,_=QColor(colour(value)).getRgb()
@@ -212,7 +254,7 @@ class DownloadsPanel(QFrame):
         self.transparency=max(0,min(100,value))
         background=self.transparent_colour('#202123')
         set_style(self,f'QFrame#downloadsPanel {{ background: {background}; border: 1px solid #45474b; border-top-left-radius: 12px; border-top-right-radius: 12px; }}')
-        set_style(self.active_strip,f'QFrame#activeDownloadStrip {{ background: {background}; border-top: 1px solid #45474b; }}')
+        set_style(self.active_strip,'QFrame#activeDownloadStrip { background: transparent; border: 0; }')
         for card,*_ in self.cards.values():
             template=card.property('_theme_stylesheet')
             import re
@@ -220,42 +262,96 @@ class DownloadsPanel(QFrame):
             set_style(card,template)
 
     def place(self):
-        self.active_progress.setVisible(not self.opened)
-        host=self.parentWidget();strip_height=min(host.height(),self.active_strip.sizeHint().height()) if self.strip_present else 0
-        self.active_strip.setGeometry(0,host.height()-strip_height,host.width(),strip_height)
-        self.active_strip.setVisible(self.strip_present)
-        self.active_strip.raise_()
-        content_height=sum(card[0].sizeHint().height() for card in self.cards.values())
-        content_height+=max(0,len(self.cards)-1)*self.rows.spacing()+self.rows.contentsMargins().top()+self.rows.contentsMargins().bottom()
+        self.active_label.hide()
+        self.active_progress.hide()
+        self.active_percent.hide()
+        policy=self.active_progress.sizePolicy();policy.setRetainSizeWhenHidden(False);self.active_progress.setSizePolicy(policy)
+        self.active_strip.hide()
+        host=self.parentWidget()
+        pinned=self.cards.get(self.pinned_id)
+        card_height=pinned[0].sizeHint().height() if pinned else 0
+        collapsed_height=card_height+32 if pinned else 0
+        visible_cards=[card[0] for card in self.cards.values()]
+        content_height=sum(card.sizeHint().height() for card in visible_cards)
+        content_height+=max(0,len(visible_cards)-1)*self.rows.spacing()+self.rows.contentsMargins().top()+self.rows.contentsMargins().bottom()
         height=min(max(160,content_height+120),max(160,round(host.height()*.5)))
-        height=min(max(0,host.height()-strip_height),height)
-        visible_height=round(height*self.amount)
+        if not visible_cards:
+            height=self.layout().sizeHint().height()
+        height=min(host.height(),height)
+        visible_height=round(collapsed_height+(height-collapsed_height)*self.amount)
         if self.host_margins is not None:
             margins=self.host_margins
-            host.setViewportMargins(margins.left(),margins.top(),margins.right(),margins.bottom()+visible_height+strip_height)
-        self.setGeometry(0,host.height()-strip_height-visible_height,host.width(),height)
+            host.setViewportMargins(margins.left(),margins.top(),margins.right(),margins.bottom()+visible_height)
+        self.setGeometry(0,host.height()-height,host.width(),height)
+        self.panel_opacity.setOpacity(self.amount)
+        self.layout().activate();self.rows.activate()
         self.raise_()
-        self.active_strip.raise_()
+        if pinned:
+            card=pinned[0]
+            start=QPoint(20,max(0,host.height()-card_height-16))
+            end=self.card_slot.mapTo(host,QPoint(0,0)) if self.card_slot.parentWidget() else start
+            width=round((host.width()-40)*(1-self.amount)+self.card_slot.width()*self.amount)
+            x=round(start.x()+(end.x()-start.x())*self.amount)
+            y=round(start.y()+(end.y()-start.y())*self.amount)
+            card.setGeometry(x,y,max(1,width),card_height)
+            card.raise_();card.show()
 
     def set_amount(self,value):self.amount=float(value);self.place()
 
     def set_open(self,opened):
         self.opened=opened;self.animation.stop();self.show();self.raise_()
-        self.expand_button.setToolTip('Hide downloads' if opened else 'Show downloads')
-        self.expand_button.setAccessibleName(self.expand_button.toolTip())
         self.animation.setStartValue(self.amount);self.animation.setEndValue(1. if opened else 0.)
         self.animation.start()
 
     def settle(self):
         if not self.opened:self.hide()
 
+    def set_card_opacity(self,value):
+        self.card_opacity=float(value)
+        pinned=self.cards.get(self.pinned_id)
+        if pinned:
+            effect=pinned[0].graphicsEffect()
+            if effect is None:
+                effect=QGraphicsOpacityEffect(pinned[0]);pinned[0].setGraphicsEffect(effect)
+            effect.setOpacity(self.card_opacity)
+
+    def release_completed(self):
+        self.completed_shown.add(self.pinned_id)
+        upcoming=any(row.state in ('Downloading','Queued','Paused') for row in self.queue.entries)
+        if upcoming or self.opened:
+            self.refresh()
+        else:
+            self.card_fade.stop()
+            self.card_fade.setStartValue(self.card_opacity);self.card_fade.setEndValue(0.)
+            self.card_fade.start()
+
+    def finish_card_fade(self):
+        if self.card_opacity==0.:
+            self.refresh()
+
     def refresh(self):
         queued=sum(row.state=='Queued' for row in self.queue.entries)
         waiting=[row for row in self.queue.entries if row.state=='Queued']
-        active=self.queue.active or next((row for row in self.queue.entries if row.state in ('Queued','Paused')),None)
+        active=self.queue.active or next((row for row in self.queue.ordered() if row.state in ('Downloading','Queued','Paused')),None)
+        previous=next((row for row in self.queue.entries if row.id==self.pinned_id),None)
+        if previous and previous.state=='Complete' and previous.id not in self.completed_shown:
+            if not self.completion_timer.isActive():self.completion_timer.start(3000)
+            active=previous
+        elif previous and previous.state=='Complete' and self.card_fade.state()==QVariantAnimation.State.Running and self.card_fade.endValue()==0. and active is None:
+            active=previous
+        else:
+            self.completion_timer.stop()
+        new_id=active.id if active else None
+        changed_pin=new_id!=self.pinned_id
+        if changed_pin:
+            self.card_fade.stop()
+            old=self.cards.get(self.pinned_id)
+            if old:old[0].setGraphicsEffect(None)
         self.strip_present=active is not None
         if active:
-            self.active_label.setText(f'{active.name} · {active.state}' + (f' · {queued} waiting' if queued else ''))
+            self.active_percent.setText(f'{active.progress:.0f}%' if active.progress is not None else '—')
+            self.active_label.setText(f'{queued} waiting' if queued else 'Active download')
+            if self.added_name:self.active_label.setText(f'Added to downloads · {self.added_name}')
             self.active_label.setToolTip(active.status)
             self.active_progress.setRange(0,0 if active.state=='Downloading' and active.progress is None else 1000)
             self.active_progress.setValue(round((active.progress or 0)*10))
@@ -264,9 +360,10 @@ class DownloadsPanel(QFrame):
         ids={row.id for row in self.queue.entries}
         for identifier in list(self.cards):
             if identifier not in ids:self.cards.pop(identifier)[0].deleteLater()
+        visible_index=0
         for index,row in enumerate(self.queue.ordered()):
             if row.id not in self.cards:
-                card=QFrame();card.setObjectName('downloadCard')
+                card=QFrame();card.setObjectName('downloadCard');card.installEventFilter(self)
                 set_style(card,
                     f'QFrame#downloadCard {{ background: {self.transparent_colour("#292b2e")}; border: 1px solid {colour("#45474b")}; border-radius: 8px; }}'
                     f'QFrame#downloadCard QPushButton {{ background: {colour("#3b4654")}; border: 1px solid {colour("#566477")}; }}'
@@ -311,7 +408,19 @@ class DownloadsPanel(QFrame):
                 self.cards[row.id]=(card,name,status,bar,action,library,pause,retry,up,down)
             card,name,status,bar,action,library,pause,retry,up,down=self.cards[row.id]
             card.remove_button.setVisible(row.state=='Complete')
-            self.rows.removeWidget(card);self.rows.insertWidget(index,card)
+            self.rows.removeWidget(card)
+            self.active_strip.layout().removeWidget(card)
+            if row is active:
+                card.setParent(self.parentWidget())
+                self.card_slot.setFixedHeight(card.sizeHint().height())
+                self.rows.removeWidget(self.card_slot)
+                self.rows.insertWidget(visible_index,self.card_slot)
+                visible_index+=1
+            else:
+                card.setParent(self.rows_scroll.widget())
+                self.rows.insertWidget(visible_index,card)
+                visible_index+=1
+            card.show()
             up.setVisible(row.state=='Queued');down.setVisible(row.state=='Queued')
             up.setEnabled(row.state=='Queued' and waiting.index(row)>0)
             down.setEnabled(row.state=='Queued' and waiting.index(row)<len(waiting)-1)
@@ -329,10 +438,12 @@ class DownloadsPanel(QFrame):
             if parts and parts[0].casefold()==state.casefold():parts.pop(0)
             detail=' · '.join(parts)
             transferred=next((part for part in parts if '/' in part and not part.lower().startswith('disk') and '/s' not in part),None)
-            metrics=[part for part in parts if '/s' in part or 'remaining' in part]
-            status.setText(f'{state} · {transferred}' if row.state=='Downloading' and transferred else state+(f' · {detail}' if detail else ''))
+            metrics=[part for part in parts if '/s' in part or 'Mbps' in part or 'remaining' in part]
+            transferring=row.state=='Downloading' and transferred is not None
+            phase=parts[0] if transferring and parts[0]!=transferred and '%' not in parts[0] else state
+            status.setText(phase if transferring else state+(f' · {detail}' if detail else ''))
             status.setTextFormat(Qt.TextFormat.PlainText);status.setToolTip(row.status)
-            status.metrics_label.setText(' · '.join(metrics) if transferred and row.state=='Downloading' else '')
+            status.metrics_label.setText(' · '.join([transferred,*metrics]) if transferring else '')
             bar.setRange(0,0 if row.state=='Downloading' and row.progress is None else 1000)
             bar.setValue(round((row.progress or 0)*10));bar.setVisible(row.state in ('Downloading','Complete'))
             bar.percent_label.setText(f'{row.progress:.0f}%' if row.progress is not None else '')
@@ -340,7 +451,20 @@ class DownloadsPanel(QFrame):
             action.setText('Open folder' if row.state=='Complete' else 'Cancel')
             set_style(action,'' if row.state=='Complete' else 'QPushButton { background: transparent; border: 1px solid #45474b; } QPushButton:hover { background: #30343a; }')
             action.setVisible(row.state in ('Queued','Downloading','Complete','Paused'));action.setEnabled(not row.cancelled or row.state=='Paused')
+        self.pinned_id=active.id if active else None
+        if active is None:
+            self.rows.removeWidget(self.card_slot);self.card_slot.hide()
+        else:self.card_slot.show()
+        self.rows_scroll.setVisible(bool(self.cards))
         self.place()
+        if changed_pin:
+            if active and previous is None and not self.opened:
+                self.set_card_opacity(0.)
+                self.card_fade.setStartValue(0.);self.card_fade.setEndValue(1.)
+                self.card_fade.start()
+            else:self.set_card_opacity(1.)
+        elif active and active.state!='Complete' and self.card_fade.endValue()==0.:
+            self.card_fade.stop();self.set_card_opacity(1.)
 
     def add_to_library(self, row):
         if row.metadata.get('library_game_id'):

@@ -1,13 +1,27 @@
 """Predictable native controls and readable standard button symbols."""
 from pathlib import Path
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter
-from PyQt6.QtWidgets import QProxyStyle, QStyle, QStyleFactory
+from PyQt6.QtWidgets import QProxyStyle, QStyle, QStyleFactory, QLabel, QAbstractItemView
 from .theme import colour
 
 
 class ApplicationStyle(QProxyStyle):
     def __init__(self):
         super().__init__(QStyleFactory.create('Fusion'))
+
+    def polish(self, target):
+        result = super().polish(target)
+        if isinstance(target, QLabel) and target.pixmap().isNull():
+            ancestor = target.parentWidget()
+            while ancestor is not None and not isinstance(ancestor, QAbstractItemView):
+                ancestor = ancestor.parentWidget()
+            # Item views handle selection themselves (including library rows).
+            if ancestor is None:
+                target.setTextInteractionFlags(target.textInteractionFlags()
+                    | Qt.TextInteractionFlag.TextSelectableByMouse
+                    | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        return result
 
     def styleHint(self, hint, option=None, widget=None, returnData=None):
         if hint == QStyle.StyleHint.SH_DialogButtonBox_ButtonsHaveIcons:

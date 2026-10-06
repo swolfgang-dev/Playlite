@@ -16,6 +16,26 @@ APP = QApplication.instance() or QApplication([])
 
 
 class ThemeTests(unittest.TestCase):
+    def test_read_only_labels_support_selection_and_preserve_links(self):
+        from PyQt6.QtCore import Qt, QPoint
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QListWidget
+        from playlite.native_style import ApplicationStyle
+        style = ApplicationStyle()
+        label = QLabel('Selectable text')
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        style.polish(label)
+        label.show()
+        QTest.mouseDClick(label, Qt.MouseButton.LeftButton, pos=QPoint(20, label.height()//2))
+        self.assertTrue(label.selectedText())
+        self.assertTrue(label.textInteractionFlags() & Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.assertTrue(label.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        view = QListWidget()
+        row_label = QLabel('Library row', view.viewport())
+        style.polish(row_label)
+        self.assertFalse(row_label.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse)
+        label.close()
+
     def test_saved_colours_update_styles_paint_and_svg_without_losing_alpha(self):
         with TemporaryDirectory() as directory:
             settings = QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat)

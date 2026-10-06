@@ -10,6 +10,19 @@ class DownloadTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
 
+    def test_enqueue_shows_strip_and_confirmation_without_expanding(self):
+        host=QWidget();host.resize(800,600)
+        queue=DownloadQueue();panel=DownloadsPanel(host,queue);host.show()
+        queue.enqueue('New game','/tmp/new-game-confirmation',lambda *_:Mock())
+        self.app.processEvents()
+        self.assertFalse(panel.opened)
+        self.assertTrue(panel.cards[queue.active.id][0].isVisible())
+        self.assertFalse(panel.active_strip.isVisible())
+        self.assertEqual(panel.active_label.text(),'Added to downloads · New game')
+        panel.clear_confirmation()
+        self.assertEqual(panel.cards[queue.active.id][1].text(),'New game')
+        host.close()
+
     def test_active_strip_reserves_space_and_panel_expands_above_it(self):
         from PyQt6.QtWidgets import QScrollArea
         host=QScrollArea();host.resize(800,600);host.setWidget(QWidget())
@@ -17,27 +30,86 @@ class DownloadTests(unittest.TestCase):
         host.show()
         row=queue.enqueue('Active game','/tmp/active-strip',lambda *_:Mock())
         self.app.processEvents()
-        queue.update(row,35,'Steam downloading · 35% · 35 / 100 MiB · 10 MiB/s · 1 min remaining · disk 50 / 120 MiB')
+        queue.update(row,35,'Steam downloading · 35% · 35 / 100 MiB · 83.9 Mbps · 1 min remaining · disk 50 / 120 MiB')
         status=panel.cards[row.id][2]
-        self.assertEqual(status.text(),'Downloading · 35 / 100 MiB')
-        self.assertEqual(status.metrics_label.text(),'10 MiB/s · 1 min remaining')
-        self.assertTrue(panel.active_strip.isVisible())
-        self.assertIn('Active game',panel.active_label.text())
-        self.assertEqual(panel.active_progress.value(),350)
-        strip_height=panel.active_strip.height()
-        self.assertEqual(host.viewportMargins().bottom(),strip_height)
-        panel.expand_button.click();panel.animation.setCurrentTime(panel.animation.duration())
-        self.assertFalse(panel.active_progress.isVisible())
-        self.assertEqual(panel.active_strip.height(),strip_height)
+        self.assertEqual(status.text(),'Steam downloading')
+        self.assertEqual(status.metrics_label.text(),'35 / 100 MiB · 83.9 Mbps · 1 min remaining')
+        queue.update(row,50,'Copying files · 50 / 100 MiB')
+        self.assertEqual(status.text(),'Copying files')
+        self.assertEqual(status.metrics_label.text(),'50 / 100 MiB')
+        queue.update(row,75,'Verifying copied files · 50 / 100 MiB')
+        self.assertEqual(status.text(),'Verifying copied files')
+        self.assertEqual(status.metrics_label.text(),'50 / 100 MiB')
+        queue.update(row,35,'Steam downloading · 35 / 100 MiB · 83.9 Mbps · 1 min remaining')
+        card=panel.cards[row.id][0]
+        self.assertTrue(card.isVisible())
+        self.assertFalse(panel.active_strip.isVisible())
+        self.assertEqual(panel.cards[row.id][3].value(),350)
+        self.assertEqual(panel.cards[row.id][3].percent_label.text(),'35%')
+        start=card.pos()
+        reserved=host.viewportMargins().bottom()
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtCore import Qt,QPoint
+        QTest.mouseClick(card,Qt.MouseButton.LeftButton,pos=QPoint(3,3))
+        self.assertTrue(panel.opened)
+        self.assertFalse(panel.close_button.icon().isNull())
+        self.assertEqual(panel.close_button.text(),'')
+        panel.animation.setCurrentTime(panel.animation.duration())
+        from PyQt6.QtCore import QPoint
+        self.assertEqual(card.pos(),panel.card_slot.mapTo(host,QPoint(0,0)))
+        self.assertLess(card.y(),start.y())
+        self.assertEqual(panel.panel_opacity.opacity(),1)
         self.assertLessEqual(panel.height(),host.height()*.5)
-        self.assertEqual(panel.geometry().bottom()+1,panel.active_strip.y())
-        self.assertGreater(host.viewportMargins().bottom(),strip_height)
-        panel.set_open(False);panel.animation.setCurrentTime(panel.animation.duration())
-        self.assertTrue(panel.active_progress.isVisible())
-        self.assertEqual(host.viewportMargins().bottom(),strip_height)
+        self.assertEqual(panel.geometry().bottom()+1,host.height())
+        panel.close_button.click();panel.animation.setCurrentTime(panel.animation.duration())
+        self.assertTrue(panel.cards[row.id][3].isVisible())
+        self.assertEqual(card.pos(),start)
+        self.assertEqual(host.viewportMargins().bottom(),reserved)
         queue.finish(row,True,'Done')
         self.assertFalse(panel.active_strip.isVisible())
+        self.assertEqual(panel.pinned_id,row.id)
+        self.assertTrue(panel.completion_timer.isActive())
+        panel.completion_timer.stop();panel.completion_timer.timeout.emit()
+        self.assertEqual(panel.pinned_id,row.id)
+        panel.card_fade.setCurrentTime(panel.card_fade.duration())
+        self.assertIsNone(panel.pinned_id)
         self.assertEqual(host.viewportMargins().bottom(),0)
+        host.close()
+
+    def test_completed_card_holds_before_next_download_takes_over(self):
+        host=QWidget();host.resize(800,600);host.show()
+        queue=DownloadQueue();panel=DownloadsPanel(host,queue)
+        first=queue.enqueue('First','/tmp/first',lambda *_:Mock())
+        second=queue.enqueue('Second','/tmp/second',lambda *_:Mock())
+        self.app.processEvents()
+        panel.card_fade.setCurrentTime(panel.card_fade.duration())
+        self.assertEqual(panel.card_opacity,1.)
+        queue.finish(first,True,'Done');self.app.processEvents()
+        self.assertIs(queue.active,second)
+        self.assertEqual(panel.pinned_id,first.id)
+        queue.update(second,10,'Downloading')
+        self.assertEqual(panel.pinned_id,first.id)
+        panel.completion_timer.stop();panel.completion_timer.timeout.emit()
+        self.assertEqual(panel.pinned_id,second.id)
+        self.assertEqual(panel.card_opacity,1.)
+        host.close()
+
+    def test_new_download_fades_in_after_completed_card_disappears(self):
+        host=QWidget();host.resize(800,600);host.show()
+        queue=DownloadQueue();panel=DownloadsPanel(host,queue)
+        first=queue.enqueue('First','/tmp/first',lambda *_:Mock())
+        self.assertEqual(panel.card_opacity,0.)
+        self.app.processEvents()
+        panel.card_fade.setCurrentTime(panel.card_fade.duration())
+        queue.finish(first,True,'Done')
+        panel.completion_timer.stop();panel.completion_timer.timeout.emit()
+        panel.card_fade.setCurrentTime(panel.card_fade.duration())
+        self.assertIsNone(panel.pinned_id)
+        second=queue.enqueue('Second','/tmp/second',lambda *_:Mock())
+        self.assertEqual(panel.pinned_id,second.id)
+        self.assertEqual(panel.card_opacity,0.)
+        panel.card_fade.setCurrentTime(panel.card_fade.duration())
+        self.assertEqual(panel.cards[second.id][0].graphicsEffect().opacity(),1.)
         host.close()
 
     def test_remove_completed_entry_keeps_files_and_other_downloads(self):
@@ -66,7 +138,7 @@ class DownloadTests(unittest.TestCase):
         heights=[]
         for state,progress,message in (
                 ('Downloading',None,'Starting'),
-                ('Downloading',45,'45 / 100 MiB · 10 MiB/s · 1 min remaining'),
+                ('Downloading',45,'45 / 100 MiB · 83.9 Mbps · 1 min remaining'),
                 ('Paused',45,'Paused · partial files retained'),
                 ('Complete',100,'Windows download completed and verified by Steam')):
             row.state=state;row.progress=progress;row.status=message
@@ -204,8 +276,9 @@ class DownloadTests(unittest.TestCase):
             row=queue.enqueue(state,f'/tmp/sort-{index}',Mock());row.state=state
         self.assertEqual([r.state for r in queue.ordered()],['Downloading','Queued','Failed','Paused','Cancelled','Complete'])
         host=QWidget();panel=DownloadsPanel(host,queue)
-        self.assertEqual([panel.rows.itemAt(i).widget() for i in range(6)],
-                         [panel.cards[r.id][0] for r in queue.ordered()])
+        expected=[panel.card_slot if r.id==panel.pinned_id else panel.cards[r.id][0] for r in queue.ordered()]
+        self.assertEqual([panel.rows.itemAt(i).widget() for i in range(len(expected))],expected)
+        self.assertIs(panel.cards[panel.pinned_id][0].parentWidget(),host)
         queue.clear_finished();self.assertEqual({r.state for r in queue.entries},{'Queued','Downloading','Paused'})
 
     def test_close_warning_defaults_to_cancel_without_stopping_queue(self):
