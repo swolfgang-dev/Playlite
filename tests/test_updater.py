@@ -5,6 +5,56 @@ from pathlib import Path
 from unittest.mock import patch
 from playlite import updater
 
+
+class UpdateRestartTests(unittest.TestCase):
+    def test_update_bypasses_tray_but_respects_close_veto(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from PyQt6.QtWidgets import QApplication, QDialog, QMainWindow
+        from playlite.lifecycle import TrayLifecycle
+        from playlite.settings import SettingsDialog
+        app = QApplication.instance() or QApplication([])
+
+        class Window(QMainWindow):
+            allow_close = True
+            def closeEvent(self, event):
+                event.setAccepted(self.allow_close)
+
+        for allow_close in (True, False):
+            with self.subTest(allow_close=allow_close), tempfile.TemporaryDirectory() as root:
+                window = Window()
+                window.allow_close = allow_close
+                window.lifecycle = TrayLifecycle(window, app)
+                window.lifecycle.quit = Mock()
+                window.show()
+                directory = Path(root) / 'staged'
+                directory.mkdir()
+                dialog = SimpleNamespace(
+                    application_release={'tag_name': 'v1'},
+                    update_status=Mock(), check_update_button=Mock(),
+                    parentWidget=lambda: window, save=lambda: None,
+                    result=lambda: QDialog.DialogCode.Accepted,
+                    update_task=lambda function, complete: complete(function()))
+                with patch.dict(updater.os.environ, {'PLAYLITE_PROFILE': ''}), \
+                        patch.object(updater, 'prepare_update', return_value=directory), \
+                        patch.object(updater, 'launch_update') as launch, \
+                        patch('playlite.lifecycle.QSystemTrayIcon.isSystemTrayAvailable', return_value=True):
+                    SettingsDialog.install_application_update(dialog)
+                self.assertFalse(window.lifecycle.quitting)
+                if allow_close:
+                    launch.assert_called_once_with(directory, 'v1')
+                    window.lifecycle.quit.assert_called_once()
+                    self.assertFalse(window.isVisible())
+                else:
+                    launch.assert_not_called()
+                    window.lifecycle.quit.assert_not_called()
+                    self.assertTrue(window.isVisible())
+                    self.assertFalse(directory.exists())
+                window.lifecycle.quitting = True
+                window.allow_close = True
+                window.close()
+                window.deleteLater()
+
 class UpdaterTests(unittest.TestCase):
     def test_repo_cannot_install_updates(self):
         with patch.dict(updater.os.environ, {'PLAYLITE_PROFILE':'repo'}):

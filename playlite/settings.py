@@ -736,12 +736,25 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 shutil.rmtree(directory)
                 self.check_update_button.setEnabled(True)
                 return
-            if window is None or not window.close():
+            lifecycle = getattr(window, 'lifecycle', None)
+            # Updating must close the window rather than hide it in the tray.
+            # Keep closeEvent active so downloads can still veto shutdown.
+            if lifecycle is not None:
+                lifecycle.quitting = True
+            try:
+                closed = window is not None and window.close()
+            finally:
+                if lifecycle is not None:
+                    lifecycle.quitting = False
+            if not closed:
                 shutil.rmtree(directory)
                 return
             launch_update(directory, release['tag_name'])
             from PyQt6.QtWidgets import QApplication
-            QApplication.instance().quit()
+            if lifecycle is not None:
+                lifecycle.quit()
+            else:
+                QApplication.instance().quit()
         self.update_task(lambda: prepare_update(release), complete)
 
     def delete_selected_plugins(self):
