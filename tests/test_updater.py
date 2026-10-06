@@ -56,6 +56,24 @@ class UpdateRestartTests(unittest.TestCase):
                 window.deleteLater()
 
 class UpdaterTests(unittest.TestCase):
+    def test_rate_limit_falls_back_to_public_release_and_checksums(self):
+        from urllib.error import HTTPError
+        from unittest.mock import Mock
+        response=Mock();response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
+        response.geturl.return_value='https://github.com/swolfgang-dev/Playlite/releases/tag/v0.2.53'
+        limited=HTTPError('api',403,'rate limit',{},None)
+        with patch.object(updater,'fetch',side_effect=[limited,b'hash  install.sh\nhash  playlite-0.2.53-py3-none-any.whl\n']),patch.object(updater.urllib.request,'urlopen',return_value=response):
+            release=updater.latest_release()
+        self.assertEqual(release['tag_name'],'v0.2.53')
+        assets={item['name']:item['browser_download_url'] for item in release['assets']}
+        self.assertEqual(assets['install.sh'],'https://github.com/swolfgang-dev/Playlite/releases/download/v0.2.53/install.sh')
+        self.assertIn('SHA256SUMS',assets)
+
+    def test_other_release_errors_are_not_hidden(self):
+        from urllib.error import HTTPError
+        with patch.object(updater,'fetch',side_effect=HTTPError('api',404,'missing',{},None)):
+            with self.assertRaises(HTTPError):updater.latest_release()
+
     def test_repo_cannot_install_updates(self):
         with patch.dict(updater.os.environ, {'PLAYLITE_PROFILE':'repo'}):
             with self.assertRaises(ValueError): updater.prepare_update({})

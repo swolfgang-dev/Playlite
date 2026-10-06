@@ -7,6 +7,9 @@ import subprocess
 import sys
 import time
 import urllib.request
+from urllib.error import HTTPError
+from urllib.parse import urlparse, unquote, quote
+import re
 
 REPOSITORY = 'swolfgang-dev/Playlite'
 
@@ -18,7 +21,22 @@ def fetch(url):
 
 
 def latest_release():
-    release = json.loads(fetch(f'https://api.github.com/repos/{REPOSITORY}/releases/latest'))
+    try:
+        release = json.loads(fetch(f'https://api.github.com/repos/{REPOSITORY}/releases/latest'))
+    except HTTPError as error:
+        if error.code not in (403,429):raise
+        request=urllib.request.Request(f'https://github.com/{REPOSITORY}/releases/latest',headers={'User-Agent':'Playlite-Updater'})
+        with urllib.request.urlopen(request,timeout=30) as response:
+            path=urlparse(response.geturl()).path
+        prefix=f'/{REPOSITORY}/releases/tag/'
+        if not path.startswith(prefix):raise ValueError('Could not resolve the latest stable release.')
+        tag=unquote(path[len(prefix):])
+        if not re.fullmatch(r'v[0-9]+(?:\.[0-9]+)*',tag):raise ValueError('Invalid stable release tag.')
+        base=f'https://github.com/{REPOSITORY}/releases/download/{quote(tag,safe="")}/'
+        names=[line.split()[-1].lstrip('*') for line in fetch(base+'SHA256SUMS').decode().splitlines() if len(line.split())==2]
+        release={'tag_name':tag,'assets':[{'name':name,'browser_download_url':base+name} for name in names
+                 if re.fullmatch(r'[A-Za-z0-9_.+-]+',name)]}
+        release['assets'].append({'name':'SHA256SUMS','browser_download_url':base+'SHA256SUMS'})
     if release.get('draft') or release.get('prerelease'):
         raise ValueError('No stable release is available.')
     return release

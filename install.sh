@@ -90,8 +90,9 @@ import os
 from pathlib import Path
 import re
 import sys
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, unquote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.error import HTTPError
 
 repository, version, destination = sys.argv[1:]
 if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
@@ -106,13 +107,28 @@ class Redirect(HTTPRedirectHandler):
 opener = build_opener(Redirect())
 def fetch(url, binary=False):
     headers = {'User-Agent': 'Playlite Installer', 'Accept': 'application/octet-stream' if binary else 'application/vnd.github+json'}
-    if token:
+    if token and urlparse(url).hostname=='api.github.com':
         headers['Authorization'] = 'Bearer ' + token
     with opener.open(Request(url, headers=headers), timeout=60) as response:
         return response.read()
 release = 'latest' if version == 'latest' else 'tags/' + quote(version, safe='')
 try:
-    document = json.loads(fetch('https://api.github.com/repos/' + repository + '/releases/' + release))
+    try:
+        document = json.loads(fetch('https://api.github.com/repos/' + repository + '/releases/' + release))
+    except HTTPError as error:
+        if error.code not in (403,429):raise
+        tag=version
+        if tag=='latest':
+            with opener.open(Request('https://github.com/'+repository+'/releases/latest',headers={'User-Agent':'Playlite Installer'}),timeout=60) as response:
+                path=urlparse(response.geturl()).path
+            prefix='/'+repository+'/releases/tag/'
+            if not path.startswith(prefix):raise ValueError('Could not resolve the latest release.')
+            tag=unquote(path[len(prefix):])
+        if not re.fullmatch(r'v[0-9]+(?:\.[0-9]+)*',tag):raise ValueError('Invalid stable release tag.')
+        base='https://github.com/'+repository+'/releases/download/'+quote(tag,safe='')+'/'
+        names=[line.split()[-1].lstrip('*') for line in fetch(base+'SHA256SUMS').decode().splitlines() if len(line.split())==2]
+        document={'assets':[{'name':name,'browser_download_url':base+name} for name in names if re.fullmatch(r'[A-Za-z0-9_.+-]+',name)]}
+        document['assets'].append({'name':'SHA256SUMS','browser_download_url':base+'SHA256SUMS'})
     assets = document['assets']
     wheels = [asset for asset in assets if re.fullmatch(r'playlite-[A-Za-z0-9_.+-]+\.whl', asset['name'])]
     if len(wheels) != 1:
@@ -120,7 +136,7 @@ try:
     selected = wheels + [next(asset for asset in assets if asset['name'] == name) for name in ('pip.pyz', 'SHA256SUMS')]
     selected += [asset for asset in assets if asset['name'] in ('uninstall.sh', 'uninstall.py')]
     for asset in selected:
-        (Path(destination) / asset['name']).write_bytes(fetch(asset['url'], binary=True))
+        (Path(destination) / asset['name']).write_bytes(fetch(asset['browser_download_url'], binary=True))
 except Exception as error:
     raise SystemExit('Could not download the Playlite release: ' + str(error))
 PYDOWNLOAD
