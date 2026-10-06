@@ -23,7 +23,7 @@ from .link_names import load_names, friendly_name
 from PyQt6.QtCore import QAbstractAnimation, QItemSelectionModel, Qt, QSize, QUrl, QTimer, QRect, QRectF, QSettings, QThreadPool, QEvent, QVariantAnimation, QEasingCurve, QElapsedTimer
 from PyQt6.QtGui import QFontMetrics, QColor, QDesktopServices, QIcon, QImage, QImageReader, QCursor, QPainter, QPen, QPainterPath, QPixmap, QTextDocument, QRegion
 from PyQt6.QtWidgets import (
-    QApplication, QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyle, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout,
+    QApplication, QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyleOptionButton, QStyle, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout,
     QLabel, QLayout, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QTextBrowser, QTextEdit,
     QVBoxLayout, QBoxLayout, QWidget, QComboBox, QCheckBox, QGridLayout, QListView, QMenu, QAbstractItemView,
@@ -261,7 +261,17 @@ class Hero(QWidget):
 
     def position_play_control(self):
         padding = 8 if self.pixmap.isNull() else 24
-        self.play_control.setFixedWidth(max(150, self.play_button.sizeHint().width() + 30))
+        button = self.play_button
+        button.ensurePolished()
+        metrics = button.fontMetrics()
+        option = QStyleOptionButton()
+        option.initFrom(button)
+        option.text = max(('Play', 'Running', 'Launching…', 'Launching...'),
+                          key=metrics.horizontalAdvance)
+        content = QSize(metrics.horizontalAdvance(option.text), metrics.height())
+        button_width = button.style().sizeFromContents(QStyle.ContentsType.CT_PushButton,
+                                                      option, content, button).width()
+        self.play_control.setFixedWidth(max(150, button_width + 30))
         self.play_control.layout().activate()
         self.play_control.move(padding, max(padding, self.height() - self.play_control.height() - padding))
         self.update()

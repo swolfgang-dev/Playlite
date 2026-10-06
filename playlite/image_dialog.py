@@ -148,7 +148,11 @@ class ImageDownloader(QDialog):
                 filter_row.addLayout(group)
                 controls.append(checks)
             reset = QPushButton('Reset filters')
+            clear = QPushButton('Clear filters')
+            clear.setToolTip('Show all artwork types, shapes, and resolutions.')
+            clear.clicked.connect(lambda *_, key=key: self.clear_filters(key))
             filter_row.addStretch(1)
+            filter_row.addWidget(clear)
             filter_row.addWidget(reset)
             page_layout.addLayout(filter_row)
             self.filters[key] = tuple(controls)
@@ -592,6 +596,13 @@ class ImageDownloader(QDialog):
             # Preserve browsing position as newly downloaded images arrive.
             if key in positions:
                 self.image_lists[key].verticalScrollBar().setValue(positions[key])
+
+    def clear_filters(self, key):
+        for name, widget in zip(OPTIONS, self.filters[key]):
+            widget.blockSignals(True)
+            widget.set_values([value for _, value in OPTIONS[name]])
+            widget.blockSignals(False)
+        self.filter_images(key)
 
     def reset_filters(self, key):
         category, shape, resolution = self.filters[key]
