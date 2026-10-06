@@ -2,9 +2,10 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 import uuid
+import json
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QEvent, QVariantAnimation, QEasingCurve, Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QFrame, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QProgressBar
+from PyQt6.QtWidgets import QFrame, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QProgressBar, QMessageBox
 from .theme import set_style, colour
 
 
@@ -19,21 +20,49 @@ class Download:
     progress: float | None = None
     controller: object = field(default=None,repr=False)
     cancelled: bool = False
+    paused: bool = False
+    metadata: dict = field(default_factory=dict)
 
 
 class DownloadQueue(QObject):
     changed = pyqtSignal()
 
-    def __init__(self,parent=None):
+    def __init__(self,parent=None,storage=None):
         super().__init__(parent)
         self.entries=[]; self.active=None; self.stopped=False
+        self.storage=Path(storage) if storage else None
+        self.load()
+        self.changed.connect(self.save)
 
-    def enqueue(self,name,destination,factory):
+    def load(self):
+        if not self.storage or not self.storage.exists():return
+        try:
+            data=json.loads(self.storage.read_text())
+            for item in data:
+                row=Download(item['name'],item['destination'],None,id=item['id'],
+                             state=item['state'],status=item['status'],progress=item.get('progress'),metadata=item.get('metadata',{}))
+                if row.state in ('Queued','Downloading'):
+                    row.state='Paused';row.status='Paused when Playlite closed · resume to continue'
+                self.entries.append(row)
+        except (OSError,ValueError,KeyError,TypeError):
+            self.entries=[]
+
+    def save(self):
+        if not self.storage:return
+        self.storage.parent.mkdir(parents=True,exist_ok=True)
+        data=[{key:getattr(row,key) for key in ('name','destination','id','state','status','progress','metadata')} for row in self.entries]
+        temporary=self.storage.with_suffix('.tmp');temporary.write_text(json.dumps(data));temporary.chmod(0o600);temporary.replace(self.storage)
+
+    def ordered(self):
+        rank={'Downloading':0,'Queued':1,'Failed':2,'Paused':3,'Cancelled':4,'Complete':5}
+        return sorted(self.entries,key=lambda row:rank.get(row.state,3))
+
+    def enqueue(self,name,destination,factory,metadata=None):
         if self.stopped:raise ValueError('The download queue is closing.')
         destination=str(Path(destination).expanduser().resolve())
         if any(row.destination==destination and row.state in ('Queued','Downloading') for row in self.entries):
             raise ValueError('That download folder is already queued.')
-        row=Download(name,destination,factory);self.entries.append(row)
+        row=Download(name,destination,factory,metadata=metadata or {});self.entries.append(row)
         self.changed.emit();QTimer.singleShot(0,self.pump)
         return row
 
@@ -55,28 +84,58 @@ class DownloadQueue(QObject):
 
     def finish(self,row,success,status):
         if self.active is not row:return
-        row.state='Cancelled' if row.cancelled else 'Complete' if success else 'Failed'
+        row.state='Paused' if row.paused else 'Cancelled' if row.cancelled else 'Complete' if success else 'Failed'
+        if row.paused:status='Paused · partial files retained'
         row.status=status;row.progress=100 if success and not row.cancelled else row.progress
-        self.active=None;row.factory=None;self.changed.emit();QTimer.singleShot(0,self.pump)
+        self.active=None;self.changed.emit();QTimer.singleShot(0,self.pump)
 
     def cancel(self,row):
         if row.state=='Queued':
-            row.state='Cancelled';row.status='Removed from queue';row.factory=None;self.changed.emit()
+            row.state='Cancelled';row.status='Removed from queue';self.changed.emit()
+        elif row.state=='Paused':
+            row.state='Cancelled';row.paused=False;row.status='Stopped · partial files retained';self.changed.emit()
         elif self.active is row and not row.cancelled:
             row.cancelled=True;row.status='Stopping download…';self.changed.emit()
             if row.controller:row.controller.cancel()
 
+    def pause(self,row):
+        if row.state=='Queued':
+            row.state='Paused';row.status='Paused before starting';self.changed.emit()
+        elif self.active is row and not row.cancelled:
+            row.paused=True;row.cancelled=True;row.status='Pausing download…';self.changed.emit()
+            if row.controller:row.controller.cancel()
+
+    def retry(self,row):
+        if row.state not in ('Failed','Cancelled','Paused') or not callable(row.factory):return
+        if any(other is not row and other.destination==row.destination and other.state in ('Queued','Downloading') for other in self.entries):
+            raise ValueError('That download folder is already queued.')
+        if row.controller:
+            dispose=getattr(row.controller,'dispose',None)
+            if callable(dispose):dispose()
+        row.controller=None;row.cancelled=False;row.paused=False;row.state='Queued';row.status='Waiting to resume…'
+        self.changed.emit();QTimer.singleShot(0,self.pump)
+
     def clear_finished(self):
         for row in self.entries:
-            if row.state not in ('Queued','Downloading') and row.controller:
+            if row.state in ('Complete','Failed','Cancelled') and row.controller:
                 dispose=getattr(row.controller,'dispose',None)
                 if callable(dispose):dispose()
-        self.entries[:]=[row for row in self.entries if row.state in ('Queued','Downloading')]
+        self.entries[:]=[row for row in self.entries if row.state not in ('Complete','Failed','Cancelled')]
         self.changed.emit()
 
     def shutdown(self):
         self.stopped=True
-        for row in list(self.entries):self.cancel(row)
+        for row in list(self.entries):
+            self.pause(row)
+            if self.active is row:row.state='Paused';row.status='Paused when Playlite closed · resume to continue'
+        self.save()
+
+    def confirm_close(self,parent):
+        if not any(row.state in ('Queued','Downloading','Paused') for row in self.entries):return True
+        return QMessageBox.warning(parent,'Downloads are unfinished',
+            'Closing Playlite will pause unfinished downloads and stop isolated Steam and the VPN. Your download list and partial files will be kept.',
+            QMessageBox.StandardButton.Close|QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)==QMessageBox.StandardButton.Close
 
 
 class DownloadsPanel(QFrame):
@@ -97,7 +156,7 @@ class DownloadsPanel(QFrame):
         scroll.setWidget(content);layout.addWidget(scroll,1)
         self.animation=QVariantAnimation(self);self.animation.setDuration(260);self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.animation.valueChanged.connect(self.set_amount);self.animation.finished.connect(self.settle)
-        host.installEventFilter(self);queue.changed.connect(self.refresh);self.hide()
+        host.installEventFilter(self);queue.changed.connect(self.refresh);self.refresh();self.hide()
 
     def eventFilter(self,watched,event):
         if watched is self.parentWidget() and event.type()==QEvent.Type.Resize:self.place()
@@ -125,31 +184,42 @@ class DownloadsPanel(QFrame):
         ids={row.id for row in self.queue.entries}
         for identifier in list(self.cards):
             if identifier not in ids:self.cards.pop(identifier)[0].deleteLater()
-        for row in self.queue.entries:
+        for index,row in enumerate(self.queue.ordered()):
             if row.id not in self.cards:
                 card=QFrame();box=QVBoxLayout(card);box.setContentsMargins(12,10,12,10)
                 line=QHBoxLayout();line.setSpacing(10);name=QLabel();name.setWordWrap(True);line.addWidget(name,1)
                 action=QPushButton();action.clicked.connect(lambda checked=False,row=row:self.action(row))
                 library=QPushButton('Add to Playlite')
                 library.clicked.connect(lambda checked=False,row=row:row.controller.add_to_library())
+                pause=QPushButton('Pause');pause.clicked.connect(lambda checked=False,row=row:self.queue.pause(row))
+                retry=QPushButton();retry.clicked.connect(lambda checked=False,row=row:self.retry(row))
+                line.addWidget(pause);line.addWidget(retry)
                 line.addWidget(library);line.addWidget(action);box.addLayout(line)
                 status=QLabel();status.setWordWrap(True);box.addWidget(status)
                 bar=QProgressBar();bar.setRange(0,1000);box.addWidget(bar)
                 self.rows.insertWidget(self.rows.count()-1,card)
-                self.cards[row.id]=(card,name,status,bar,action,library)
-            card,name,status,bar,action,library=self.cards[row.id]
+                self.cards[row.id]=(card,name,status,bar,action,library,pause,retry)
+            card,name,status,bar,action,library,pause,retry=self.cards[row.id]
+            self.rows.removeWidget(card);self.rows.insertWidget(index,card)
+            pause.setVisible(row.state in ('Queued','Downloading'));pause.setEnabled(not row.cancelled)
+            retry.setText('Resume' if row.state=='Paused' else 'Retry')
+            retry.setVisible(row.state in ('Failed','Cancelled','Paused'));retry.setEnabled(callable(row.factory))
             library.setVisible(row.state=='Complete' and callable(getattr(row.controller,'add_to_library',None)))
             name.setToolTip(row.destination)
             name.setText(row.name);name.setTextFormat(Qt.TextFormat.PlainText)
-            status.setText(f'{row.state} · {row.status}');status.setTextFormat(Qt.TextFormat.PlainText)
+            status.setText(f'{"Stopped" if row.state=="Cancelled" else row.state} · {row.status}');status.setTextFormat(Qt.TextFormat.PlainText)
             bar.setRange(0,0 if row.state=='Downloading' and row.progress is None else 1000)
             bar.setValue(round((row.progress or 0)*10));bar.setVisible(row.state in ('Downloading','Complete'))
-            action.setText('Remove' if row.state=='Queued' else 'Open folder' if row.state=='Complete' else 'Cancel')
-            action.setVisible(row.state in ('Queued','Downloading','Complete'));action.setEnabled(not row.cancelled)
+            action.setText('Open folder' if row.state=='Complete' else 'Cancel')
+            action.setVisible(row.state in ('Queued','Downloading','Complete','Paused'));action.setEnabled(not row.cancelled or row.state=='Paused')
 
     def action(self,row):
         if row.state=='Complete':QDesktopServices.openUrl(QUrl.fromLocalFile(row.destination))
         else:self.queue.cancel(row)
+
+    def retry(self,row):
+        try:self.queue.retry(row)
+        except ValueError as error:QMessageBox.warning(self,'Cannot retry download',str(error))
 
 
 class DownloadsButton(QObject):

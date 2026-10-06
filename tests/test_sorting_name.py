@@ -1,9 +1,9 @@
 from plugin_test_support import require_plugin
 require_plugin('IGDB')
-require_plugin('Steam')
+require_plugin('SteamMetadata')
 import unittest
 from playlite.sorting_name import sorting_name
-from playlite_plugins.steam.metadata import normalize
+from playlite_plugins.steammetadata.metadata import normalize
 from playlite_plugins.igdb.client import normalize as normalize_igdb
 
 

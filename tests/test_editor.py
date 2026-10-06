@@ -1,5 +1,5 @@
 from plugin_test_support import require_plugin
-require_plugin('Lutris')
+require_plugin('LutrisIntegration')
 import copy
 import json
 import os
@@ -60,10 +60,10 @@ class MetadataTests(unittest.TestCase):
         self.assertLessEqual(pixmap.width(), cover.preview.width())
         self.assertLessEqual(pixmap.height(), cover.preview.height())
         self.assertAlmostEqual(pixmap.width() / pixmap.height(), 2 / 3, delta=0.01)
-        studio = discover_plugins(include_disabled=True).get('IconStudio')
+        studio = discover_plugins(include_disabled=True).get('ImageStudio')
         if studio is not None:
             enabled = studio.enabled
-            self.assertEqual('IconStudio' in discover_plugins(), enabled)
+            self.assertEqual('ImageStudio' in discover_plugins(), enabled)
             if studio.name == 'Image Studio':
                 for key in self.editor.media_cards:
                     self.assertEqual(bool(self.editor.findChild(QPushButton, 'imageStudio' + key)), enabled)

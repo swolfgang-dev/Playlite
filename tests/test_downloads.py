@@ -1,6 +1,8 @@
 import unittest
-from unittest.mock import Mock
-from PyQt6.QtWidgets import QApplication, QWidget, QListWidget
+from unittest.mock import Mock,patch
+import tempfile
+from pathlib import Path
+from PyQt6.QtWidgets import QApplication, QWidget, QListWidget, QMessageBox
 from PyQt6.QtCore import QEventLoop, QTimer
 from playlite.downloads import DownloadQueue, DownloadsPanel, DownloadsButton
 
@@ -61,3 +63,49 @@ class DownloadTests(unittest.TestCase):
         sidebar.resize(300,400);self.app.processEvents()
         self.assertEqual(binding.button.text(),'Downloads')
         sidebar.close()
+
+    def test_restart_retains_completed_and_pauses_unfinished(self):
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/'downloads.json';queue=DownloadQueue(storage=path)
+            queue.pump=Mock()
+            complete=queue.enqueue('Complete','/tmp/complete',Mock(),metadata={'backend':'test','app':10})
+            complete.state='Complete';complete.progress=100
+            active=queue.enqueue('Active','/tmp/active',Mock());active.state='Downloading'
+            queued=queue.enqueue('Queued','/tmp/queued',Mock());queue.changed.emit()
+            restored=DownloadQueue(storage=path)
+            self.assertEqual([r.state for r in restored.entries],['Complete','Paused','Paused'])
+            self.assertEqual(restored.entries[0].metadata,{'backend':'test','app':10})
+            self.assertEqual(restored.entries[0].progress,100)
+            restored.clear_finished()
+            self.assertEqual([r.state for r in restored.entries],['Paused','Paused'])
+            self.assertEqual(len(DownloadQueue(storage=path).entries),2)
+
+    def test_pause_resume_and_retry_use_fresh_controller(self):
+        queue=DownloadQueue();controllers=[Mock(),Mock(),Mock()]
+        factory=Mock(side_effect=controllers)
+        row=queue.enqueue('Game','/tmp/game',factory);self.app.processEvents()
+        queue.pause(row);controllers[0].cancel.assert_called_once()
+        self.assertIs(queue.active,row)
+        queue.finish(row,False,'Cancelled');self.assertEqual(row.state,'Paused')
+        queue.retry(row);self.app.processEvents();controllers[1].start.assert_called_once()
+        queue.finish(row,False,'Network failure');queue.retry(row);self.app.processEvents()
+        controllers[2].start.assert_called_once();self.assertFalse(row.cancelled)
+
+    def test_order_pins_active_and_queue_and_clear_retains_paused(self):
+        queue=DownloadQueue();queue.pump=Mock()
+        states=['Paused','Failed','Complete','Queued','Downloading','Cancelled']
+        for index,state in enumerate(states):
+            row=queue.enqueue(state,f'/tmp/sort-{index}',Mock());row.state=state
+        self.assertEqual([r.state for r in queue.ordered()],['Downloading','Queued','Failed','Paused','Cancelled','Complete'])
+        host=QWidget();panel=DownloadsPanel(host,queue)
+        self.assertEqual([panel.rows.itemAt(i).widget() for i in range(6)],
+                         [panel.cards[r.id][0] for r in queue.ordered()])
+        queue.clear_finished();self.assertEqual({r.state for r in queue.entries},{'Queued','Downloading','Paused'})
+
+    def test_close_warning_defaults_to_cancel_without_stopping_queue(self):
+        queue=DownloadQueue();queue.pump=Mock();queue.enqueue('Game','/tmp/warning',Mock())
+        with patch('playlite.downloads.QMessageBox.warning',return_value=QMessageBox.StandardButton.Cancel) as warning:
+            self.assertFalse(queue.confirm_close(None));self.assertFalse(queue.stopped)
+            self.assertEqual(warning.call_args.args[-1],QMessageBox.StandardButton.Cancel)
+        with patch('playlite.downloads.QMessageBox.warning',return_value=QMessageBox.StandardButton.Close):
+            self.assertTrue(queue.confirm_close(None))

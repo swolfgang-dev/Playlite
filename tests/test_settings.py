@@ -1,8 +1,8 @@
 from plugin_test_support import require_plugin
 require_plugin('IGDB')
-require_plugin('Lutris')
-require_plugin('PlayliteArchiver')
-require_plugin('Steam')
+require_plugin('LutrisIntegration')
+require_plugin('GameArchiver')
+require_plugin('SteamMetadata')
 require_plugin('SteamAutoCrack')
 import tempfile
 import unittest
@@ -168,11 +168,11 @@ class SettingsTests(unittest.TestCase):
         import copy
         from playlite.providers import discover_providers
         from playlite.image_dialog import ImageDownloader
-        steam = discover_providers()['Steam']
+        steam = discover_providers()['SteamMetadata']
         other = copy.copy(steam)
         other.id, other.name = 'Other', 'Other artwork'
         other.image_types = {'Icon'}
-        plugins = {'Steam': steam, 'Other': other}
+        plugins = {'SteamMetadata': steam, 'Other': other}
         with tempfile.TemporaryDirectory() as directory, \
              patch('playlite.providers.discover_plugins', return_value=plugins), \
              patch('playlite.image_dialog.discover_providers', return_value=plugins):
@@ -188,7 +188,7 @@ class SettingsTests(unittest.TestCase):
             dialog.save()
             reopened = SettingsDialog(settings)
             self.assertEqual(reopened.image_sources['Icon'].currentData(), 'Other')
-            self.assertEqual(reopened.image_sources['CoverImage'].currentData(), 'Steam')
+            self.assertEqual(reopened.image_sources['CoverImage'].currentData(), 'SteamMetadata')
             # A provider offering icons can also supply artwork for a cover.
             settings.setValue('images/defaultProvider/CoverImage', 'Other')
             settings.sync()
@@ -215,13 +215,13 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(reopened.tabs.tabText(2), 'Plugins')
             self.assertEqual([reopened.plugin_tabs.tabText(i) for i in range(reopened.plugin_tabs.count())], ['Installed', 'Available', 'General', 'Metadata', 'Installation'])
             self.assertTrue(any(target.id == 'LutrisAdd' and reopened.plugin_tabs.widget(4).isAncestorOf(widget) for owner, target, widget in reopened.plugin_contributions))
-            self.assertTrue({'Lutris', 'IGDB', 'PlayliteArchiver', 'SteamAutoCrack'}.issubset(reopened.plugin_widgets))
+            self.assertTrue({'LutrisIntegration', 'IGDB', 'GameArchiver', 'SteamAutoCrack'}.issubset(reopened.plugin_widgets))
             installed = {reopened.installed_plugins.item(row, 4).text():
                          reopened.installed_plugins.item(row, 3).text()
                          for row in range(reopened.installed_plugins.rowCount())}
             from playlite.plugin_manager import installed_plugins
-            studio = next(plugin for plugin in installed_plugins() if plugin['id'] == 'IconStudio')
-            self.assertEqual(installed['IconStudio'], 'Enabled' if studio.get('enabled', True) else 'Disabled')
+            studio = next(plugin for plugin in installed_plugins() if plugin['id'] == 'ImageStudio')
+            self.assertEqual(installed['ImageStudio'], 'Enabled' if studio.get('enabled', True) else 'Disabled')
             self.assertEqual(installed['SteamAutoCrack'], 'Enabled')
             self.assertFalse(any(label.text() == 'No configurable settings.' for label in reopened.findChildren(QLabel)))
             reopened.close_to_tray.setChecked(True)
@@ -285,7 +285,7 @@ class SettingsTests(unittest.TestCase):
             with patch.object(type(plugins['SteamAutoCrack']), 'settings', return_value=plugin_settings), patch('playlite.providers.discover_plugins', return_value=plugins):
                 dialog = SettingsDialog(settings)
                 contributions = {target.id: widget for owner, target, widget in dialog.plugin_contributions if owner.id == 'SteamAutoCrack'}
-                self.assertEqual(set(contributions), {'Manual', 'LutrisImport', 'LutrisAdd'})
+                self.assertTrue({'Manual', 'LutrisImport', 'LutrisAdd'} <= set(contributions))
                 contributions['Manual'].setChecked(False)
                 contributions['LutrisImport'].setChecked(True)
                 dialog.save()

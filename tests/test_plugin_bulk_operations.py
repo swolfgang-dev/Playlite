@@ -13,6 +13,36 @@ from playlite.plugin_catalogue_cache import catalogue_cache
 APP = QApplication.instance() or QApplication([])
 
 class BulkPluginTests(unittest.TestCase):
+    def test_available_hides_installed_plugins_by_current_repositories_and_ids(self):
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
+            root = Path(directory)
+            for identity, repository in (
+                    ('LutrisIntegration', 'swolfgang-dev/playlite-plugin-lutris-integration'),
+                    ('SteamDepotDownloader', 'swolfgang-dev/playlite-plugin-steam-depot-downloader'),
+                    ('ImageStudio', 'swolfgang-dev/playlite-plugin-image-studio')):
+                folder = root / 'playlite/plugins' / identity.lower()
+                folder.mkdir(parents=True)
+                (folder / 'manifest.json').write_text(json.dumps(dict(
+                    id=identity, name=identity, version='1', repository=repository, enabled=False)))
+            cache = catalogue_cache()
+            old = cache.plugins, cache.loaded, cache.loading, cache.error
+            cache.complete([
+                dict(name='Lutris Integration', version='1', description='',
+                     repository='SWOLFGANG-DEV/playlite-plugin-lutris-integration'),
+                dict(name='Steam Depot Downloader', version='1', description='',
+                     repository='swolfgang-dev/playlite-plugin-steam-depot-downloader'),
+                dict(id='ImageStudio', name='Image Studio', version='1', description='',
+                     repository='owner/image-studio'),
+                dict(name='Other', version='1', description='', repository='owner/other')])
+            window = SettingsDialog(QSettings(str(root / 'settings.ini'), QSettings.Format.IniFormat))
+            try:
+                self.assertEqual(window.installed_plugins.rowCount(), 3)
+                self.assertEqual(window.available_plugins.rowCount(), 1)
+                self.assertEqual(window.available_plugins.item(0, 0).text(), 'Other')
+            finally:
+                window.reject()
+                cache.plugins, cache.loaded, cache.loading, cache.error = old
+
     def test_install_continues_after_individual_failure(self):
         with patch('playlite.plugin_manager.install_github', side_effect=[ValueError('denied'), {'name':'Second','version':'1'}]) as install:
             messages = []

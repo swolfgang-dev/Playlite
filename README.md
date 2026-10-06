@@ -14,7 +14,31 @@ bash install.sh
 
 The installer sets up dependencies automatically. Launch **Playlite** from your applications menu, or run `~/.local/bin/playlite`.
 
+On first launch, **Get started** lets you choose library and tray preferences and install optional plugins. Installing Steam Downloader opens its isolated Steam setup. Reopen this workflow from **Playlite menu → Get started…**; newly installed plugins become available after restarting Playlite. Each profile keeps its own setup status.
+
 To update, close Playlite and run the latest installer again. Your library and settings are retained. GitHub CLI and a GitHub login are not required for public releases.
+
+## Uninstall
+
+Close the installed Playlite, then preview removal:
+
+```sh
+bash ~/.local/share/playlite/uninstall.sh --dry-run
+```
+
+Remove the application and its tracked plugins:
+
+```sh
+bash ~/.local/share/playlite/uninstall.sh
+```
+
+This keeps your library/settings, private Steam data and saved credentials. To also remove known application data, owned private Steam data/image, and the downloader’s saved credentials, use:
+
+```sh
+bash ~/.local/share/playlite/uninstall.sh --purge-data --purge-secrets --remove-steam-image
+```
+
+Exported game folders, manually added untracked files/plugins, the repo version, Docker, and shared system packages are retained. Resources without ownership records are preserved. Custom `XDG_DATA_HOME` installs store the uninstaller under `$XDG_DATA_HOME/playlite/`; run it with the same environment used to install.
 
 ## Add and play games
 

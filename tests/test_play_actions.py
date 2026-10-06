@@ -1,5 +1,5 @@
 from plugin_test_support import require_plugin
-require_plugin('Lutris')
+require_plugin('LutrisIntegration')
 import json
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
@@ -18,14 +18,16 @@ APP = QApplication.instance() or QApplication([])
 
 class PlayActionTests(unittest.TestCase):
     def setUp(self):
-        self.provider = discover_plugins()['Lutris']
-        self.game = dict(Id='a', Name='Example', GameProvider='Lutris', LutrisId=42)
+        self.provider = discover_plugins()['LutrisIntegration']
+        self.game = dict(Id='a', Name='Example', GameProvider='LutrisIntegration', LutrisId=42)
 
     def test_legacy_fallback_explicit_empty_and_integration_override(self):
-        self.assertEqual(actions_for(self.game, [self.provider])[0]['Integration'], 'Lutris')
+        self.assertEqual(actions_for(self.game, [self.provider])[0]['Integration'], 'LutrisIntegration')
+        self.assertEqual(actions_for(self.game, [self.provider])[0]['Name'], 'Play Example')
         self.assertEqual(actions_for(dict(self.game, PlayActions=[]), [self.provider]), [])
-        action = dict(Name='Alternate', Integration='Lutris', GameId='84')
+        action = dict(Name='Alternate', Integration='LutrisIntegration', GameId='84')
         configured = dict(self.game, GameProvider=None, PlayActions=[action])
+        self.assertEqual(actions_for(configured, [self.provider])[0]['Name'], 'Alternate')
         self.assertTrue(self.provider.owns(configured))
         self.assertEqual(action_game(configured, action, self.provider)['LutrisId'], '84')
         self.assertEqual(configured['LutrisId'], 42)
@@ -36,7 +38,7 @@ class PlayActionTests(unittest.TestCase):
     def test_editor_validation_and_roundtrip(self):
         with TemporaryDirectory() as directory:
             editor = MetadataEditor(self.game, Path(directory))
-            editor.play_actions.add(dict(Name='Other', Integration='Lutris', GameId='84'))
+            editor.play_actions.add(dict(Name='Other', Integration='LutrisIntegration', GameId='84'))
             result = editor.collect()
             self.assertEqual(len(result['PlayActions']), 2)
             self.assertEqual(result['PlayActions'][1]['GameId'], '84')
@@ -49,8 +51,8 @@ class PlayActionTests(unittest.TestCase):
 
     def test_detection_checks_all_lutris_action_ids(self):
         game = dict(self.game, GameProvider=None, PlayActions=[
-            dict(Name='First', Integration='Lutris', GameId='42'),
-            dict(Name='Second', Integration='Lutris', GameId='84')])
+            dict(Name='First', Integration='LutrisIntegration', GameId='42'),
+            dict(Name='Second', Integration='LutrisIntegration', GameId='84')])
         configs = [dict(LutrisId=42, Executable='/games/first/game'),
                    dict(LutrisId=84, Executable='/games/second/game')]
         process = dict(session='uuid', args=['/games/second/game'], exe='/games/second/game', cwd='/', prefix='')
@@ -67,7 +69,7 @@ class PlayActionTests(unittest.TestCase):
             editor = MetadataEditor(legacy, Path(directory))
             first = editor.play_actions.cards[0].settings
             self.assertEqual(first.fields['Executable'].text(), '/games/first.exe')
-            editor.play_actions.add(dict(Name='Second', Integration='Lutris', GameId='84', CustomSetting=True))
+            editor.play_actions.add(dict(Name='Second', Integration='LutrisIntegration', GameId='84', CustomSetting=True))
             second = editor.play_actions.cards[1].settings
             second.fields['Executable'].setText('/other/second.exe')
             second.fields['Prefix'].setText('/prefix/second')
@@ -106,12 +108,12 @@ class PlayActionTests(unittest.TestCase):
     def test_play_picker_launches_selected_action_and_cancel_does_not_launch(self):
         with TemporaryDirectory() as directory:
             data = Path(directory)
-            game = dict(self.game, PlayActions=[dict(Name='First', Integration='Lutris', GameId='42'),
-                                               dict(Name='Second', Integration='Lutris', GameId='84')])
+            game = dict(self.game, PlayActions=[dict(Name='First', Integration='LutrisIntegration', GameId='42'),
+                                               dict(Name='Second', Integration='LutrisIntegration', GameId='84')])
             (data / 'library.json').write_text(json.dumps([game]))
             window = LibraryWindow(data)
             window.current = game
-            provider = next(p for p in window.game_providers if p.id == 'Lutris')
+            provider = next(p for p in window.game_providers if p.id == 'LutrisIntegration')
             def choose(dialog):
                 dialog.choose(dialog.method_buttons and game['PlayActions'][1])
                 return QDialog.DialogCode.Accepted

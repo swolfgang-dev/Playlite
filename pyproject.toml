@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "playlite"
-version = "0.2.40"
+version = "0.2.41"
 description = "A native Linux game library"
 requires-python = ">=3.10"
 dependencies = ["PyQt6>=6.6,<7", "Pillow>=10,<13"]
@@ -13,6 +13,7 @@ dependencies = ["PyQt6>=6.6,<7", "Pillow>=10,<13"]
 playlite = "playlite.app:main"
 playlite-cli = "playlite.cli:main"
 playlite-plugins = "playlite.plugin_manager:main"
+playlite-installer = "playlite.installer:main"
 
 [tool.setuptools.packages.find]
 include = ["playlite*"]

@@ -2,6 +2,59 @@
 
 A native Linux game library with optional integrations.
 
+## Separate development and release installations
+
+Run `./install-dev-launcher.sh` once to create **Playlite (Repo)** in the desktop
+menu and the `playlite-dev` command. It runs this checkout through `run-dev.sh`
+with a private home at `.dev/home` inside the repository. Library, plugins,
+settings, cache, logs and credentials are independent of the release profile.
+The repo version has its own activation lock, Steam/VPN containers, Steam volume
+and runtime image. Both versions can run at the same time. The repo profile
+starts empty unless you copy selected data into it; do not symlink release data.
+
+The release installer creates **Playlite** and the `playlite` command, using
+the normal user directories and its private Python runtime. Updating or
+uninstalling that release does not modify the checkout, `.dev`, or repo launcher.
+The repo launcher uses system Python with user site packages disabled; install
+the project's development dependencies separately if they are missing.
+
+## Uninstall
+
+Close the release version of Playlite, then run these commands from this repository without sudo.
+Keep `uninstall.sh` and `uninstall.py` together.
+New release installations also place these scripts in
+`~/.local/share/playlite`, so the checkout is not required to uninstall.
+These commands target the release installation only. The repo version may stay
+open; run the uninstaller from a normal terminal outside its private profile.
+
+```sh
+./uninstall.sh --dry-run
+./uninstall.sh
+```
+
+The default removes launchers, recorded application/runtime files, plugins
+installed through Playlite, and this user's isolated Steam/VPN containers. It
+preserves the library, settings, credentials, private Steam data, manual plugins,
+untracked files and externally modified files. File receipts are tied to their
+installation directory, so copying a plugin from another installation does not
+make Playlite own that copy. Older installations without receipts are preserved.
+
+To also reset known application data and remove owned Steam data, preview first:
+
+```sh
+./uninstall.sh --dry-run --purge-data --purge-secrets --remove-steam-image
+./uninstall.sh --purge-data --purge-secrets --remove-steam-image
+```
+
+This also deletes known Playlite library/UI/download history files, owned private
+Steam storage (including any remaining games and logins), downloader KWallet
+credentials, and the owned Steam image. Untracked files and manual plugin data
+remain for manual review; the entire user-data directory is never wiped.
+KWallet may ask to unlock. To reset only isolated Steam/VPN, add `--steam-only`.
+Downloaded games and Wine prefixes outside Playlite's data directory, source
+repositories, Docker, and shared system packages are retained. Cleanup failures
+are reported and produce a nonzero exit status.
+
 ## Install from GitHub
 
 Playlite and plugin development repositories are private repositories under
@@ -18,6 +71,26 @@ This installs the core application into a private environment at
 It includes the built-in Manual installation method and no plugin files.
 An authenticated GitHub release download is used instead of public raw-file URLs.
 
+On first launch, Playlite shows plugin checkboxes
+and installation logs in the **Get started** workflow. Preferences
+include the default library view, close-to-tray behavior, and resetting filters
+on launch. Reopen it through **Playlite menu → Get started…**. Completion is
+saved separately for each profile. The installer itself installs only the core;
+`./install.sh --gui` additionally launches Playlite, while `--no-gui` retains
+unattended installation behavior.
+Installing Steam Downloader opens its environment setup, including NordVPN
+authentication and Steam/LuaMoon setup. Removing it in Settings offers optional
+environment and private-data removal; exported games and shared dependencies
+are retained.
+
+Run `./install.sh` again to update. Close the installed application first; the
+repo version may remain open. Each update builds a fresh environment, checks
+dependencies and application imports, fixes launcher paths, then replaces the
+runtime. Removed package files, unused dependencies and untracked runtime files
+do not carry over, even when reinstalling the same release. A failed replacement
+restores the previous runtime. Library data, settings, plugins, downloaded games
+and the repo profile are outside that replacement and remain intact.
+
 Browse optional plugins through Settings → Plugins → Available. The [plugin catalogue](https://github.com/swolfgang-dev/Playlite/blob/main/catalogue.json) lives in this repository and points directly to plugin source repositories and their releases. The available list loads once in the background at startup and is cached for the session. Update list fetches it again when needed; opening settings or switching tabs does not make network requests. Only repositories accessible to this installation are listed. Repository builds offer Authenticate GitHub with browser sign-in and a one-time code, or a personal access token with read access to the plugin repositories; credentials are stored with owner-only permissions in that installation’s data directory, independently of your normal GitHub CLI login. Release builds always browse and download anonymously, so private plugins remain hidden.
 
 You can also use Settings → Plugins → Installed → Install / update
@@ -28,7 +101,8 @@ fetched from its own checksummed release, and must be followed by a restart.
 | --- | --- |
 | Steam Metadata | [playlite-plugin-steam-metadata](https://github.com/swolfgang-dev/playlite-plugin-steam-metadata) |
 | IGDB | [playlite-plugin-igdb](https://github.com/swolfgang-dev/playlite-plugin-igdb) |
-| Lutris Integration | [playlite-plugin-lutris](https://github.com/swolfgang-dev/playlite-plugin-lutris) |
+| Steam Integration | [playlite-plugin-steam-integration](https://github.com/swolfgang-dev/playlite-plugin-steam-integration) |
+| Lutris Integration | [playlite-plugin-lutris-integration](https://github.com/swolfgang-dev/playlite-plugin-lutris-integration) |
 | Game Archiver | [playlite-plugin-game-archiver](https://github.com/swolfgang-dev/playlite-plugin-game-archiver) |
 | SteamAutoCrack | [playlite-plugin-steamautocrack](https://github.com/swolfgang-dev/playlite-plugin-steamautocrack) |
 | Image Studio | [playlite-plugin-image-studio](https://github.com/swolfgang-dev/playlite-plugin-image-studio) |

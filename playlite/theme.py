@@ -34,6 +34,7 @@ ROLES = {
 # Compatibility for existing styles, painted widgets, SVGs and saved palettes.
 ALIASES = {default: role for role, (_, default) in ROLES.items()}
 ALIASES.update({
+    '#202123': 'panel', '#45474b': 'border',
     '#151617': 'sidebar', '#171819': 'sidebar', '#222325': 'hover', '#343638': 'selection', '#3b3d41': 'selection',
     '#48566c': 'selection', '#363638': 'control', '#62646a': 'border',
     '#879bb7': 'accent', '#98caff': 'accent', '#747b83': 'disabled_text',

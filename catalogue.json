@@ -38,7 +38,7 @@
     },
     {
       "id": "SteamDepotDownloader",
-      "name": "Steam Depot Downloader",
+      "name": "Steam Downloader",
       "repository": "swolfgang-dev/playlite-plugin-steam-depot-downloader"
     },
     {

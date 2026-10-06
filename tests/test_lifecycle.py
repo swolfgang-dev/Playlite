@@ -11,6 +11,15 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_repo_and_release_have_independent_activation_locks(self):
+        import os
+        with patch.dict(os.environ, {'PLAYLITE_PROFILE': 'installed'}):
+            release = SingleInstance()
+        with patch.dict(os.environ, {'PLAYLITE_PROFILE': 'repo'}):
+            repo = SingleInstance()
+        self.assertNotEqual(release.name, repo.name)
+        self.assertNotEqual(release.lock.fileName(), repo.lock.fileName())
+
     def test_picker_starts_are_independent_and_handle_new_prefixes(self):
         from playlite.lifecycle import choose_directory, choose_file
         with tempfile.TemporaryDirectory() as root:

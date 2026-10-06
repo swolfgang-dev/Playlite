@@ -1,11 +1,11 @@
 from plugin_test_support import require_plugin
-require_plugin('Steam')
+require_plugin('SteamMetadata')
 import unittest
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QTextDocument
 from PyQt6.QtWidgets import QApplication
 from playlite.rich_description import FullDescription, CollapsibleDescription
-from playlite_plugins.steam.metadata import normalize
+from playlite_plugins.steammetadata.metadata import normalize
 from playlite.description_html import without_images
 
 APP = QApplication.instance() or QApplication([])

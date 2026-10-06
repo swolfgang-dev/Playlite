@@ -26,7 +26,7 @@ class ManualInstallation(InstallationPlugin):
                            ('LutrisId', 'Lutris game ID'), ('SteamId', 'Steam ID')]:
             if field_keys is not None and key not in field_keys:
                 continue
-            value = (game.get('MetadataIds') or {}).get('Steam', '') if key == 'SteamId' else game.get(key)
+            value = (game.get('MetadataIds') or {}).get('SteamMetadata', '') if key == 'SteamId' else game.get(key)
             field = QLineEdit(str(value or ''))
             field.setFixedHeight(40)
             field.setObjectName(key)
@@ -87,9 +87,9 @@ class ManualInstallation(InstallationPlugin):
             if key == 'SteamId':
                 ids = dict(game.get('MetadataIds') or {})
                 if value:
-                    ids['Steam'] = value
+                    ids['SteamMetadata'] = value
                 else:
-                    ids.pop('Steam', None)
+                    ids.pop('SteamMetadata', None)
                 game['MetadataIds'] = ids
             else:
                 game[key] = value
@@ -122,5 +122,5 @@ class ManualInstallation(InstallationPlugin):
         for value in (args.steam_id, args.lutris_id):
             if value and (not value.isascii() or not value.isdigit() or int(value) < 1):
                 raise ValueError('Game IDs must be positive whole numbers.')
-        game['MetadataIds'] = {'Steam': args.steam_id} if args.steam_id else {}
+        game['MetadataIds'] = {'SteamMetadata': args.steam_id} if args.steam_id else {}
         return game

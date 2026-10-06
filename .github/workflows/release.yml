@@ -26,9 +26,10 @@ jobs:
       - name: Prepare release checksums
         run: |
           cp install.sh dist/install.sh
+          cp uninstall.sh uninstall.py dist/
           python -c "import urllib.request; urllib.request.urlretrieve('https://bootstrap.pypa.io/pip/pip.pyz', 'dist/pip.pyz')"
           cd dist
-          sha256sum *.whl *.tar.gz install.sh pip.pyz > SHA256SUMS
+          sha256sum *.whl *.tar.gz install.sh uninstall.sh uninstall.py pip.pyz > SHA256SUMS
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         env:

@@ -289,7 +289,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                     for plugin in self.plugins.values():
                         if plugin.type == 'metadata' and getattr(plugin, 'image_types', ()):
                             source.addItem(plugin.name, plugin.id)
-                    fallback = next((plugin.id for plugin in self.plugins.values() if key in getattr(plugin, 'image_types', ())), 'Steam') if key == 'Logo' else 'Steam'
+                    fallback = next((plugin.id for plugin in self.plugins.values() if key in getattr(plugin, 'image_types', ())), 'SteamMetadata') if key == 'Logo' else 'SteamMetadata'
                     preferred = settings.value(f'images/defaultProvider/{key}', fallback)
                     source.setCurrentIndex(max(0, source.findData(preferred)))
                     source.setEnabled(source.count() > 0)
@@ -313,7 +313,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                                   if ('installation' if getattr(plugin, 'settings_group', plugin.type)
                                       in ('installation', 'integration', 'game')
                                       else getattr(plugin, 'settings_group', plugin.type)) == kind),
-                                 key=lambda plugin: (0 if plugin.id == 'Manual' else 1 if plugin.id == 'Lutris' else 2,
+                                 key=lambda plugin: (0 if plugin.id == 'Manual' else 1 if plugin.id == 'LutrisIntegration' else 2,
                                                      plugin.name)):
                 widget = plugin.create_settings(page)
                 from .providers import IntegrationPlugin
@@ -492,7 +492,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.available_plugins.setRowCount(0)
         self.available_refresh_button.setEnabled(not cache.loading)
         for plugin in sorted(cache.plugins, key=lambda plugin: plugin['name'].casefold()):
-            if plugin.get('id') in identities or plugin['repository'].casefold() in repositories:
+            if (plugin.get('id') in identities
+                    or plugin['repository'].casefold() in repositories):
                 continue
             row = self.available_plugins.rowCount()
             self.available_plugins.insertRow(row)
@@ -648,6 +649,9 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                       for index in self.installed_plugins.selectionModel().selectedRows()]
         if not identities:
             return
+        from .plugin_lifecycle import prepare_removal
+        if not prepare_removal(identities, self, self.plugin_operation_status.appendPlainText):
+            return
         self.deleting_plugins = True
         self.update_installed_status()
         self.install_selected_button.setEnabled(False)
@@ -706,6 +710,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         if getattr(self, 'installing_plugins', False) or getattr(self, 'deleting_plugins', False) or not repositories:
             return
         self.installing_plugins = True
+        from .plugin_manager import installed_plugins
+        previously_installed = {plugin['id'] for plugin in installed_plugins()}
         self.update_installed_status()
         self.install_selected_button.setEnabled(False)
         if log is self.available_operation_log:
@@ -719,6 +725,9 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.refresh_installed_plugins()
             if any(manifest for _, manifest, _ in results):
                 log.appendPlainText('Restart Playlite to load installed plugins.')
+                from .plugin_lifecycle import installed_setup
+                installed_setup([manifest for _, manifest, _ in results
+                                 if manifest and manifest.get('id') not in previously_installed], self, log.appendPlainText)
             self.install_selected_button.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()))
         def failed(error):
             self.installing_plugins = False

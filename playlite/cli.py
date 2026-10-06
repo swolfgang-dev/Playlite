@@ -29,7 +29,8 @@ def main(argv=None):
         from PyQt6.QtCore import QLockFile, QStandardPaths
         runtime = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.RuntimeLocation))
         runtime.mkdir(parents=True, exist_ok=True)
-        lock = QLockFile(str(runtime / f'playlite-{os.getuid()}.lock'))
+        suffix = '-repo' if os.environ.get('PLAYLITE_PROFILE') == 'repo' else ''
+        lock = QLockFile(str(runtime / f'playlite-{os.getuid()}{suffix}.lock'))
         if not lock.tryLock(0):
             raise ValueError('Close Playlite before adding games from the CLI.')
         try:

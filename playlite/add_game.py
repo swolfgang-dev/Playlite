@@ -71,7 +71,7 @@ class AddGameEditor(MetadataEditor):
         game = copy.deepcopy(self.game)
         game.update({key: value for key, value in values.items() if key != 'SteamId'})
         game['MetadataIds'] = dict(game.get('MetadataIds') or {})
-        game['MetadataIds']['Steam'] = values.get('SteamId', '')
+        game['MetadataIds']['SteamMetadata'] = values.get('SteamId', '')
         self.installation_plugin = self.installation_plugins[self.installation_method.currentData()]
         self.installation_controls.removeWidget(previous)
         previous.hide()

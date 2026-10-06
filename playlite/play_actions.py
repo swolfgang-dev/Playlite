@@ -14,7 +14,8 @@ def actions_for(game, providers):
     else:
         provider = next((provider for provider in providers if provider.owns(game)), None)
         identity = provider.id if provider else game.get('GameProvider')
-        actions = [dict(Name=provider.name if provider else identity, Integration=identity)] if identity else []
+        name = f"Play {game.get('Name') or ''}".strip()
+        actions = [dict(Name=name, Integration=identity)] if identity else []
     for action in actions:
         provider = next((p for p in providers if p.id == action.get('Integration')), None)
         action.setdefault('GameId', str(game.get(provider.action_id_field) or '') if provider else '')

@@ -11,6 +11,8 @@ import tempfile
 import uuid
 from zipfile import ZipFile
 from .storage import atomic_json
+from .plugin_names import plugin_folder
+from .ownership import RECEIPT, record_tree, receipt, signature, remove_owned, carry_external, file_inventory, record_added_files, unchanged
 
 CATALOGUE_REPOSITORY = 'swolfgang-dev/Playlite'
 
@@ -58,6 +60,13 @@ def set_plugin_enabled(identity, enabled, directory=None):
     manifest = json.loads(path.read_text())
     manifest['enabled'] = bool(enabled)
     atomic_json(path, manifest)
+    if (path.parent / RECEIPT).is_file():
+        files = receipt(path.parent)
+        files['manifest.json'] = signature(path)
+        document = json.loads((path.parent / RECEIPT).read_text())
+        document['files'] = files
+        atomic_json(path.parent / RECEIPT, document)
+        (path.parent / RECEIPT).chmod(0o600)
     return manifest
 
 
@@ -69,7 +78,11 @@ def delete_plugin(identity, directory=None):
     target = Path(entry['manifest_path']).parent
     if target.is_symlink() or target.resolve().parent != directory.resolve():
         raise ValueError('Plugin directory is outside the installed plugin folder.')
-    shutil.rmtree(target)
+    if (target / RECEIPT).exists():
+        remove_owned(target)
+    else:
+        # Explicit plugin removal is allowed; global uninstall never adopts it.
+        shutil.rmtree(target)
     return entry
 
 
@@ -159,23 +172,38 @@ def install_archive(archive, directory=None, repository=''):
                 except (PackageNotFoundError, ValueError):
                     pending.append(requirement)
             if pending:
-                subprocess.run([sys.executable, '-m', 'pip', 'install', *pending], check=True, timeout=300)
-        existing = next((Path(item['manifest_path']).parent for item in installed_plugins(directory) if item['id'] == identity), None)
-        destination = existing or directory / identity.lower()
+                runtime = Path(sys.prefix)
+                before = file_inventory(runtime) if (runtime / RECEIPT).is_file() else None
+                owned = {name for name, expected in receipt(runtime).items() if unchanged(runtime, name, expected)} if before is not None else set()
+                try:
+                    subprocess.run([sys.executable, '-m', 'pip', 'install', *pending], check=True, timeout=300)
+                finally:
+                    if before is not None: record_added_files(runtime, before, owned)
+        existing = next((Path(item['manifest_path']).parent for item in installed_plugins(directory)
+                         if item['id'] == identity), None)
+        if existing and (existing.is_symlink() or existing.resolve().parent != directory.resolve()):
+            raise ValueError('Plugin directory is outside the installed plugin folder.')
+        if repository:
+            manifest['repository'] = repository
+        destination = directory / plugin_folder(manifest)
+        if destination.exists() and destination != existing:
+            raise ValueError('Plugin destination folder is already occupied.')
         if existing:
             previous = json.loads((existing / 'manifest.json').read_text())
             manifest['enabled'] = previous.get('enabled', True)
         if repository:
             manifest['repository'] = repository
         atomic_json(manifest_path, manifest)
+        carried = carry_external(existing, stage) if existing else []
+        record_tree(stage, carried, destination)
         backup = directory / ('.previous-' + uuid.uuid4().hex)
-        if destination.exists():
-            destination.rename(backup)
+        if existing:
+            existing.rename(backup)
         try:
             stage.rename(destination)
         except Exception:
             if backup.exists():
-                backup.rename(destination)
+                backup.rename(existing)
             raise
         if backup.exists():
             shutil.rmtree(backup)
@@ -196,6 +224,8 @@ def development_checkout():
 
 
 def github_token():
+    if os.environ.get('PLAYLITE_INSTALLER') == '1':
+        return os.environ.get('PLAYLITE_GITHUB_TOKEN', '')
     if not development_checkout() or shutil.which('gh') is None:
         return ''
     result = subprocess.run(['gh', 'auth', 'token', '--hostname', 'github.com'],
@@ -260,7 +290,7 @@ def available_plugins():
             if error.code == 404:
                 continue
             raise ValueError('GitHub could not list plugins (access denied or rate limit).') from None
-        result.append(dict(name=name, repository=repository, description=info.get('description') or '',
+        result.append(dict(name=name, repository=info.get('full_name') or repository, description=info.get('description') or '',
                            version=release['tag_name'], private=info['private']))
     return result
 

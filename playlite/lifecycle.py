@@ -75,7 +75,7 @@ class SingleInstance(QObject):
         super().__init__(parent)
         runtime = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.RuntimeLocation))
         runtime.mkdir(parents=True, exist_ok=True)
-        self.name = f'playlite-{os.getuid()}'
+        self.name = f'playlite-{os.getuid()}' + ('-repo' if os.environ.get('PLAYLITE_PROFILE') == 'repo' else '')
         self.lock = QLockFile(str(runtime / (self.name + '.lock')))
         self.server = QLocalServer(self)
         self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)

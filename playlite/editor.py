@@ -446,7 +446,7 @@ class MetadataEditor(QDialog):
         current['Links'] = self.current_links()
         if 'SteamId' in self.fields:
             ids = dict(current.get('MetadataIds') or {})
-            ids['Steam'] = self.fields['SteamId'].text().strip()
+            ids['SteamMetadata'] = self.fields['SteamId'].text().strip()
             current['MetadataIds'] = ids
         return current
 
@@ -470,9 +470,9 @@ class MetadataEditor(QDialog):
             ids = dict(current.get('MetadataIds') or {})
             steam_id = self.fields['SteamId'].text().strip()
             if steam_id:
-                ids['Steam'] = steam_id
+                ids['SteamMetadata'] = steam_id
             else:
-                ids.pop('Steam', None)
+                ids.pop('SteamMetadata', None)
             current['MetadataIds'] = ids
         current['Description'] = self.description.toPlainText()
         current['FullDescription'] = self.full_description.toPlainText()
@@ -503,7 +503,7 @@ class MetadataEditor(QDialog):
             atomic_json(path, games)
         self.game['MetadataIds'] = dict(ids)
         if 'SteamId' in self.fields:
-            self.fields['SteamId'].setText(str(ids.get('Steam') or ''))
+            self.fields['SteamId'].setText(str(ids.get('SteamMetadata') or ''))
         parent = self.parent()
         for entry in getattr(parent, 'games', []):
             if entry['Id'] == self.game['Id']:
@@ -514,7 +514,7 @@ class MetadataEditor(QDialog):
             if key == 'MetadataIds':
                 self.game[key] = dict(value)
                 if 'SteamId' in self.fields:
-                    self.fields['SteamId'].setText(str(value.get('Steam') or ''))
+                    self.fields['SteamId'].setText(str(value.get('SteamMetadata') or ''))
             elif key == 'FullDescription':
                 self.full_description.setPlainText(value)
             elif key == 'Description':
@@ -615,7 +615,7 @@ class MetadataEditor(QDialog):
             # Retain the legacy field for integrations that read it on import.
             result['GameProvider'] = result['PlayActions'][0]['Integration'] if result['PlayActions'] else None
             for action in result['PlayActions']:
-                if action['Integration'] == 'Lutris' and not action.get('GameId'):
+                if action['Integration'] == 'LutrisIntegration' and not action.get('GameId'):
                     raise ValueError('Enter a Lutris game ID for each Lutris play action.')
             if result['PlayActions'] or self.play_actions.had_actions or 'PlayActions' in self.game:
                 for key in ('Executable', 'Prefix', 'LaunchArguments', 'LutrisId', 'ProviderGameId'):

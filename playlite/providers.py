@@ -211,7 +211,7 @@ def discover_plugins(directory=None, *, include_disabled=False):
              Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite/plugins']
     providers = {}
     for root in roots:
-        for manifest_path in sorted(root.glob('*/manifest.json'), key=lambda path: (path.parent.name not in ('steam', 'playlite-plugin-steam'), str(path))):
+        for manifest_path in sorted(root.glob('*/manifest.json'), key=lambda path: (path.parent.name not in ('steam', 'playlite-plugin-steam-metadata'), str(path))):
             try:
                 manifest = json.loads(manifest_path.read_text())
                 if manifest.get('enabled', True) is False and not include_disabled:

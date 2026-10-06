@@ -1089,7 +1089,7 @@ class LibraryWindow(QMainWindow):
             self.active_filters = {}
         if not isinstance(self.active_filters, dict):
             self.active_filters = {}
-        self.setWindowTitle('Playlite')
+        self.setWindowTitle('Playlite (Repo)' if os.environ.get('PLAYLITE_PROFILE') == 'repo' else 'Playlite')
         screen = QApplication.primaryScreen()
         default_width = screen.availableGeometry().width() // 2 if screen else 1540
         self.fit_default_height = True
@@ -1127,6 +1127,7 @@ class LibraryWindow(QMainWindow):
                 self.logo_menu.addAction(action_label).triggered.connect(callback)
         self.logo_menu.addSeparator()
         self.logo_menu.addAction('Settings…').triggered.connect(self.open_settings)
+        self.logo_menu.addAction('Get started…').triggered.connect(self.open_get_started)
         self.logo.setMenu(self.logo_menu)
         self.logo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.logo.customContextMenuRequested.connect(lambda position: self.logo_menu.popup(self.logo.mapToGlobal(position)))
@@ -1329,7 +1330,10 @@ class LibraryWindow(QMainWindow):
         outer.addWidget(self.game_background, 1)
         self.setCentralWidget(root)
         from .downloads import DownloadQueue, DownloadsPanel, DownloadsButton
-        self.download_queue = DownloadQueue(self)
+        self.download_queue = DownloadQueue(self,DATA/'downloads.json')
+        for plugin in self.generic_plugins:
+            restore=getattr(plugin,'restore_downloads',None)
+            if callable(restore):restore(self,self.download_queue)
         self.downloads_panel = DownloadsPanel(self.game_scroll, self.download_queue)
         self.downloads_button = DownloadsButton(self.list, self.downloads_panel, self.download_queue)
         self.apply_panel_appearance()
@@ -2186,12 +2190,23 @@ class LibraryWindow(QMainWindow):
         self.settings.sync()
 
     def closeEvent(self, event):
+        if not self.download_queue.confirm_close(self):
+            event.ignore();return
         self.download_queue.shutdown()
         if hasattr(self, 'selection_settings_timer'):
             self.selection_settings_timer.stop()
         self.game_detection.stop()
         self.save_window_state()
         super().closeEvent(event)
+
+    def open_get_started(self):
+        from .installer import InstallerDialog
+        active = next((dialog for dialog in self.findChildren(InstallerDialog) if dialog.isVisible()), None)
+        if active:
+            active.raise_()
+            active.activateWindow()
+            return
+        run_dialog(InstallerDialog(self, self.settings))
 
     def open_settings(self):
         from .settings import SettingsDialog
@@ -2365,8 +2380,9 @@ def main():
     args = parser.parse_args()
     app = QApplication(['playlite'])
     app.setApplicationName('playlite')
-    app.setApplicationDisplayName('Playlite')
-    app.setDesktopFileName('playlite')
+    repo_profile = os.environ.get('PLAYLITE_PROFILE') == 'repo'
+    app.setApplicationDisplayName('Playlite (Repo)' if repo_profile else 'Playlite')
+    app.setDesktopFileName('playlite-dev' if repo_profile else 'playlite')
     app.setWindowIcon(QIcon(str(Path(__file__).parent / 'assets' / 'playlite.png')))
     set_style(app, STYLE)
     from .lifecycle import SingleInstance, TrayLifecycle
@@ -2392,4 +2408,6 @@ def main():
             app.processEvents()
         window.grab().save(str(args.screenshot))
     else:
+        if not window.settings.value('onboarding/completed', False, type=bool):
+            QTimer.singleShot(0, window.open_get_started)
         sys.exit(app.exec())

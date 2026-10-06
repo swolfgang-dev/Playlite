@@ -68,7 +68,7 @@ credentials and application settings screen; Steam requires no credentials.
 Do not embed secrets in manifests. Discovery errors are logged and that plugin
 is skipped; other providers remain available.
 
-See `playlite/plugins/steam/` and `playlite/plugins/igdb/` for working adapters.
+See the `playlite-plugin-steam-metadata` and `playlite-plugin-igdb` repositories for working adapters.
 
 ## Game providers and generic plugins
 
@@ -220,7 +220,7 @@ it in the game page where possible. A centered Hide button collapses it.
 The description has no inner border and uses edge fades with internal scrolling.
 The Hide button appears only while expanded.
 
-Icon Studio is an optional general plugin (`IconStudio`) and is disabled by default.
+Image Studio is an optional general plugin (`ImageStudio`) and is disabled by default.
 When enabled, its `augment_editor` hook adds the crop/frame tool to the Images
 page in both Edit and Add game windows. The tool and its dialog live entirely
 inside `playlite/plugins/icon_studio`.
@@ -258,7 +258,7 @@ and UI SVGs resolve through the same palette.
 A manifest with `"type": "integration"` exports `Plugin(IntegrationPlugin)`.
 Integrations own launching, importing and running-game detection. Lutris is one
 integration, with both **Add to Lutris** and **Import from Lutris** entry points.
-Its stable plugin ID remains `Lutris`; older `LutrisId` associations still work.
+Its plugin ID is `LutrisIntegration`; game associations use the `LutrisId` field.
 
 Implement the `GameProvider` hooks above, plus:
 
@@ -319,3 +319,25 @@ and removed from integration-linked entries when saved. Empty arguments and
 prefixes explicitly clear those settings; an empty folder override uses the shared
 installation folder. Metadata, artwork, archiving, and aggregate play history
 remain properties of the game entry.
+
+
+## Plugin names and folders
+
+Plugin IDs use the displayed name without spaces. Repository folders and installed
+plugin folders use the same `playlite-plugin-` name.
+
+| Name | ID | Repository / folder |
+| --- | --- | --- |
+| Game Archiver | `GameArchiver` | `playlite-plugin-game-archiver` |
+| IGDB | `IGDB` | `playlite-plugin-igdb` |
+| Image Studio | `ImageStudio` | `playlite-plugin-image-studio` |
+| Lutris Integration | `LutrisIntegration` | `playlite-plugin-lutris-integration` |
+| Steam Depot Downloader | `SteamDepotDownloader` | `playlite-plugin-steam-depot-downloader` |
+| Steam Integration | `SteamIntegration` | `playlite-plugin-steam-integration` |
+| Steam Metadata | `SteamMetadata` | `playlite-plugin-steam-metadata` |
+| SteamAutoCrack | `SteamAutoCrack` | `playlite-plugin-steamautocrack` |
+| SteamGridDB | `SteamGridDB` | `playlite-plugin-steamgriddb` |
+
+Plugin settings stores retain their existing namespaces for configured folders
+and credentials. Updates match installed plugins by their current IDs and
+preserve the enabled state.

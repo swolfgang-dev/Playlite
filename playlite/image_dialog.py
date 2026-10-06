@@ -116,7 +116,7 @@ class ImageDownloader(QDialog):
             source = QComboBox()
             for provider_id, provider in self.providers.items():
                 source.addItem(provider.name, provider_id)
-            fallback = next((identity for identity, provider in self.providers.items() if key in provider.image_types), 'Steam') if key == 'Logo' else 'Steam'
+            fallback = next((identity for identity, provider in self.providers.items() if key in provider.image_types), 'SteamMetadata') if key == 'Logo' else 'SteamMetadata'
             preferred = settings.value(f'images/defaultProvider/{key}', fallback) if settings else fallback
             source.setCurrentIndex(max(0, source.findData(preferred)))
             query = QLineEdit()
