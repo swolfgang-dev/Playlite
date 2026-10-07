@@ -3,7 +3,7 @@ import copy
 from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
-    QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog)
+    QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog, QLabel, QCheckBox, QDialogButtonBox)
 from .theme import set_style
 
 
@@ -189,6 +189,7 @@ class PlayActionsEditor(QWidget):
         self.providers = providers
         self.game = copy.deepcopy(game)
         self.cards = []
+        self.pending_removals = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
@@ -234,6 +235,26 @@ class PlayActionsEditor(QWidget):
         return card
 
     def remove(self, card):
+        provider = next((p for p in self.providers if p.id == card.integration.currentData()), None)
+        identity = card.game_id.text().strip()
+        if provider and identity and getattr(provider, 'supports_entry_deletion', False):
+            from .lifecycle import run_dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Remove play action')
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(QLabel(f'Remove “{card.name.text()}”?'))
+            cleanup = QCheckBox(f'Also remove its {provider.name} configuration entry')
+            layout.addWidget(cleanup)
+            layout.addWidget(QLabel('Changes apply when you save. Game files and Wine prefixes are kept.'))
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+            confirm = buttons.addButton('Remove', QDialogButtonBox.ButtonRole.AcceptRole)
+            confirm.clicked.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+            if run_dialog(dialog) != QDialog.DialogCode.Accepted:
+                return
+            if cleanup.isChecked():
+                self.pending_removals.append((provider, dict(Integration=provider.id, GameId=identity)))
         self.cards.remove(card)
         self.card_layout.removeWidget(card)
         card.deleteLater()
@@ -253,6 +274,25 @@ class PlayActionsEditor(QWidget):
         for index, card in enumerate(self.cards):
             card.up.setEnabled(index > 0)
             card.down.setEnabled(index < len(self.cards) - 1)
+
+    def save_with_removals(self, save):
+        remaining = {(card.integration.currentData(), card.game_id.text().strip()) for card in self.cards}
+        backups = []
+        removed = set()
+        try:
+            for provider, action in self.pending_removals:
+                key = (provider.id, action['GameId'])
+                if key in remaining or key in removed:
+                    continue
+                backups.append((provider, provider.delete_entry(dict(self.game, PlayActions=[action]))))
+                removed.add(key)
+            result = save()
+        except Exception:
+            for provider, backup in reversed(backups):
+                provider.restore_deleted_entry(backup)
+            raise
+        self.pending_removals.clear()
+        return result
 
     def collect(self):
         return [card.collect() for card in self.cards]

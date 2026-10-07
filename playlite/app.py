@@ -2375,7 +2375,8 @@ class LibraryWindow(QMainWindow):
         dialog = MetadataEditor(self.current, self.data, self)
         while run_dialog(dialog) == QDialog.DialogCode.Accepted:
             try:
-                self.games = save_game(self.data, self.games, dialog.result_game)
+                save = lambda: save_game(self.data, self.games, dialog.result_game)
+                self.games = dialog.play_actions.save_with_removals(save) if hasattr(dialog, 'play_actions') else save()
             except (OSError, ValueError) as error:
                 dialog.error.setText(f'Could not save game: {error}')
                 continue
