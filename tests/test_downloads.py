@@ -56,7 +56,7 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(panel.close_button.text(),'')
         panel.animation.setCurrentTime(panel.animation.duration())
         from PyQt6.QtCore import QPoint
-        self.assertEqual(card.pos(),panel.card_slot.mapTo(host,QPoint(0,0)))
+        self.assertEqual(card.mapTo(host,QPoint(0,0)),panel.card_slot.mapTo(host,QPoint(0,0)))
         self.assertLess(card.y(),start.y())
         self.assertEqual(panel.panel_opacity.opacity(),1)
         self.assertLessEqual(panel.height(),host.height()*.5)
@@ -381,3 +381,23 @@ class DownloadTests(unittest.TestCase):
             self.assertFalse(button.isEnabled())
             self.assertEqual(DownloadQueue(storage=path).entries[0].metadata['library_game_id'], 'saved-game-id')
             host.close()
+
+
+class ScrollCardTests(unittest.TestCase):
+    def test_expanded_active_card_tracks_scroll_and_clips_to_viewport(self):
+        app=QApplication.instance() or QApplication([])
+        host=QWidget();host.resize(900,700)
+        queue=DownloadQueue();queue.pump=Mock()
+        for index in range(8):queue.enqueue(str(index),f'/tmp/scroll-card-{index}',Mock())
+        queue.entries[0].state='Downloading';queue.active=queue.entries[0]
+        panel=DownloadsPanel(host,queue);host.show();panel.show()
+        panel.set_amount(1);app.processEvents();panel.place()
+        card=panel.cards[panel.pinned_id][0]
+        self.assertIs(card.parentWidget(),panel.rows_scroll.viewport())
+        before=card.y()
+        bar=panel.rows_scroll.verticalScrollBar();bar.setValue(min(60,bar.maximum()))
+        self.assertGreater(bar.value(),0)
+        self.assertEqual(card.y(),before-bar.value())
+        panel.set_amount(0)
+        self.assertIs(card.parentWidget(),host)
+        host.close()

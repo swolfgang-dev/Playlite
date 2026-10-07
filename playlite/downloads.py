@@ -252,6 +252,7 @@ class DownloadsPanel(QFrame):
         self.summary=QLabel('No downloads queued');layout.addWidget(self.summary)
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.rows_scroll=scroll
+        scroll.verticalScrollBar().valueChanged.connect(self.place)
         scroll.viewport().setAutoFillBackground(False)
         set_style(scroll.viewport(),'background: transparent;')
         set_style(scroll,'QScrollArea { background: transparent; border: 0; } QScrollArea > QWidget > QWidget { background: transparent; }')
@@ -343,7 +344,14 @@ class DownloadsPanel(QFrame):
             width=round((host.width()-40)*(1-self.amount)+self.card_slot.width()*self.amount)
             x=round(start.x()+(end.x()-start.x())*self.amount)
             y=round(start.y()+(end.y()-start.y())*self.amount)
-            card.setGeometry(x,y,max(1,width),card_height)
+            if self.amount >= 1:
+                viewport=self.rows_scroll.viewport()
+                if card.parentWidget() is not viewport:card.setParent(viewport)
+                position=self.card_slot.mapTo(viewport,QPoint(0,0))
+                card.setGeometry(position.x(),position.y(),max(1,self.card_slot.width()),card_height)
+            else:
+                if card.parentWidget() is not host:card.setParent(host)
+                card.setGeometry(x,y,max(1,width),card_height)
             card.raise_();card.show()
 
     def set_amount(self,value):self.amount=float(value);self.place()
