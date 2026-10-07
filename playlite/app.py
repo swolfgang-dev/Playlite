@@ -267,7 +267,7 @@ class Hero(QWidget):
         metrics = button.fontMetrics()
         option = QStyleOptionButton()
         option.initFrom(button)
-        option.text = max(('Play', 'Running', 'Launching…', 'Launching...'),
+        option.text = max(('Play', 'Stop', 'Stopping…', 'Launching…', 'Launching...'),
                           key=metrics.horizontalAdvance)
         content = QSize(metrics.horizontalAdvance(option.text), metrics.height())
         button_width = button.style().sizeFromContents(QStyle.ContentsType.CT_PushButton,
@@ -1092,6 +1092,7 @@ class LibraryWindow(QMainWindow):
         self.thumbnail_cache = {}
         self.installation_sizes = {}
         self.size_tasks = []
+        self.stop_tasks = {}
         self.is_grid = self.settings.value('library/view', 'list') == 'grid'
         startup_view = self.settings.value('app/defaultView', 'remember')
         if startup_view != 'remember':
@@ -1846,8 +1847,9 @@ class LibraryWindow(QMainWindow):
                 item.setToolTip(status if status in ('Running', 'Launching', 'Launch failed') else '')
         if self.current and self.current['Id'] == game_id:
             active = status in ('Running', 'Launching')
-            self.play_button.setText(status + ('…' if status == 'Launching' else '') if active else 'Play')
-            self.play_button.setEnabled(not active and any(provider.owns(self.current) for provider in self.game_providers))
+            stopping = game_id in self.stop_tasks
+            self.play_button.setText('Stopping…' if stopping else 'Stop' if status == 'Running' else 'Launching…' if status == 'Launching' else 'Play')
+            self.play_button.setEnabled(not stopping and status != 'Launching' and any(provider.owns(self.current) for provider in self.game_providers))
             self.play_hero.position_play_control()
 
     def apply_panel_appearance(self):
@@ -1922,7 +1924,10 @@ class LibraryWindow(QMainWindow):
     def play_game(self):
         if self.current is None:
             return
-        if self.game_detection.status(self.current['Id']) in ('Launching', 'Running'):
+        if self.game_detection.status(self.current['Id']) == 'Running':
+            self.stop_game()
+            return
+        if self.game_detection.status(self.current['Id']) == 'Launching':
             return
         try:
             game = dict(self.current)
@@ -1955,6 +1960,41 @@ class LibraryWindow(QMainWindow):
         except Exception as error:
             self.game_detection.launch_failed(game['Id'])
             show_warning(self, 'Cannot launch game', str(error))
+
+    def stop_game(self):
+        game = dict(self.current)
+        identity = game['Id']
+        if identity in self.stop_tasks:
+            return
+        dialog = QMessageBox(QMessageBox.Icon.Question, 'Stop game',
+                             f'Stop “{game["Name"]}”? Unsaved progress may be lost.',
+                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, self)
+        dialog.button(QMessageBox.StandardButton.Yes).setText('Stop')
+        dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if run_dialog(dialog) != QMessageBox.StandardButton.Yes:
+            return
+        from .metadata_dialog import Task
+        from .providers import IntegrationPlugin
+        def stop():
+            providers = [provider for provider in self.game_providers
+                         if isinstance(provider, IntegrationPlugin) and provider.owns(game)
+                         and identity in provider.detect_running([game])]
+            if not providers:
+                raise ValueError('No running game process could be identified.')
+            count = sum(provider.stop(game) for provider in providers)
+            if not count:
+                raise ValueError('The game process has already exited or could not be identified.')
+        task = Task(stop)
+        self.stop_tasks[identity] = task
+        self.game_status_changed(identity, self.game_detection.status(identity))
+        def finish(error=None):
+            self.stop_tasks.pop(identity, None)
+            self.game_status_changed(identity, self.game_detection.status(identity))
+            if error:
+                show_warning(self, 'Cannot stop game', error)
+        task.signals.succeeded.connect(lambda _: finish())
+        task.signals.failed.connect(finish)
+        QThreadPool.globalInstance().start(task)
 
     def plugin_game_actions(self, game):
         return [(plugin.name, actions) for plugin in self.generic_plugins

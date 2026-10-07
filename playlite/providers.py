@@ -83,6 +83,10 @@ class InstallationPlugin(Plugin):
 
 class IntegrationPlugin(GameProvider):
     """Own launching, add methods and running-game detection for a launcher."""
+    def stop(self, game):
+        """Stop matching game processes in a worker; return the number targeted."""
+        raise ValueError(f"Stopping games is not supported by {self.name}.")
+
     def installation_methods(self):
         return []
 
