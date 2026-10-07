@@ -22,6 +22,38 @@ def run_dialog(dialog):
     return dialog.result()
 
 
+def restart_application(window):
+    """Use the update shutdown path, then relaunch after this process exits."""
+    import subprocess
+    import sys
+    lifecycle = getattr(window, 'lifecycle', None)
+    if lifecycle is not None:
+        lifecycle.quitting = True
+    try:
+        closed = window is not None and window.close()
+    finally:
+        if lifecycle is not None:
+            lifecycle.quitting = False
+    if not closed:
+        return False
+    # Waiting avoids forwarding the new launch to the old single-instance server.
+    script = ('import os,subprocess,sys,time\n'
+              'pid=int(sys.argv[1])\n'
+              'while True:\n'
+              ' try: os.kill(pid,0)\n'
+              ' except ProcessLookupError: break\n'
+              ' time.sleep(0.1)\n'
+              'subprocess.Popen([sys.executable,"-m","playlite"],start_new_session=True)\n')
+    subprocess.Popen([sys.executable, '-c', script, str(os.getpid())],
+                     cwd=os.getcwd(), env=os.environ.copy(), start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if lifecycle is not None:
+        lifecycle.quit()
+    else:
+        QApplication.instance().quit()
+    return True
+
+
 def picker_directory(path):
     """Resolve a starting folder without inheriting another dialog's history."""
     folder = Path(path).expanduser().absolute() if path else Path.home()

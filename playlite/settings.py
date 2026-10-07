@@ -781,6 +781,20 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 QApplication.instance().quit()
         self.update_task(lambda: prepare_update(release), complete)
 
+    def prompt_plugin_restart(self):
+        from PyQt6.QtWidgets import QMessageBox
+        from .lifecycle import restart_application
+        prompt = QMessageBox(QMessageBox.Icon.Information, 'Restart Playlite',
+            'Plugin changes will take effect after restarting Playlite. Restart now?',
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel, self)
+        prompt.button(QMessageBox.StandardButton.Ok).setText('Restart now')
+        prompt.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if run_dialog(prompt) == QMessageBox.StandardButton.Ok:
+            window = self.parentWidget()
+            self.save()
+            if self.result() == QDialog.DialogCode.Accepted:
+                restart_application(window)
+
     def delete_selected_plugins(self):
         from .plugin_manager import delete_plugins
         from .metadata_dialog import Task
@@ -835,6 +849,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.installed_plugin_details.clear()
             if any(plugin for _, plugin, _ in results):
                 self.plugin_operation_status.appendPlainText('Restart Playlite to unload deleted plugins.')
+                self.prompt_plugin_restart()
         def failed(error):
             self.deleting_plugins = False
             self.install_selected_button.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()))
@@ -892,6 +907,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 installed_setup([manifest for _, manifest, _ in results
                                  if manifest and manifest.get('id') not in previously_installed], self, log.appendPlainText)
             self.install_selected_button.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()))
+            if any(manifest for _, manifest, _ in results):
+                self.prompt_plugin_restart()
         def failed(error):
             self.installing_plugins = False
             log.appendPlainText(str(error))
@@ -928,9 +945,11 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
     def set_selected_plugins_enabled(self, identities, enabled):
         from .plugin_manager import set_plugin_enabled
         messages = []
+        changed = False
         for identity in identities:
             try:
                 plugin = set_plugin_enabled(identity, enabled)
+                changed = True
                 messages.append(f'{plugin["name"]}: {"Enabled" if enabled else "Disabled"}.')
             except (ValueError, OSError) as error:
                 messages.append(f'{identity}: {error}')
@@ -940,6 +959,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 self.installed_plugins.selectionModel().select(self.installed_plugins.model().index(row, 0),
                     QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
         self.plugin_operation_status.setPlainText('\n'.join(messages + ['Restart Playlite to apply plugin changes.']))
+        if changed:
+            self.prompt_plugin_restart()
 
     def refresh_installed_plugins(self):
         from .plugin_manager import installed_plugins
@@ -1013,6 +1034,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 status.setText(f"Installed {manifest['name']} {manifest['version']}. Restart Playlite to load it.")
                 install.setEnabled(True)
                 repository.setEnabled(True)
+                dialog.accept()
+                self.prompt_plugin_restart()
             def failed(error):
                 status.setText('Installation failed. Check repository access and authentication. ' + str(error))
                 install.setEnabled(True)

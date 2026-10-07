@@ -13,6 +13,11 @@ from playlite.plugin_catalogue_cache import catalogue_cache
 APP = QApplication.instance() or QApplication([])
 
 class BulkPluginTests(unittest.TestCase):
+    def setUp(self):
+        restart = patch.object(SettingsDialog, 'prompt_plugin_restart')
+        restart.start()
+        self.addCleanup(restart.stop)
+
     def test_available_hides_installed_plugins_by_current_repositories_and_ids(self):
         with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
             root = Path(directory)
@@ -145,7 +150,8 @@ class BulkPluginTests(unittest.TestCase):
                 window.reject()
                 cache.plugins, cache.loaded, cache.loading, cache.error = old
 
-    def test_context_menu_toggles_mixed_selection_and_preserves_it(self):
+    @patch.object(SettingsDialog, 'prompt_plugin_restart')
+    def test_context_menu_toggles_mixed_selection_and_preserves_it(self, restart_prompt):
         from PyQt6.QtWidgets import QMenu
         from playlite.plugin_manager import installed_plugins
         with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
@@ -170,6 +176,7 @@ class BulkPluginTests(unittest.TestCase):
                 self.assertEqual(state, {'First': False, 'Second': False, 'Third': True})
                 self.assertEqual(len(table.selectionModel().selectedRows()), 2)
                 window.set_selected_plugins_enabled(['First', 'Second'], True)
+                self.assertEqual(restart_prompt.call_count, 2)
                 self.assertTrue(all(plugin['enabled'] for plugin in installed_plugins()))
                 self.assertIn('Restart Playlite', window.plugin_operation_status.toPlainText())
                 with patch.object(QMenu, 'popup'):
