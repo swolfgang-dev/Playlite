@@ -32,6 +32,7 @@ class DownloadQueue(QObject):
     def __init__(self,parent=None,storage=None):
         super().__init__(parent)
         self.entries=[]; self.active=None; self.stopped=False
+        self.paused_all=False;self.resume_after_pause=None
         self.storage=Path(storage) if storage else None
         self.load()
         self.changed.connect(self.save)
@@ -70,6 +71,20 @@ class DownloadQueue(QObject):
         self.entries[first],self.entries[second]=self.entries[second],self.entries[first]
         self.changed.emit()
 
+    def activate_queued(self,row):
+        if self.stopped or self.paused_all or row.state!='Queued' or row not in self.entries:return
+        active=self.active
+        if active and active.cancelled:return
+        self.entries.remove(row)
+        if active:
+            self.entries.remove(active)
+            self.entries[:0]=[row,active]
+            # Requeue only after its worker has stopped and retained partial files.
+            self.resume_after_pause=active.id
+            self.pause(active)
+        else:self.entries.insert(0,row)
+        self.changed.emit();QTimer.singleShot(0,self.pump)
+
     def enqueue(self,name,destination,factory,metadata=None):
         if self.stopped:raise ValueError('The download queue is closing.')
         destination=str(Path(destination).expanduser().resolve())
@@ -80,7 +95,7 @@ class DownloadQueue(QObject):
         return row
 
     def pump(self):
-        if self.stopped or self.active:return
+        if self.stopped or self.paused_all or self.active:return
         row=next((row for row in self.entries if row.state=='Queued'),None)
         if row is None:return
         self.active=row;row.state='Downloading';row.status='Starting download…'
@@ -100,7 +115,11 @@ class DownloadQueue(QObject):
         row.state='Paused' if row.paused else 'Cancelled' if row.cancelled else 'Complete' if success else 'Failed'
         if row.paused:status='Paused · partial files retained'
         row.status=status;row.progress=100 if success and not row.cancelled else row.progress
-        self.active=None;self.changed.emit();QTimer.singleShot(0,self.pump)
+        self.active=None;self.changed.emit()
+        if self.resume_after_pause==row.id:
+            self.resume_after_pause=None
+            if row.state=='Paused' and not self.paused_all:self.retry(row)
+        QTimer.singleShot(0,self.pump)
 
     def cancel(self,row):
         if row.state=='Queued':
@@ -117,6 +136,21 @@ class DownloadQueue(QObject):
         elif self.active is row and not row.cancelled:
             row.paused=True;row.cancelled=True;row.status='Pausing download…';self.changed.emit()
             if row.controller:row.controller.cancel()
+
+    def pause_all(self):
+        self.paused_all=True;self.resume_after_pause=None
+        # Block queue advancement before cancellation can finish synchronously.
+        for row in self.entries:
+            if row.state=='Queued':self.pause(row)
+        if self.active:self.pause(self.active)
+        self.changed.emit()
+
+    def resume_all(self):
+        self.paused_all=False
+        if self.active and self.active.paused:self.resume_after_pause=self.active.id
+        for row in self.entries:
+            if row.state=='Paused' and callable(row.factory):self.retry(row)
+        self.changed.emit();QTimer.singleShot(0,self.pump)
 
     def retry(self,row):
         if row.state not in ('Failed','Cancelled','Paused') or not callable(row.factory):return
@@ -204,6 +238,8 @@ class DownloadsPanel(QFrame):
         set_style(self,f'QFrame#downloadsPanel {{ background: {colour("#202123")}; border: 1px solid {colour("#45474b")}; border-top-left-radius: 12px; border-top-right-radius: 12px; }}')
         layout=QVBoxLayout(self);layout.setContentsMargins(20,16,20,16);layout.setSpacing(12)
         title=QLabel('Downloads');title.setStyleSheet('font-weight: bold; font-size: 17px;')
+        self.pause_all_button=QPushButton('Pause all')
+        self.pause_all_button.clicked.connect(lambda:queue.resume_all() if self.pause_all_button.text()=='Resume all' else queue.pause_all())
         clear=QPushButton('Clear finished');clear.clicked.connect(queue.clear_finished)
         close=QPushButton();close.setIcon(QIcon(str(Path(__file__).parent/'assets/downloads.svg')))
         close.setIconSize(QSize(24,24));close.setFixedSize(40,40)
@@ -211,7 +247,7 @@ class DownloadsPanel(QFrame):
         set_style(close,'padding: 0;')
         close.clicked.connect(lambda:self.set_open(False))
         self.close_button=close
-        header=QHBoxLayout();header.setSpacing(10);header.addWidget(title);header.addStretch();header.addWidget(clear);header.addWidget(close)
+        header=QHBoxLayout();header.setSpacing(10);header.addWidget(title);header.addStretch();header.addWidget(self.pause_all_button);header.addWidget(clear);header.addWidget(close)
         layout.addLayout(header)
         self.summary=QLabel('No downloads queued');layout.addWidget(self.summary)
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -347,6 +383,10 @@ class DownloadsPanel(QFrame):
             self.refresh()
 
     def refresh(self):
+        running=any(row.state in ('Queued','Downloading') and not row.paused for row in self.queue.entries)
+        resume=self.queue.paused_all or not running
+        self.pause_all_button.setText('Resume all' if resume else 'Pause all')
+        self.pause_all_button.setEnabled(not self.queue.stopped and (self.queue.paused_all or running or any(row.state=='Paused' and callable(row.factory) for row in self.queue.entries)))
         queued=sum(row.state=='Queued' for row in self.queue.entries)
         waiting=[row for row in self.queue.entries if row.state=='Queued']
         active=self.queue.active or next((row for row in self.queue.ordered() if row.state in ('Downloading','Queued','Paused')),None)
@@ -375,7 +415,7 @@ class DownloadsPanel(QFrame):
             self.active_progress.setRange(0,0 if active.state=='Downloading' and active.progress is None else 1000)
             self.active_progress.setValue(round((active.progress or 0)*10))
         self.place()
-        self.summary.setText(f'{queued} waiting · '+('Downloading' if self.queue.active else 'Idle'))
+        self.summary.setText(f'{queued} waiting · '+('Paused' if self.queue.paused_all else 'Downloading' if self.queue.active else 'Idle'))
         ids={row.id for row in self.queue.entries}
         for identifier in list(self.cards):
             if identifier not in ids:self.cards.pop(identifier)[0].deleteLater()
@@ -392,11 +432,9 @@ class DownloadsPanel(QFrame):
                 box=QVBoxLayout(card);box.setContentsMargins(14,12,14,12);box.setSpacing(10)
                 line=QHBoxLayout();line.setSpacing(10);name=QLabel();name.setWordWrap(True);line.addWidget(name,1)
                 set_style(name,'font-weight: bold; font-size: 15px;')
-                up=QPushButton('↑');up.setToolTip('Move earlier in queue');up.setAccessibleName('Move earlier in queue')
-                down=QPushButton('↓');down.setToolTip('Move later in queue');down.setAccessibleName('Move later in queue')
-                up.clicked.connect(lambda checked=False,row=row:self.queue.move_queued(row,-1))
-                down.clicked.connect(lambda checked=False,row=row:self.queue.move_queued(row,1))
-                line.addWidget(up);line.addWidget(down)
+                up=QPushButton('↑');up.setToolTip('Download now');up.setAccessibleName('Download now')
+                up.clicked.connect(lambda checked=False,row=row:self.queue.activate_queued(row))
+                line.addWidget(up)
                 action=QPushButton();action.clicked.connect(lambda checked=False,row=row:self.action(row))
                 library=QPushButton('Add to Playlite')
                 library.clicked.connect(lambda checked=False,row=row:self.add_to_library(row))
@@ -424,8 +462,8 @@ class DownloadsPanel(QFrame):
                 progress_line=QHBoxLayout();progress_line.addWidget(bar,1);progress_line.addWidget(bar.percent_label)
                 box.addLayout(progress_line)
                 self.rows.insertWidget(self.rows.count()-1,card)
-                self.cards[row.id]=(card,name,status,bar,action,library,pause,retry,up,down)
-            card,name,status,bar,action,library,pause,retry,up,down=self.cards[row.id]
+                self.cards[row.id]=(card,name,status,bar,action,library,pause,retry,up)
+            card,name,status,bar,action,library,pause,retry,up=self.cards[row.id]
             card.remove_button.setVisible(row.state=='Complete')
             self.rows.removeWidget(card)
             self.active_strip.layout().removeWidget(card)
@@ -440,9 +478,8 @@ class DownloadsPanel(QFrame):
                 self.rows.insertWidget(visible_index,card)
                 visible_index+=1
             card.show()
-            up.setVisible(row.state=='Queued');down.setVisible(row.state=='Queued')
-            up.setEnabled(row.state=='Queued' and waiting.index(row)>0)
-            down.setEnabled(row.state=='Queued' and waiting.index(row)<len(waiting)-1)
+            up.setVisible(row.state=='Queued')
+            up.setEnabled(row.state=='Queued' and not self.queue.paused_all and not (self.queue.active and self.queue.active.cancelled))
             pause.setVisible(row.state in ('Queued','Downloading'));pause.setEnabled(not row.cancelled)
             retry.setText('Resume' if row.state=='Paused' else 'Retry')
             retry.setVisible(row.state in ('Failed','Cancelled','Paused'));retry.setEnabled(callable(row.factory))

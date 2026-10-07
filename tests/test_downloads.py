@@ -137,6 +137,55 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(panel.pinned_id,second.id)
         host.close()
 
+    def test_pause_all_stops_active_and_queue_until_resume(self):
+        host=QWidget();queue=DownloadQueue();panel=DownloadsPanel(host,queue)
+        first=queue.enqueue('First','/tmp/all-first',lambda *_:Mock())
+        second=queue.enqueue('Second','/tmp/all-second',lambda *_:Mock())
+        self.app.processEvents()
+        controller=first.controller
+        controller.cancel.side_effect=lambda:queue.finish(first,False,'Paused')
+        panel.pause_all_button.click();self.app.processEvents()
+        self.assertEqual([first.state,second.state],['Paused','Paused'])
+        self.assertIsNone(queue.active)
+        self.assertEqual(panel.pause_all_button.text(),'Resume all')
+        third=queue.enqueue('Third','/tmp/all-third',lambda *_:Mock())
+        self.app.processEvents();self.assertIsNone(queue.active)
+        panel.pause_all_button.click();self.app.processEvents()
+        self.assertIs(queue.active,first)
+        self.assertEqual(second.state,'Queued');self.assertEqual(third.state,'Queued')
+        self.assertEqual(panel.pause_all_button.text(),'Pause all')
+        host.close()
+
+    def test_resume_all_while_active_pause_is_finishing(self):
+        queue=DownloadQueue()
+        first=queue.enqueue('First','/tmp/resume-all-first',lambda *_:Mock())
+        second=queue.enqueue('Second','/tmp/resume-all-second',lambda *_:Mock())
+        self.app.processEvents();queue.pause_all();queue.resume_all()
+        self.assertTrue(first.paused)
+        queue.finish(first,False,'Paused');self.app.processEvents()
+        self.assertEqual(first.state,'Downloading')
+        self.assertFalse(first.paused);self.assertFalse(first.cancelled)
+        self.assertEqual(second.state,'Queued')
+
+    def test_download_now_swaps_active_with_queue_front_after_worker_stops(self):
+        host=QWidget();queue=DownloadQueue();panel=DownloadsPanel(host,queue)
+        active=queue.enqueue('Active','/tmp/swap-active',lambda *_:Mock())
+        first=queue.enqueue('First','/tmp/swap-first',lambda *_:Mock())
+        chosen=queue.enqueue('Chosen','/tmp/swap-chosen',lambda *_:Mock())
+        self.app.processEvents();queue.update(active,42,'Downloading')
+        promote=panel.cards[chosen.id][8]
+        self.assertEqual(promote.toolTip(),'Download now')
+        promote.click()
+        self.assertIs(queue.active,active)
+        active.controller.cancel.assert_called_once()
+        self.assertFalse(panel.cards[first.id][8].isEnabled())
+        queue.finish(active,False,'Paused');self.app.processEvents()
+        self.assertIs(queue.active,chosen)
+        self.assertEqual([row.name for row in queue.ordered()],['Chosen','Active','First'])
+        self.assertEqual(active.state,'Queued');self.assertEqual(active.progress,42)
+        self.assertEqual(len(panel.cards[chosen.id]),9)
+        host.close()
+
     def test_remove_completed_entry_keeps_files_and_other_downloads(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);files=root/'game';files.mkdir();(files/'game.exe').write_bytes(b'game')
