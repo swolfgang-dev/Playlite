@@ -3,7 +3,7 @@ import copy
 from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
-    QFormLayout, QLineEdit, QFrame, QGridLayout)
+    QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog)
 from .theme import set_style
 
 
@@ -185,13 +185,21 @@ class PlayActionsEditor(QWidget):
     def __init__(self, game, providers, parent=None):
         super().__init__(parent)
         self.providers = providers
+        self.game = copy.deepcopy(game)
         self.cards = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
         buttons = QHBoxLayout()
         add = QPushButton('Add action')
-        add.clicked.connect(lambda: self.add())
+        self.add_button=add
+        menu=QMenu(add)
+        from .providers import discover_plugins,installation_methods
+        self.installation_methods=installation_methods(discover_plugins())
+        for method in self.installation_methods.values():
+            item=menu.addAction(method.name)
+            item.triggered.connect(lambda checked=False,method=method:self.setup_action(method.id))
+        add.setMenu(menu)
         buttons.addWidget(add)
         buttons.addStretch()
         layout.addLayout(buttons)
@@ -202,6 +210,19 @@ class PlayActionsEditor(QWidget):
         self.had_actions = bool(initial_actions)
         for action in initial_actions:
             self.add(action)
+
+    def setup_action(self,method):
+        from .action_setup import ActionSetupDialog
+        from .lifecycle import run_dialog,show_warning
+        parent=self.parentWidget()
+        data=getattr(parent,'data',None)
+        if data is None:
+            show_warning(self,'Cannot add action','The game editor has no data folder.');return
+        seed=copy.deepcopy(self.game)
+        folder=getattr(parent,'fields',{}).get('InstallDirectory')
+        if folder is not None:seed['InstallDirectory']=folder.text().strip()
+        dialog=ActionSetupDialog(seed,data,self.providers,method,self)
+        if run_dialog(dialog)==QDialog.DialogCode.Accepted:self.add(dialog.result_action)
 
     def add(self, action=None):
         card = ActionCard(action or {}, self)
