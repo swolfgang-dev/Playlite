@@ -473,17 +473,19 @@ class DownloadsPanel(QFrame):
                 self.cards[row.id]=(card,name,status,bar,action,library,pause,retry,up)
             card,name,status,bar,action,library,pause,retry,up=self.cards[row.id]
             card.remove_button.setVisible(row.state=='Complete')
-            self.rows.removeWidget(card)
             self.active_strip.layout().removeWidget(card)
             if row is active:
-                card.setParent(self.parentWidget())
+                self.rows.removeWidget(card)
                 self.card_slot.setFixedHeight(card.sizeHint().height())
-                self.rows.removeWidget(self.card_slot)
-                self.rows.insertWidget(visible_index,self.card_slot)
+                if self.rows.indexOf(self.card_slot) != visible_index:
+                    self.rows.removeWidget(self.card_slot)
+                    self.rows.insertWidget(visible_index,self.card_slot)
                 visible_index+=1
             else:
-                card.setParent(self.rows_scroll.widget())
-                self.rows.insertWidget(visible_index,card)
+                if card.parentWidget() is not self.rows_scroll.widget():card.setParent(self.rows_scroll.widget())
+                if self.rows.indexOf(card) != visible_index:
+                    self.rows.removeWidget(card)
+                    self.rows.insertWidget(visible_index,card)
                 visible_index+=1
             card.show()
             up.setVisible(row.state=='Queued')

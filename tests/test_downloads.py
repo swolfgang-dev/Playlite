@@ -395,6 +395,11 @@ class ScrollCardTests(unittest.TestCase):
         card=panel.cards[panel.pinned_id][0]
         self.assertIs(card.parentWidget(),panel.rows_scroll.viewport())
         before=card.y()
+        for value in range(5):
+            queue.update(queue.active,value,'Downloading')
+            app.processEvents()
+            self.assertIs(card.parentWidget(),panel.rows_scroll.viewport())
+            self.assertEqual(card.y(),before)
         bar=panel.rows_scroll.verticalScrollBar();bar.setValue(min(60,bar.maximum()))
         self.assertGreater(bar.value(),0)
         self.assertEqual(card.y(),before-bar.value())
