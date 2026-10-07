@@ -561,7 +561,11 @@ class ImageDownloader(QDialog):
             had_images = images.count() > 0
             if had_images:
                 positions[key] = scroll
-            images.clear()
+            wanted={entry[1] for entry in results}
+            for index in reversed(range(images.count())):
+                if images.item(index).data(Qt.ItemDataRole.UserRole) not in wanted:
+                    images.takeItem(index)
+            existing={images.item(index).data(Qt.ItemDataRole.UserRole):images.item(index) for index in range(images.count())}
             for entry in results:
                 label, path = entry[:2]
                 types = entry[2] if len(entry) > 2 else {key}
@@ -574,7 +578,10 @@ class ImageDownloader(QDialog):
                     width, height = pixmap.width(), pixmap.height()
                     divisor = gcd(width, height)
                     caption = f'{width}×{height} ({width // divisor}:{height // divisor})'
-                item = QListWidgetItem(caption)
+                item = existing.get(path)
+                new_item = item is None
+                if new_item:item = QListWidgetItem(caption)
+                else:item.setText(caption)
                 if not pixmap.isNull():
                     item.setData(Qt.ItemDataRole.DecorationRole, pixmap.scaled(
                         600, 600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
@@ -584,7 +591,11 @@ class ImageDownloader(QDialog):
                 item.setToolTip(label)
                 item.setData(Qt.ItemDataRole.UserRole, path)
                 item.setData(Qt.ItemDataRole.UserRole + 1, self.applied.get(self.logo_target if key == 'Logo' else key) == path)
-                images.addItem(item)
+                if new_item:
+                    category,shape,resolution=self.filters[key]
+                    visible=(bool(set(category.values()).intersection(types)) and matches_shape(pixmap.width(),pixmap.height(),shape.values()) and matches_resolution(max(pixmap.width(),pixmap.height()),resolution.values()))
+                    images.addItem(item)
+                    item.setHidden(not visible)
             total += len(results)
             warnings.extend(f'{key}: {error}' for error in errors)
             images.setToolTip('\n'.join(errors) if errors else 'No images available.' if not results else '')
@@ -596,6 +607,7 @@ class ImageDownloader(QDialog):
         self.status.setToolTip('\n'.join(warnings))
         for key in payload:
             self.filter_images(key)
+            self.image_lists[key].doItemsLayout()
             # Preserve browsing position as newly downloaded images arrive.
             if key in positions:
                 self.image_lists[key].verticalScrollBar().setValue(positions[key])
