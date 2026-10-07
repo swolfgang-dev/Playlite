@@ -58,7 +58,7 @@ class ActionSetupTests(unittest.TestCase):
         self.assertEqual(dialog.result(),QDialog.DialogCode.Accepted)
         self.assertEqual(dialog.result_action['Integration'],'Example')
         self.assertEqual(dialog.result_action['GameId'],'84')
-        self.assertEqual(dialog.result_action['Name'],'Imported title')
+        self.assertEqual(dialog.result_action['Name'],'Play Imported title')
         self.assertEqual(self.game['Name'],'Original title')
         dialog.close()
 

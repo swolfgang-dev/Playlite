@@ -48,7 +48,6 @@ class ActionSetupDialog(AddGameEditor):
             actions=actions_for(game,self.action_providers)
             if not actions:raise ValueError('This installation method did not supply a launching integration.')
             action=actions[0]
-            action['Name']=game.get('Name') or 'Play'
             action['InstallDirectory']=game.get('InstallDirectory') or ''
             provider=next((p for p in self.action_providers if p.id==action['Integration']),None)
             if provider:provider.validate_action(action)
