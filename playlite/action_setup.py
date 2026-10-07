@@ -7,6 +7,7 @@ from .play_actions import actions_for
 
 
 class ActionSetupDialog(AddGameEditor):
+    editor_purpose = 'play_action'
     def __init__(self,game,data,providers,method,parent=None):
         seed=copy.deepcopy(game)
         seed.pop('PlayActions',None)
