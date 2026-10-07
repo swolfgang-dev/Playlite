@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch,Mock
-from PyQt6.QtWidgets import QApplication,QDialog
+from PyQt6.QtWidgets import QApplication,QDialog,QWidget,QLineEdit
 from playlite.providers import IntegrationPlugin,InstallationPlugin
 from playlite.manual_installation import ManualInstallation
 from playlite.action_setup import ActionSetupDialog
@@ -70,3 +70,16 @@ class ActionSetupTests(unittest.TestCase):
             dialog.save();commit.assert_called_once()
             self.assertEqual(dialog.result_action['GameId'],'84')
             dialog.close()
+
+    def test_add_action_retains_game_editor_after_layout_reparenting(self):
+        owner=QWidget();owner.data=self.data
+        folder=QLineEdit('/games/Example');owner.fields={'InstallDirectory':folder}
+        with patch('playlite.providers.discover_plugins',return_value={}):
+            actions=PlayActionsEditor(self.game,[self.provider],owner)
+        container=QWidget(owner);actions.setParent(container)
+        with patch('playlite.action_setup.ActionSetupDialog') as dialog,patch('playlite.lifecycle.run_dialog',return_value=QDialog.DialogCode.Rejected):
+            actions.setup_action('Manual')
+        args=dialog.call_args.args
+        self.assertEqual(args[0]['InstallDirectory'],'/games/Example')
+        self.assertEqual(args[1],self.data)
+        owner.close()

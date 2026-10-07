@@ -186,6 +186,7 @@ class ActionCard(QFrame):
 class PlayActionsEditor(QWidget):
     def __init__(self, game, providers, parent=None):
         super().__init__(parent)
+        self.game_editor = parent
         self.providers = providers
         self.game = copy.deepcopy(game)
         self.cards = []
@@ -217,7 +218,7 @@ class PlayActionsEditor(QWidget):
     def setup_action(self,method):
         from .action_setup import ActionSetupDialog
         from .lifecycle import run_dialog,show_warning
-        parent=self.parentWidget()
+        parent=self.game_editor
         data=getattr(parent,'data',None)
         if data is None:
             show_warning(self,'Cannot add action','The game editor has no data folder.');return
