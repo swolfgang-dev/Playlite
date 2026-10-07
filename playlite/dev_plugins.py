@@ -13,6 +13,16 @@ def prepare_dependencies(destination):
     import sys
     from importlib.metadata import version, PackageNotFoundError
     pending = set()
+    # The desktop may have core dependencies installed only in its user site,
+    # which the isolated development profile deliberately excludes.
+    for name, requirement in [('PyQt6', 'PyQt6>=6.6,<7'), ('Pillow', 'Pillow>=10,<13')]:
+        try:
+            installed = tuple(map(int, version(name).split('.')))
+            minimum, maximum = ((6, 6), (7,)) if name == 'PyQt6' else ((10,), (13,))
+            if not minimum <= installed < maximum:
+                pending.add(requirement)
+        except (PackageNotFoundError, ValueError):
+            pending.add(requirement)
     for path in destination.glob('*/manifest.json'):
         manifest = json.loads(path.read_text())
         if manifest.get('enabled') is False:

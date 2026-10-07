@@ -16,6 +16,8 @@ class DevelopmentPluginTests(unittest.TestCase):
                                   ('disabled',dict(enabled=False,requirements=['unused']))]:
                 folder=root/name;folder.mkdir();(folder/'manifest.json').write_text(json.dumps(manifest))
             def version(name):
+                if name=='PyQt6':return '6.6.1'
+                if name=='Pillow':return '12.0.0'
                 if name=='vdf':raise PackageNotFoundError(name)
                 return '5.4'
             with patch('importlib.metadata.version',side_effect=version),patch('sys.prefix','/private-venv'),patch('importlib.util.find_spec',return_value=object()),patch('playlite.dev_plugins.subprocess.run') as run:
@@ -27,7 +29,7 @@ class DevelopmentPluginTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);folder=root/'plugin';folder.mkdir()
             (folder/'manifest.json').write_text(json.dumps(dict(requirements=['vdf>=3.4'])))
-            with patch('importlib.metadata.version',return_value='3.4'),patch('playlite.dev_plugins.subprocess.run') as run:
+            with patch('importlib.metadata.version',side_effect=lambda name: {'PyQt6':'6.6.1','Pillow':'12.0.0','vdf':'3.4'}[name]),patch('playlite.dev_plugins.subprocess.run') as run:
                 prepare_dependencies(root);run.assert_not_called()
 
     def test_sync_updates_installed_code_preserving_enabled_and_settings(self):
