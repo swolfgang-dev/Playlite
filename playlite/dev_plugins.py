@@ -7,6 +7,42 @@ import threading
 import tempfile
 
 
+def prepare_dependencies(destination):
+    """Install declared plugin requirements into the private repo runtime."""
+    import re
+    import sys
+    from importlib.metadata import version, PackageNotFoundError
+    pending = set()
+    for path in destination.glob('*/manifest.json'):
+        manifest = json.loads(path.read_text())
+        if manifest.get('enabled') is False:
+            continue
+        for requirement in manifest.get('requirements') or []:
+            match = re.fullmatch(r'([A-Za-z0-9_.-]+)(?:>=([0-9.]+))?', requirement)
+            if not match:
+                raise ValueError('Invalid plugin dependency: ' + str(requirement))
+            try:
+                installed = version(match.group(1))
+                if not match.group(2) or tuple(map(int, installed.split('.'))) >= tuple(map(int, match.group(2).split('.'))):
+                    continue
+            except (PackageNotFoundError, ValueError):
+                pass
+            pending.add(requirement)
+    if pending:
+        if sys.prefix == sys.base_prefix:
+            raise ValueError('Repo dependencies require a virtual environment. Use run-dev.sh.')
+        from importlib.util import find_spec
+        if find_spec('pip') is None:
+            # Some distro Pythons omit ensurepip; bootstrap only this private venv.
+            import urllib.request
+            with tempfile.TemporaryDirectory(prefix='playlite-pip-') as temporary:
+                script = Path(temporary) / 'get-pip.py'
+                with urllib.request.urlopen('https://bootstrap.pypa.io/get-pip.py', timeout=60) as response:
+                    script.write_bytes(response.read())
+                subprocess.run([sys.executable, str(script)], check=True)
+        subprocess.run([sys.executable, '-m', 'pip', 'install', *sorted(pending)], check=True)
+
+
 def sync_plugins(source, destination):
     for checkout in source.glob('playlite-plugin-*'):
         target = destination / checkout.name
@@ -53,3 +89,11 @@ def start():
             except (OSError, ValueError, subprocess.CalledProcessError):
                 logging.exception('Could not synchronize development plugins')
     threading.Thread(target=watch, daemon=True, name='playlite-dev-plugins').start()
+
+
+if __name__ == '__main__':
+    if os.environ.get('PLAYLITE_PROFILE') != 'repo':
+        raise SystemExit('Dependency preparation is only for the repo profile.')
+    destination = Path(os.environ['XDG_DATA_HOME']) / 'playlite/plugins'
+    sync_plugins(Path(__file__).resolve().parents[2], destination)
+    prepare_dependencies(destination)

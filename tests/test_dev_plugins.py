@@ -3,10 +3,33 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from playlite.dev_plugins import sync_plugins
+from playlite.dev_plugins import sync_plugins, prepare_dependencies
 
 
 class DevelopmentPluginTests(unittest.TestCase):
+    def test_prepare_installs_missing_and_outdated_requirements_once(self):
+        from importlib.metadata import PackageNotFoundError
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for name,manifest in [('one',dict(requirements=['vdf>=3.4','PyYAML>=6'])),
+                                  ('two',dict(requirements=['vdf>=3.4'])),
+                                  ('disabled',dict(enabled=False,requirements=['unused']))]:
+                folder=root/name;folder.mkdir();(folder/'manifest.json').write_text(json.dumps(manifest))
+            def version(name):
+                if name=='vdf':raise PackageNotFoundError(name)
+                return '5.4'
+            with patch('importlib.metadata.version',side_effect=version),patch('sys.prefix','/private-venv'),patch('importlib.util.find_spec',return_value=object()),patch('playlite.dev_plugins.subprocess.run') as run:
+                prepare_dependencies(root)
+                self.assertEqual(run.call_args.args[0][-2:],['PyYAML>=6','vdf>=3.4'])
+                run.assert_called_once()
+
+    def test_prepare_skips_satisfied_requirements(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);folder=root/'plugin';folder.mkdir()
+            (folder/'manifest.json').write_text(json.dumps(dict(requirements=['vdf>=3.4'])))
+            with patch('importlib.metadata.version',return_value='3.4'),patch('playlite.dev_plugins.subprocess.run') as run:
+                prepare_dependencies(root);run.assert_not_called()
+
     def test_sync_updates_installed_code_preserving_enabled_and_settings(self):
         with tempfile.TemporaryDirectory() as root:
             root=Path(root);source=root/'source';destination=root/'plugins'

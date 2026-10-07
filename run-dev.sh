@@ -18,4 +18,9 @@ unset PYTHONPATH PYTHONHOME
 mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
 chmod 700 "$HOME"
 cd "$playlite_source"
-exec /usr/bin/python3 -m playlite "$@"
+playlite_python="$playlite_source/.dev/venv/bin/python"
+if [[ ! -x "$playlite_python" ]]; then
+    /usr/bin/python3 -m venv --without-pip --system-site-packages "$playlite_source/.dev/venv"
+fi
+"$playlite_python" -m playlite.dev_plugins
+exec "$playlite_python" -m playlite "$@"
