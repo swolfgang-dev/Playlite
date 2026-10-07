@@ -225,6 +225,8 @@ class DownloadsPanel(QFrame):
         self.card_opacity=1.
         self.card_slot=QWidget()
         self.card_slot.setObjectName('downloadCardSlot')
+        self.card_layout=QVBoxLayout(self.card_slot)
+        self.card_layout.setContentsMargins(0,0,0,0)
         self.card_slot.setAutoFillBackground(False)
         set_style(self.card_slot,'QWidget#downloadCardSlot { background: transparent; border: 0; }')
         self.panel_opacity=QGraphicsOpacityEffect(self)
@@ -313,6 +315,12 @@ class DownloadsPanel(QFrame):
             set_style(card,template)
 
     def place(self):
+        if getattr(self,'placing',False):return
+        self.placing=True
+        try:self.place_contents()
+        finally:self.placing=False
+
+    def place_contents(self):
         self.active_label.hide()
         self.active_progress.hide()
         self.active_percent.hide()
@@ -335,6 +343,7 @@ class DownloadsPanel(QFrame):
             host.setViewportMargins(margins.left(),margins.top(),margins.right(),margins.bottom()+visible_height)
         self.setGeometry(0,host.height()-height,host.width(),height)
         self.panel_opacity.setOpacity(self.amount)
+        self.panel_opacity.setEnabled(self.amount < 1.)
         self.layout().activate();self.rows.activate()
         self.raise_()
         if pinned:
@@ -345,18 +354,21 @@ class DownloadsPanel(QFrame):
             x=round(start.x()+(end.x()-start.x())*self.amount)
             y=round(start.y()+(end.y()-start.y())*self.amount)
             if self.amount >= 1:
-                viewport=self.rows_scroll.viewport()
-                if card.parentWidget() is not viewport:card.setParent(viewport)
-                position=self.card_slot.mapTo(viewport,QPoint(0,0))
-                card.setGeometry(position.x(),position.y(),max(1,self.card_slot.width()),card_height)
+                # The expanded card belongs to the list layout, including clipping.
+                if card.parentWidget() is not self.card_slot:
+                    self.card_layout.addWidget(card)
+                self.card_layout.activate()
             else:
-                if card.parentWidget() is not host:card.setParent(host)
+                if card.parentWidget() is not host:
+                    self.card_layout.removeWidget(card)
+                    card.setParent(host)
                 card.setGeometry(x,y,max(1,width),card_height)
             card.raise_();card.show()
 
     def set_amount(self,value):self.amount=float(value);self.place()
 
     def set_open(self,opened):
+        if opened==self.opened and (self.animation.state()==QVariantAnimation.State.Running or self.amount==(1. if opened else 0.)):return
         self.opened=opened;self.animation.stop();self.show();self.raise_()
         self.animation.setStartValue(self.amount);self.animation.setEndValue(1. if opened else 0.)
         self.animation.start()
@@ -372,6 +384,7 @@ class DownloadsPanel(QFrame):
             if effect is None:
                 effect=QGraphicsOpacityEffect(pinned[0]);pinned[0].setGraphicsEffect(effect)
             effect.setOpacity(self.card_opacity)
+            effect.setEnabled(self.card_opacity < 1.)
 
     def release_completed(self):
         if self.hovered_card==self.pinned_id and self.pinned_id is not None:
@@ -482,6 +495,7 @@ class DownloadsPanel(QFrame):
                     self.rows.insertWidget(visible_index,self.card_slot)
                 visible_index+=1
             else:
+                self.card_layout.removeWidget(card)
                 if card.parentWidget() is not self.rows_scroll.widget():card.setParent(self.rows_scroll.widget())
                 if self.rows.indexOf(card) != visible_index:
                     self.rows.removeWidget(card)

@@ -385,6 +385,7 @@ class DownloadTests(unittest.TestCase):
 
 class ScrollCardTests(unittest.TestCase):
     def test_expanded_active_card_tracks_scroll_and_clips_to_viewport(self):
+        from PyQt6.QtCore import QPoint
         app=QApplication.instance() or QApplication([])
         host=QWidget();host.resize(900,700)
         queue=DownloadQueue();queue.pump=Mock()
@@ -393,16 +394,40 @@ class ScrollCardTests(unittest.TestCase):
         panel=DownloadsPanel(host,queue);host.show();panel.show()
         panel.set_amount(1);app.processEvents();panel.place()
         card=panel.cards[panel.pinned_id][0]
-        self.assertIs(card.parentWidget(),panel.rows_scroll.viewport())
-        before=card.y()
+        self.assertIs(card.parentWidget(),panel.card_slot)
+        before=card.mapTo(panel.rows_scroll.viewport(),QPoint(0,0)).y()
         for value in range(5):
             queue.update(queue.active,value,'Downloading')
             app.processEvents()
-            self.assertIs(card.parentWidget(),panel.rows_scroll.viewport())
-            self.assertEqual(card.y(),before)
+            self.assertIs(card.parentWidget(),panel.card_slot)
+            self.assertEqual(card.mapTo(panel.rows_scroll.viewport(),QPoint(0,0)).y(),before)
         bar=panel.rows_scroll.verticalScrollBar();bar.setValue(min(60,bar.maximum()))
         self.assertGreater(bar.value(),0)
-        self.assertEqual(card.y(),before-bar.value())
+        self.assertEqual(card.mapTo(panel.rows_scroll.viewport(),QPoint(0,0)).y(),before-bar.value())
         panel.set_amount(0)
         self.assertIs(card.parentWidget(),host)
+        host.close()
+
+    def test_reversing_animation_and_resizing_keeps_card_in_correct_layout(self):
+        app=QApplication.instance() or QApplication([])
+        host=QWidget();host.resize(900,700)
+        queue=DownloadQueue();queue.pump=Mock()
+        row=queue.enqueue('Game','/tmp/reverse-layout',Mock())
+        panel=DownloadsPanel(host,queue);host.show()
+        panel.set_open(True);panel.animation.setCurrentTime(130)
+        queue.update(row,25,'Downloading')
+        panel.set_open(False);panel.animation.setCurrentTime(260)
+        card=panel.cards[row.id][0]
+        self.assertIs(card.parentWidget(),host)
+        panel.set_open(True);panel.animation.setCurrentTime(260)
+        self.assertIs(card.parentWidget(),panel.card_slot)
+        self.assertFalse(panel.panel_opacity.isEnabled())
+        host.resize(1100,800);app.processEvents();panel.place()
+        self.assertEqual(card.width(),panel.card_slot.width())
+        for index in range(10):queue.update(row,index,'Downloading')
+        self.assertIs(card.parentWidget(),panel.card_slot)
+        self.assertEqual(panel.card_layout.count(),1)
+        panel.set_open(False);panel.animation.setCurrentTime(260)
+        self.assertIs(card.parentWidget(),host)
+        self.assertEqual(panel.card_layout.count(),0)
         host.close()
