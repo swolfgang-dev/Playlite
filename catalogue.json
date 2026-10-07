@@ -50,6 +50,11 @@
       "id": "EacToggler",
       "name": "EasyAntiCheat Toggler",
       "repository": "swolfgang-dev/playlite-plugin-eac-toggler"
+    },
+    {
+      "id": "BepInExInstaller",
+      "name": "BepInEx Installer",
+      "repository": "swolfgang-dev/playlite-plugin-bepinex"
     }
   ]
 }
