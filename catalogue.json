@@ -45,6 +45,11 @@
       "id": "SteamIntegration",
       "name": "Steam Integration",
       "repository": "swolfgang-dev/playlite-plugin-steam-integration"
+    },
+    {
+      "id": "EacToggler",
+      "name": "EasyAntiCheat Toggler",
+      "repository": "swolfgang-dev/playlite-plugin-eac-toggler"
     }
   ]
 }
