@@ -146,6 +146,8 @@ class ActionCard(QFrame):
         remove = QPushButton('Remove')
         self.up.setFixedSize(36, 32)
         self.down.setFixedSize(36, 32)
+        for button in (self.up, self.down):
+            set_style(button, 'QPushButton { padding: 0; color: #e9e9e9; } QPushButton:disabled { color: #777; }')
         remove.setFixedHeight(32)
         self.up.clicked.connect(lambda: editor.move(self, -1))
         self.down.clicked.connect(lambda: editor.move(self, 1))
