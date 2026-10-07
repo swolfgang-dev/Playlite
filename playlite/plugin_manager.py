@@ -119,7 +119,7 @@ def install_plugins(repositories, progress=None):
         if progress:
             progress('Installing ' + repository + '…')
         try:
-            manifest = install_github(repository)
+            manifest = install_github(repository, progress=progress)
             results.append((repository, manifest, ''))
         except Exception as error:
             results.append((repository, None, str(error)))
@@ -170,6 +170,10 @@ def install_archive(archive, directory=None, repository=''):
             hook_path = PurePosixPath(hook)
             if hook_path.is_absolute() or len(hook_path.parts) != 1 or hook_path.suffix != '.py' or not (stage / hook).is_file():
                 raise ValueError('Plugin cleanup must be a standalone file at its root.')
+        from .plugin_dependencies import missing_dependencies
+        missing = missing_dependencies(manifest, installed_plugins(directory))
+        if missing:
+            raise ValueError('Required plugins must be installed first: ' + ', '.join(item['id']+' >= '+item['minimum_version'] for item in missing))
         requirements = manifest.get('requirements') or []
         if requirements:
             import sys
@@ -345,10 +349,12 @@ def available_plugins():
     return result
 
 
-def install_github(repository, version='latest', directory=None):
+def install_github(repository, version='latest', directory=None, *, _stack=(), progress=None):
     repository = repository.strip().removeprefix('https://github.com/').removesuffix('.git').rstrip('/')
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
         raise ValueError('Enter a GitHub repository as owner/repository.')
+    if repository.casefold() in _stack:raise ValueError('Circular plugin dependency: '+repository)
+    stack=(*_stack,repository.casefold())
     release_path = 'latest' if version == 'latest' else 'tags/' + version
     authenticated = bool(github_token())
     if authenticated:
@@ -373,6 +379,12 @@ def install_github(repository, version='latest', directory=None):
                         if line.split()[-1].lstrip('*') == 'plugin.zip')
         if hashlib.sha256(archive.read_bytes()).hexdigest() != expected:
             raise ValueError('Plugin download checksum does not match.')
+        from .plugin_dependencies import missing_dependencies
+        with ZipFile(archive) as bundle:
+            manifest=json.loads(bundle.read('manifest.json'))
+        for dependency in missing_dependencies(manifest,installed_plugins(directory)):
+            if progress:progress('Installing required plugin '+dependency['id']+' >= '+dependency['minimum_version']+'…')
+            install_github(dependency['repository'],directory=directory,_stack=stack,progress=progress)
         return install_archive(archive, directory, repository)
 
 

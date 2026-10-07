@@ -233,6 +233,10 @@ def discover_plugins(directory=None, *, include_disabled=False):
                     raise ValueError('Plugin ID must be unique and cannot be Current.')
                 if manifest.get('api_version') != 1:
                     raise ValueError('Unsupported metadata plugin API version.')
+                from .plugin_dependencies import missing_dependencies
+                from .plugin_manager import installed_plugins
+                if missing_dependencies(manifest, installed_plugins(root)):
+                    raise ValueError('Required plugin dependencies are missing or outdated.')
                 plugin_type = manifest.get('type', 'metadata')
                 base = {'metadata': MetadataProvider, 'game': GameProvider, 'generic': GenericPlugin,
                         'installation': InstallationPlugin, 'integration': IntegrationPlugin,

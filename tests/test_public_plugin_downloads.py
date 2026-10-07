@@ -1,3 +1,6 @@
+import io
+import json
+from zipfile import ZipFile
 import hashlib
 import unittest
 from unittest.mock import MagicMock, patch
@@ -6,7 +9,9 @@ from playlite import plugin_manager as manager
 
 class PublicDownloadTests(unittest.TestCase):
     def test_public_assets_do_not_use_api_and_keep_checksum_verification(self):
-        archive = b'archive'
+        stream=io.BytesIO()
+        with ZipFile(stream,'w') as bundle:bundle.writestr('manifest.json',json.dumps(dict(id='Example',name='Example',version='1')))
+        archive=stream.getvalue()
         hashes = (hashlib.sha256(archive).hexdigest()+'  plugin.zip\n').encode()
         response = MagicMock()
         response.__enter__.return_value.read.side_effect=[archive,hashes]

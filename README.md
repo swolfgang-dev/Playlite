@@ -80,3 +80,17 @@ By default, Playlite stores its library, artwork, installed plugins, and interfa
 ## Further information
 
 The previous README is preserved in [README_REFERENCE.md](README_REFERENCE.md), including development notes, import instructions, plugin details, and implementation history.
+
+Plugin manifests can declare dependencies on other plugins using `plugin_dependencies`:
+
+```json
+"plugin_dependencies": [
+  {
+    "id": "LutrisIntegration",
+    "repository": "swolfgang-dev/playlite-plugin-lutris-integration",
+    "minimum_version": "1.1.17"
+  }
+]
+```
+
+GitHub installation installs or updates required plugins first and reports dependencies in its progress output. Local archives require dependencies to be installed already. Disabled dependencies must be enabled explicitly. Circular dependencies and conflicting repository identities are rejected; plugins with unsatisfied dependencies are not loaded.
