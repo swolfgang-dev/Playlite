@@ -3,8 +3,46 @@ from .theme import set_style
 import math
 from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal, QVariantAnimation, QEasingCurve, QPoint
 from PyQt6.QtWidgets import QTextBrowser, QSizePolicy, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QScrollArea
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QTextFormat, QTextBlockFormat
 from .description_html import without_images
 from .scroll_fades import ScrollFades
+
+
+def set_description_html(viewer, content):
+    """Use the UI text size while retaining emphasis, links and paragraph layout."""
+    viewer.ensurePolished()
+    font = viewer.font()
+    viewer.document().setDefaultFont(font)
+    viewer.setHtml(content)
+    cursor = QTextCursor(viewer.document())
+    cursor.select(QTextCursor.SelectionType.Document)
+    formatting = QTextCharFormat()
+    formatting.setProperty(QTextFormat.Property.FontSizeAdjustment, 0)
+    if font.pixelSize() > 0:
+        formatting.setProperty(QTextFormat.Property.FontPixelSize, font.pixelSize())
+    else:
+        formatting.setFontPointSize(font.pointSizeF())
+    cursor.mergeCharFormat(formatting)
+    # Imported paragraph margins and empty lines can otherwise leave large gaps.
+    blank_format = QTextCharFormat()
+    blank_format.setProperty(QTextFormat.Property.FontPixelSize, 6)
+    block = viewer.document().begin()
+    while block.isValid():
+        cursor = QTextCursor(block)
+        spacing = block.blockFormat()
+        spacing.setTopMargin(0)
+        spacing.setBottomMargin(8 if block.text().strip() and block.next().isValid() else 0)
+        if not block.text().strip():
+            spacing.setLineHeight(6, QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+        cursor.setBlockFormat(spacing)
+        # HTML <br> creates a line separator inside a paragraph, rather than a block.
+        text = block.text()
+        for index, character in enumerate(text):
+            if character == '\u2028' and not text[:index].rsplit('\u2028', 1)[-1].strip():
+                cursor.setPosition(block.position() + index)
+                cursor.setPosition(block.position() + index + 1, QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(blank_format)
+        block = block.next()
 
 
 class FullDescription(QTextBrowser):
@@ -31,7 +69,7 @@ class FullDescription(QTextBrowser):
         self.layout_timer.setSingleShot(True)
         self.layout_timer.timeout.connect(self.fit_content)
         self.document().documentLayout().documentSizeChanged.connect(lambda _: self.layout_timer.start(0))
-        self.setHtml(without_images(content))
+        set_description_html(self, without_images(content))
         self.layout_timer.start(0)
 
     def loadResource(self, kind, url):

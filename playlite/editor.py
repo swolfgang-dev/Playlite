@@ -73,7 +73,7 @@ class MetadataEditor(QDialog):
             area.setWidgetResizable(True)
             widget = QWidget()
             form = QFormLayout(widget)
-            form.setContentsMargins(20, 20, 20, 20)
+            form.setContentsMargins(24, 24, 24, 24)
             form.setVerticalSpacing(12)
             form.setHorizontalSpacing(20)
             form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
@@ -109,7 +109,7 @@ class MetadataEditor(QDialog):
             widget = QWidget()
             row = QHBoxLayout(widget)
             row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(28)
+            row.setSpacing(24)
             forms = []
             for index in range(2):
                 column = QWidget()
@@ -242,7 +242,7 @@ class MetadataEditor(QDialog):
 
         artwork_page = QWidget()
         artwork = QVBoxLayout(artwork_page)
-        artwork.setContentsMargins(20, 20, 20, 20)
+        artwork.setContentsMargins(24, 24, 24, 24)
         artwork.setSpacing(12)
         tabs.addTab(artwork_page, 'Images')
         self.artwork_layout = artwork
@@ -326,6 +326,7 @@ class MetadataEditor(QDialog):
         set_style(self.error, 'color: #ffaaaa;')
         layout.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setProperty('primary', True)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         footer = QHBoxLayout()

@@ -69,6 +69,12 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { background: t
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 QPushButton { background: #363638; border: 0; border-radius: 7px; padding: 10px 18px; }
 QPushButton:hover { background: #48494b; }
+QPushButton:pressed { background: #292a2c; }
+QPushButton:focus { border: 1px solid #2196f3; padding: 9px 17px; }
+QPushButton[primary="true"] { background: #2196f3; color: #151515; font-weight: bold; }
+QPushButton[primary="true"]:hover { background: #98caff; }
+QPushButton[primary="true"]:pressed { background: #879bb7; }
+QPushButton[primary="true"]:disabled { background: #292a2b; color: #777; }
 QPushButton#logo, QPushButton#logo:hover, QPushButton#logo:pressed {
     background: transparent; border: 0; padding: 0;
 }
@@ -86,7 +92,7 @@ QPushButton#play:hover { background: #ffffff; }
 QPushButton:disabled { color: #777; background: #292a2b; }
 QPushButton#link, QPushButton#folder { background: transparent; text-align: left; padding: 5px 0; }
 QPushButton#link:hover, QPushButton#folder:hover { color: #98caff; }
-QLabel#section { font-weight: bold; }
+QLabel#section { font-weight: bold; font-size: 15px; }
 QLabel#muted { color: #999a9d; }
 QSplitter::handle { background: #252628; width: 1px; }
 QTextEdit { background: #2c2d2f; border: 1px solid #404144; border-radius: 6px; }
@@ -141,7 +147,7 @@ class ArtworkPage(QWidget):
         self.rendered_background = QPixmap()
         self.defer_background_render = False
 
-    def set_background(self, source, blur_radius=48):
+    def set_background(self, source, blur_radius=2, darkness=84):
         self.background_generation = getattr(self, 'background_generation', 0) + 1
         generation = self.background_generation
         self.background = QPixmap()
@@ -156,7 +162,7 @@ class ArtworkPage(QWidget):
             path = Path(source)
             if not path.is_file():
                 return
-            key = (str(path), path.stat().st_mtime_ns, blur_radius, colour('#101112'))
+            key = (str(path), path.stat().st_mtime_ns, blur_radius, darkness, colour('#101112'))
         self.background_cache = getattr(self, 'background_cache', {})
         if key is not None and key in self.background_cache:
             self.background = self.background_cache[key]
@@ -165,7 +171,7 @@ class ArtworkPage(QWidget):
         from .metadata_dialog import Task
         from .background_art import prepare
         base = colour('#101112')
-        task = Task(lambda: prepare(source, blur_radius, base))
+        task = Task(lambda: prepare(source, blur_radius, base, darkness))
         self.background_tasks = getattr(self, 'background_tasks', [])
         self.background_tasks.append(task)
         def complete(image):
@@ -209,8 +215,10 @@ class ArtworkPage(QWidget):
         painter.drawPixmap(self.rect(), self.background, source)
 
 
-def game_context_menu(parent, edit_handler, delete_handler, plugin_actions=()):
+def game_context_menu(parent, edit_handler, delete_handler, plugin_actions=(), open_folder_handler=None):
     menu = QMenu(parent)
+    if open_folder_handler is not None:
+        menu.addAction('Open install folder').triggered.connect(open_folder_handler)
     if edit_handler is not None:
         menu.addAction('Edit…').triggered.connect(edit_handler)
     menu.addSeparator()
@@ -225,7 +233,7 @@ def game_context_menu(parent, edit_handler, delete_handler, plugin_actions=()):
 
 
 class Hero(QWidget):
-    def __init__(self, play, edit_handler, delete_handler, plugin_actions=()):
+    def __init__(self, play, edit_handler, delete_handler, plugin_actions=(), open_folder_handler=None):
         super().__init__()
         self.pixmap = QPixmap()
         self.header_offset = 0.5
@@ -252,7 +260,7 @@ class Hero(QWidget):
         dropdown.setToolTip('Game actions')
         dropdown.setAccessibleName('Game actions')
         set_style(dropdown, 'QPushButton { background: #f0f0f0; color: #151515; padding: 10px 0; border-left: 1px solid #cccccc; border-top-left-radius: 0; border-bottom-left-radius: 0; } QPushButton:hover { background: white; } QPushButton::menu-indicator { image: none; width: 0; }')
-        menu = game_context_menu(dropdown, edit_handler, delete_handler, plugin_actions)
+        menu = game_context_menu(dropdown, edit_handler, delete_handler, plugin_actions, open_folder_handler)
         dropdown.setMenu(menu)
         split.addWidget(dropdown)
         self.position_play_control()
@@ -351,7 +359,7 @@ def card():
     frame.setObjectName('card')
     frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(22, 20, 22, 20)
+    layout.setContentsMargins(24, 24, 24, 24)
     layout.setSpacing(12)
     return frame, layout
 
@@ -366,7 +374,8 @@ class Description(QTextBrowser):
         self.fades = ScrollFades(self)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         self.document().setDocumentMargin(0)
-        self.setHtml(content)
+        from .rich_description import set_description_html
+        set_description_html(self, content)
 
     def wheelEvent(self, event):
         bar = self.verticalScrollBar()
@@ -1331,7 +1340,7 @@ class LibraryWindow(QMainWindow):
         self.details = QVBoxLayout(self.content)
         self.details.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         self.details.setContentsMargins(0, 0, 0, 0)
-        self.details.setSpacing(28)
+        self.details.setSpacing(24)
         self.details.setAlignment(Qt.AlignmentFlag.AlignTop)
         center.addStretch()
         center.addWidget(self.content, 1)
@@ -1611,7 +1620,8 @@ class LibraryWindow(QMainWindow):
             return
         game = self.current
         self.game_background.set_background(self.asset(game, 'BackgroundImage'),
-                                           self.settings.value('appearance/backgroundBlur', 48, type=int))
+                                           self.settings.value('appearance/backgroundBlur', 2.0, type=float),
+                                           self.settings.value('appearance/backgroundDarken', 84, type=int))
         self.last_selected = game['Id']
         self.settings.setValue('lastSelectedGame', self.last_selected)
         if not hasattr(self, 'selection_settings_timer'):
@@ -1625,7 +1635,8 @@ class LibraryWindow(QMainWindow):
         play.setObjectName('play')
         play.setEnabled(any(provider.owns(game) for provider in self.game_providers))
         play.clicked.connect(self.play_game)
-        hero = Hero(play, self.edit_game, self.delete_game, self.plugin_game_actions(game))
+        hero = Hero(play, self.edit_game, self.delete_game, self.plugin_game_actions(game),
+                    (lambda: open_folder(game['InstallDirectory'])) if game.get('InstallDirectory') else None)
         self.play_hero = hero
         hero.pixmap = QPixmap(self.asset(game, 'HeaderImage' if 'HeaderImage' in game else 'BackgroundImage'))
         if hero.pixmap.isNull():
@@ -2350,7 +2361,9 @@ class LibraryWindow(QMainWindow):
             (plugin.name, actions) for plugin in self.generic_plugins
             if (actions := plugin.batch_game_actions(self, games))]
         menu = game_context_menu(self.list, self.edit_game if len(games) == 1 else None,
-                                 lambda: self.delete_games(games), actions)
+                                 lambda: self.delete_games(games), actions,
+                                 (lambda: open_folder(games[0]['InstallDirectory']))
+                                 if len(games) == 1 and games[0].get('InstallDirectory') else None)
         menu.aboutToHide.connect(menu.deleteLater)
         menu.popup(self.list.viewport().mapToGlobal(position))
 

@@ -124,9 +124,9 @@ class SettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             settings = QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat)
             dialog = SettingsDialog(settings)
-            self.assertEqual(dialog.background_blur.value(), 48)
+            self.assertEqual(dialog.background_blur.value(), 20)
             dialog.background_blur.setValue(72)
-            self.assertEqual(dialog.background_blur_value.text(), '72')
+            self.assertEqual(dialog.background_blur_value.text(), '7.2')
             dialog.reject()
             self.assertFalse(settings.contains('appearance/backgroundBlur'))
             dialog = SettingsDialog(settings)

@@ -38,6 +38,53 @@ ROLES = {
     'download_button_disabled': ('Disabled download buttons', '#30343a'),
     'download_button_disabled_text': ('Disabled download button text', '#7f8791'),
 }
+# Built-in themes use the same role contract as theme plugins.
+BUILTIN_THEMES = {
+    # Adapted for Playlite from https://catppuccin.com/palette/ (Mocha).
+    'mocha': ('Mocha', {
+        'window': '#181825', 'sidebar': '#11111b', 'panel': '#1e1e2e',
+        'popup': '#313244', 'control': '#313244', 'hover': '#45475a',
+        'disabled_surface': '#1e1e2e', 'selection': '#45475a',
+        'accent': '#b4befe', 'border': '#585b70', 'divider': '#313244',
+        'scrollbar': '#585b70', 'text': '#cdd6f4',
+        'secondary_text': '#bac2de', 'disabled_text': '#7f849c',
+        'placeholder': '#313244', 'brand': '#f5c2e7', 'error': '#f38ba8',
+        'play_surface': '#b4befe', 'play_text': '#11111b', 'shadow': '#11111b',
+        'download_card': '#1e1e2e', 'download_button': '#313244',
+        'download_button_border': '#585b70', 'download_button_hover': '#45475a',
+        'download_button_pressed': '#181825', 'download_button_disabled': '#1e1e2e',
+        'download_button_disabled_text': '#7f849c',
+    }),
+    # Adapted for Playlite from https://www.nordtheme.com/.
+    'nord': ('Nord', {
+        'window': '#2e3440', 'sidebar': '#2e3440', 'panel': '#3b4252',
+        'popup': '#434c5e', 'control': '#434c5e', 'hover': '#4c566a',
+        'disabled_surface': '#3b4252', 'selection': '#4c566a',
+        'accent': '#88c0d0', 'border': '#4c566a', 'divider': '#434c5e',
+        'scrollbar': '#81a1c1', 'text': '#eceff4',
+        'secondary_text': '#d8dee9', 'disabled_text': '#81a1c1',
+        'placeholder': '#434c5e', 'brand': '#b48ead', 'error': '#bf616a',
+        'play_surface': '#88c0d0', 'play_text': '#2e3440', 'shadow': '#2e3440',
+        'download_card': '#3b4252', 'download_button': '#434c5e',
+        'download_button_border': '#81a1c1', 'download_button_hover': '#4c566a',
+        'download_button_pressed': '#2e3440', 'download_button_disabled': '#3b4252',
+        'download_button_disabled_text': '#81a1c1',
+    }),
+    'blue-grey': ('Blue Grey', {
+        'window': '#293440', 'sidebar': '#253341', 'panel': '#354351',
+        'popup': '#3c4b5b', 'control': '#46586a', 'hover': '#58718a',
+        'disabled_surface': '#394653', 'selection': '#355c7d',
+        'accent': '#78c4ff', 'border': '#617589', 'divider': '#485b6d',
+        'scrollbar': '#7891a8', 'text': '#f3f7fb',
+        'secondary_text': '#c2ceda', 'disabled_text': '#97a8b8',
+        'placeholder': '#3b4d5f', 'brand': '#9acfff', 'error': '#ffc1bd',
+        'play_surface': '#b5ddff', 'play_text': '#173650', 'shadow': '#152433',
+        'download_card': '#3b4c5e', 'download_button': '#476a8c',
+        'download_button_border': '#7ea6ca', 'download_button_hover': '#557fa7',
+        'download_button_pressed': '#365671', 'download_button_disabled': '#405061',
+        'download_button_disabled_text': '#a4b5c5',
+    }),
+}
 # Compatibility for existing styles, painted widgets, SVGs and saved palettes.
 ALIASES = {default: role for role, (_, default) in ROLES.items()}
 ALIASES.update({
@@ -50,6 +97,8 @@ ALIASES.update({
     '#cccccc': 'divider', '#ffffff': 'text', '#68696c': 'secondary_text',
 })
 COLOURS = {default: ROLES[role][0] for default, role in ALIASES.items()}
+for _, supplied in BUILTIN_THEMES.values():
+    COLOURS.update({value: ROLES[role][0] for role, value in supplied.items()})
 _values = {}
 _assets = TemporaryDirectory(prefix='playlite-theme-')
 
@@ -67,6 +116,9 @@ def rgba(default, alpha):
 def base_palette(settings=None, theme_id=None):
     result = {role: default for role, (_, default) in ROLES.items()}
     selected = theme_id if theme_id is not None else settings.value('appearance/theme', '') if settings else ''
+    if selected in BUILTIN_THEMES:
+        result.update(BUILTIN_THEMES[selected][1])
+        return result
     if selected:
         from .providers import discover_plugins, ThemePlugin
         plugin = discover_plugins().get(selected)

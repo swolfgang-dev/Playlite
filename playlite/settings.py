@@ -8,7 +8,7 @@ from PyQt6.QtCore import QUrl, Qt, QItemSelectionModel
 from PyQt6.QtGui import QDesktopServices, QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (QMenu, QCheckBox, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QToolButton,
                              QPlainTextEdit, QFormLayout, QGridLayout, QFrame, QPushButton, QLabel, QLineEdit, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget, QSlider, QHBoxLayout, QColorDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
-from .theme import ROLES, palette, base_palette, apply as apply_theme
+from .theme import ROLES, BUILTIN_THEMES, palette, base_palette, apply as apply_theme
 from .image_filters import OPTIONS, defaults as image_filter_defaults, FilterChecks
 from .lifecycle import run_dialog
 from .desktop import open_folder
@@ -27,7 +27,7 @@ class SettingsDialog(QDialog):
         self.link_names = load_names(settings)
         self.setWindowTitle('Playlite Settings')
         set_style(self, DROPDOWN_STYLE + """
-QFrame#settingsCard { background: #1d1e20; border: 1px solid #252628; border-radius: 12px; }
+QFrame#settingsCard { background: #1d1e20; border: 0; border-radius: 16px; }
 QFrame#settingsCard QCheckBox, QFrame#settingsCard QSlider, QWidget#colourField { background: transparent; }
 QFrame#settingsCard QSlider::groove:horizontal { height: 5px; background: #404144; border-radius: 2px; }
 QFrame#settingsCard QSlider::sub-page:horizontal { background: #2196f3; border-radius: 2px; }
@@ -52,8 +52,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         def page(title, description):
             content = QWidget()
             body = QVBoxLayout(content)
-            body.setContentsMargins(20, 20, 20, 20)
-            body.setSpacing(16)
+            body.setContentsMargins(24, 24, 24, 24)
+            body.setSpacing(24)
             heading = QLabel(title)
             heading.setObjectName('settingsHeading')
             body.addWidget(heading)
@@ -108,6 +108,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         updates.addWidget(self.update_status)
         self.check_update_button = QPushButton('Check for updates')
         self.install_update_button = QPushButton('Install update and restart')
+        self.install_update_button.setProperty('primary', True)
         self.install_update_button.setEnabled(False)
         self.check_update_button.clicked.connect(self.check_application_update)
         self.install_update_button.clicked.connect(self.install_application_update)
@@ -154,9 +155,9 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         background = self.card(appearance, 'Background and panels')
         self.background_blur = SettingsSlider(Qt.Orientation.Horizontal)
         self.background_blur.setRange(0, 100)
-        self.background_blur.setValue(settings.value('appearance/backgroundBlur', 48, type=int))
-        self.background_blur_value = QLabel(str(self.background_blur.value()))
-        self.background_blur.valueChanged.connect(lambda value: self.background_blur_value.setText(str(value)))
+        self.background_blur.setValue(round(settings.value('appearance/backgroundBlur', 2.0, type=float) * 10))
+        self.background_blur_value = QLabel(f'{self.background_blur.value() / 10:g}')
+        self.background_blur.valueChanged.connect(lambda value: self.background_blur_value.setText(f'{value / 10:g}'))
 
         def slider_field(label, slider, value_label, help_text):
             title_row = QHBoxLayout()
@@ -171,7 +172,15 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             background.addWidget(self.hint(help_text, 'sliderHint'))
 
         slider_field('Background blur', self.background_blur, self.background_blur_value,
-                     'No blur at 0 · Maximum blur at 100')
+                     'No blur at 0 · Gentle adjustments in steps of 0.1 · Maximum blur at 10')
+        self.background_darken = SettingsSlider(Qt.Orientation.Horizontal)
+        self.background_darken.setRange(0, 100)
+        self.background_darken.setValue(settings.value('appearance/backgroundDarken', 84, type=int))
+        self.background_darken_value = QLabel(f'{self.background_darken.value()}%')
+        self.background_darken.valueChanged.connect(
+            lambda value: self.background_darken_value.setText(f'{value}%'))
+        slider_field('Background darkening', self.background_darken, self.background_darken_value,
+                     '0% original brightness · 100% blends fully into the theme background')
         self.panel_transparency = {}
         for key, label, hint in [
                 ('sidePanelTransparency', 'Side panel transparency', 'Library navigation background'),
@@ -190,6 +199,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         theme_row.addWidget(QLabel('Theme'))
         self.theme_source = QComboBox()
         self.theme_source.addItem('Playlite default', '')
+        for theme_id, (name, _) in BUILTIN_THEMES.items():
+            self.theme_source.addItem(name, theme_id)
         for plugin in discover_plugins().values():
             if isinstance(plugin, ThemePlugin):
                 self.theme_source.addItem(plugin.name, plugin.id)
@@ -276,6 +287,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         if self.installed_plugins.rowCount():
             self.installed_plugins.setCurrentCell(0, 0)
         install_plugin = QPushButton('Install / update selected')
+        install_plugin.setProperty('primary', True)
         self.update_selected_button = install_plugin
         install_plugin.clicked.connect(self.update_selected_plugins)
         installed_actions = QHBoxLayout()
@@ -446,6 +458,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.error.setWordWrap(True)
         layout.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setProperty('primary', True)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -1059,7 +1072,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         frame = QFrame()
         frame.setObjectName('settingsCard')
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(18, 16, 18, 18)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
         heading = QLabel(title)
         heading.setObjectName('settingsHeading')
@@ -1121,7 +1134,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.settings.setValue('links/friendlyNames', json.dumps(self.link_names))
         self.settings.setValue('app/resetSortingFilters', self.reset_on_launch.isChecked())
         self.settings.setValue('app/closeToTray', self.close_to_tray.isChecked())
-        self.settings.setValue('appearance/backgroundBlur', self.background_blur.value())
+        self.settings.setValue('appearance/backgroundBlur', self.background_blur.value() / 10)
+        self.settings.setValue('appearance/backgroundDarken', self.background_darken.value())
         for key, slider in self.panel_transparency.items():
             self.settings.setValue(f'appearance/{key}', slider.value())
         self.settings.setValue('appearance/theme', self.theme_source.currentData())
