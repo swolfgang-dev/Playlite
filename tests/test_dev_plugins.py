@@ -1,12 +1,35 @@
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 from playlite.dev_plugins import sync_plugins, prepare_dependencies
 
 
 class DevelopmentPluginTests(unittest.TestCase):
+    def test_sync_includes_new_runtime_files_but_excludes_ignored_private_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            checkout=root/'source/playlite-plugin-example';checkout.mkdir(parents=True)
+            subprocess.run(['git','init','-q',str(checkout)],check=True)
+            (checkout/'manifest.json').write_text(json.dumps({'id':'Example'}))
+            (checkout/'.gitignore').write_text('private.json\n')
+            subprocess.run(['git','-C',str(checkout),'add','manifest.json','.gitignore'],check=True)
+            (checkout/'vm_backend.py').write_text('new runtime')
+            assets=checkout/'tools/vm';assets.mkdir(parents=True)
+            (assets/'rpc.py').write_text('new guest client')
+            (assets/'README.md').write_text('bundled installer documentation')
+            (checkout/'private.json').write_text('private data')
+            target=root/'plugins'/checkout.name;target.mkdir(parents=True)
+            (target/'manifest.json').write_text(json.dumps({'id':'Example','enabled':False}))
+            sync_plugins(root/'source',root/'plugins')
+            self.assertEqual((target/'vm_backend.py').read_text(),'new runtime')
+            self.assertEqual((target/'tools/vm/rpc.py').read_text(),'new guest client')
+            self.assertTrue((target/'tools/vm/README.md').is_file())
+            self.assertFalse((target/'private.json').exists())
+            self.assertFalse(json.loads((target/'manifest.json').read_text())['enabled'])
+
     def test_prepare_installs_missing_and_outdated_requirements_once(self):
         from importlib.metadata import PackageNotFoundError
         with tempfile.TemporaryDirectory() as temporary:

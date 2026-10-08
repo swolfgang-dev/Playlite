@@ -62,6 +62,22 @@ Manual installation is built in. Other features are installed separately through
 
 Plugins extend Playlite with features such as game integrations, metadata providers, and themes. Configure installed plugins in their sections under Settings → Plugins. Consult each plugin’s documentation for its requirements and setup.
 
+With Steam Downloader installed, open **Playlite menu → Steam Downloader…**.
+Fresh plugin installation opens its setup wizard. Reopen it through
+**Settings → Plugins → Steam Downloader → VM setup…**; opening the downloader
+does not start setup. The wizard chooses the shared game folder, creates the VM, guides NordVPN
+sign-in, and installs Steam and LuaTools/LuaMoon. Sign into Steam and a provider
+inside the VM, then verify setup to continue to downloads. **Workshop…** and
+**Advanced… → Setup and sign-in…** are inside the downloader. Settings also
+provides **Delete VM…**, which removes private VM data and logins while
+preserving shared games.
+
+Steam downloads directly into the mounted game folder without copying. The VM,
+Steam and VPN stay active for the Playlite session; game launches pause the VM
+when downloads are idle, and game detection resumes it after exit. Closing
+Playlite shuts down the VM normally. The installer and bridge are maintained in the
+[Steam Downloader plugin repository](https://github.com/swolfgang-dev/playlite-plugin-steam-depot-downloader).
+
 ## Metadata and artwork
 
 With a compatible metadata or artwork provider installed, edit a game:

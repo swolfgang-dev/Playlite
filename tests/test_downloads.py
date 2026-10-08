@@ -357,10 +357,13 @@ class DownloadTests(unittest.TestCase):
 
     def test_close_warning_defaults_to_cancel_without_stopping_queue(self):
         queue=DownloadQueue();queue.pump=Mock();queue.enqueue('Game','/tmp/warning',Mock())
-        with patch('playlite.downloads.QMessageBox.warning',return_value=QMessageBox.StandardButton.Cancel) as warning:
+        def cancel(dialog):
+            self.assertEqual(dialog.defaultButton().text(),'Keep Playlite running')
+            self.assertEqual(dialog.button(QMessageBox.StandardButton.Close).text(),'Pause and exit')
+            return QMessageBox.StandardButton.Cancel
+        with patch('playlite.downloads.QMessageBox.exec',new=cancel):
             self.assertFalse(queue.confirm_close(None));self.assertFalse(queue.stopped)
-            self.assertEqual(warning.call_args.args[-1],QMessageBox.StandardButton.Cancel)
-        with patch('playlite.downloads.QMessageBox.warning',return_value=QMessageBox.StandardButton.Close):
+        with patch('playlite.downloads.QMessageBox.exec',return_value=QMessageBox.StandardButton.Close):
             self.assertTrue(queue.confirm_close(None))
 
     def test_successful_library_add_is_labelled_and_persisted(self):

@@ -184,10 +184,13 @@ class DownloadQueue(QObject):
 
     def confirm_close(self,parent):
         if not any(row.state in ('Queued','Downloading','Paused') for row in self.entries):return True
-        return QMessageBox.warning(parent,'Downloads are unfinished',
+        dialog=QMessageBox(QMessageBox.Icon.Warning,'Downloads are unfinished',
             'Closing Playlite will pause unfinished downloads. Your download list and partial files will be kept.',
-            QMessageBox.StandardButton.Close|QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel)==QMessageBox.StandardButton.Close
+            QMessageBox.StandardButton.Close|QMessageBox.StandardButton.Cancel,parent)
+        dialog.button(QMessageBox.StandardButton.Close).setText('Pause and exit')
+        dialog.button(QMessageBox.StandardButton.Cancel).setText('Keep Playlite running')
+        dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        return dialog.exec()==QMessageBox.StandardButton.Close
 
 
 class DownloadsPanel(QFrame):

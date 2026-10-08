@@ -58,10 +58,12 @@ def sync_plugins(source, destination):
         target = destination / checkout.name
         if not (target / 'manifest.json').is_file() or not (checkout / '.git').exists():
             continue
-        files = subprocess.check_output(['git', '-C', str(checkout), 'ls-files', '-z']).decode().split('\0')
+        files = subprocess.check_output(['git', '-C', str(checkout), 'ls-files', '--cached', '--others', '--exclude-standard', '-z']).decode().split('\0')
         for name in files:
             path = Path(name)
-            if not name or path.parts[0] in ('.github', 'tests') or path.suffix in ('.md',):
+            if not name or path.parts[0] in ('.github', 'tests', 'dist', 'build', '.venv') or '__pycache__' in path.parts or path.suffix == '.pyc':
+                continue
+            if path.suffix == '.md' and path.parts[0] != 'tools':
                 continue
             original = checkout / path
             if not original.is_file():
