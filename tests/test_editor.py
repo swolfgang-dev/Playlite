@@ -35,6 +35,23 @@ class MetadataTests(unittest.TestCase):
         self.editor.close()
         self.directory.cleanup()
 
+    def test_game_navigation_rejects_invalid_edits_and_disables_boundaries(self):
+        self.editor.set_game_navigation(0, 2)
+        self.assertFalse(self.editor.previous_game.isEnabled())
+        self.assertTrue(self.editor.next_game.isEnabled())
+        self.editor.fields['Name'].setText('')
+        self.editor.next_game.click()
+        self.assertEqual(self.editor.navigation_offset, 0)
+        self.assertIn('Name is required', self.editor.error.text())
+        self.assertIsNone(self.editor.result_game)
+        other = MetadataEditor(self.game, self.data)
+        try:
+            other.set_game_navigation(1, 2)
+            self.assertTrue(other.previous_game.isEnabled())
+            self.assertFalse(other.next_game.isEnabled())
+        finally:
+            other.reject()
+
     def test_images_fit_small_window_with_optional_image_studio(self):
         from PyQt6.QtWidgets import QTabWidget, QPushButton, QScrollArea
         from playlite.providers import discover_plugins

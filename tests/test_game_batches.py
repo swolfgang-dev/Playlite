@@ -38,6 +38,51 @@ class GameBatchTests(unittest.TestCase):
         QTest.qWait(30)
         self.addCleanup(self.window.close)
 
+    def test_editor_navigation_saves_and_keeps_displayed_order_and_tab(self):
+        self.window.order.setChecked(True)
+        self.window.refresh_library()
+        self.window.list.setCurrentRow(0)
+        shown = [self.window.list.item(i).data(Qt.ItemDataRole.UserRole)['Id']
+                 for i in range(self.window.list.count())]
+        visits = []
+        def edit(dialog):
+            visits.append(dialog.game['Id'])
+            if len(visits) == 1:
+                self.assertFalse(dialog.previous_game.isEnabled())
+                dialog.fields['Name'].setText('AAA')
+                dialog.tabs.setCurrentIndex(1)
+                dialog.next_game.click()
+            elif len(visits) == 2:
+                self.assertEqual(dialog.tabs.currentIndex(), 1)
+                dialog.previous_game.click()
+            else:
+                self.assertEqual(dialog.fields['Name'].text(), 'AAA')
+                dialog.reject()
+            return dialog.result()
+        with patch('playlite.app.run_dialog', side_effect=edit):
+            self.window.edit_game()
+        self.assertEqual(visits, [shown[0], shown[1], shown[0]])
+        saved = json.loads((self.data / 'library.json').read_text())
+        self.assertEqual(next(g for g in saved if g['Id'] == shown[0])['Name'], 'AAA')
+
+    def test_editor_navigation_stays_on_current_game_when_saving_fails(self):
+        current = self.window.current['Id']
+        visits = []
+        def edit(dialog):
+            visits.append(dialog.game['Id'])
+            if len(visits) == 1:
+                dialog.fields['Name'].setText('Unsaved edit')
+                dialog.next_game.click()
+            else:
+                self.assertIn('Could not save game', dialog.error.text())
+                self.assertEqual(dialog.fields['Name'].text(), 'Unsaved edit')
+                dialog.reject()
+            return dialog.result()
+        with patch('playlite.app.run_dialog', side_effect=edit), patch('playlite.app.save_game', side_effect=OSError('disk full')):
+            self.window.edit_game()
+        self.assertEqual(visits, [current, current])
+        self.assertEqual(json.loads((self.data / 'library.json').read_text()), self.games)
+
     def test_archive_information_is_only_shown_when_editing(self):
         from plugin_test_support import require_plugin
         require_plugin('GameArchiver')

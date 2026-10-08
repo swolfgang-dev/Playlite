@@ -65,7 +65,7 @@ class MetadataEditor(QDialog):
             }
         ''')
         layout = QVBoxLayout(self)
-        tabs = QTabWidget()
+        tabs = self.tabs = QTabWidget()
         layout.addWidget(tabs)
 
         def page(title):
@@ -362,6 +362,22 @@ class MetadataEditor(QDialog):
         for plugin in self.editor_plugins:
             plugin.augment_editor(self)
 
+    def set_game_navigation(self, index, count):
+        self.navigation_offset = 0
+        header = QHBoxLayout()
+        self.previous_game = QPushButton('Previous game')
+        self.next_game = QPushButton('Next game')
+        self.previous_game.setEnabled(index > 0)
+        self.next_game.setEnabled(index < count - 1)
+        for button, offset in ((self.previous_game, -1), (self.next_game, 1)):
+            button.setToolTip('Save changes and open the adjacent game in the displayed library order')
+            button.clicked.connect(lambda checked=False, step=offset: self.save(step))
+        header.addWidget(self.previous_game)
+        header.addWidget(QLabel(f'{index + 1} / {count}'))
+        header.addWidget(self.next_game)
+        header.addStretch()
+        self.layout().insertLayout(0, header)
+
     def attach_installation_header(self, widget):
         previous = getattr(self, 'installation_header_form', None)
         if previous is not None:
@@ -594,12 +610,13 @@ class MetadataEditor(QDialog):
             plugin.collect_editor(self, result)
         return result
 
-    def save(self):
+    def save(self, navigation_offset=0):
         try:
             self.result_game = self.collect()
         except ValueError as error:
             self.error.setText(str(error))
             return
+        self.navigation_offset = navigation_offset
         self.accept()
 
 

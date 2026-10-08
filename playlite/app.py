@@ -217,18 +217,29 @@ class ArtworkPage(QWidget):
 
 def game_context_menu(parent, edit_handler, delete_handler, plugin_actions=(), open_folder_handler=None):
     menu = QMenu(parent)
-    if open_folder_handler is not None:
-        menu.addAction('Open install folder').triggered.connect(open_folder_handler)
-    if edit_handler is not None:
-        menu.addAction('Edit…').triggered.connect(edit_handler)
-    menu.addSeparator()
-    for plugin_name, actions in plugin_actions:
-        if actions:
-            submenu = menu.addMenu(plugin_name)
-            for title, callback in actions:
-                submenu.addAction(title).triggered.connect(callback)
-    menu.addSeparator()
-    menu.addAction('Delete…').triggered.connect(delete_handler)
+    def populate():
+        menu.clear()
+        if edit_handler is not None:
+            menu.addAction('Edit…').triggered.connect(edit_handler)
+        if open_folder_handler is not None:
+            menu.addAction('Open install folder').triggered.connect(open_folder_handler)
+        menu.addSeparator()
+        crack_tools = None
+        for plugin_name, actions in (plugin_actions() if callable(plugin_actions) else plugin_actions):
+            if actions:
+                if plugin_name in ('SteamAutoCrack', 'GameCopyWorld'):
+                    if crack_tools is None:
+                        crack_tools = menu.addMenu('Crack Tools')
+                    submenu = crack_tools.addMenu(plugin_name)
+                else:
+                    submenu = menu.addMenu(plugin_name)
+                for title, callback in actions:
+                    submenu.addAction(title).triggered.connect(callback)
+        menu.addSeparator()
+        menu.addAction('Delete…').triggered.connect(delete_handler)
+    populate()
+    if callable(plugin_actions):
+        menu.aboutToShow.connect(populate)
     return menu
 
 
@@ -1635,7 +1646,7 @@ class LibraryWindow(QMainWindow):
         play.setObjectName('play')
         play.setEnabled(any(provider.owns(game) for provider in self.game_providers))
         play.clicked.connect(self.play_game)
-        hero = Hero(play, self.edit_game, self.delete_game, self.plugin_game_actions(game),
+        hero = Hero(play, self.edit_game, self.delete_game, lambda: self.plugin_game_actions(game),
                     (lambda: open_folder(game['InstallDirectory'])) if game.get('InstallDirectory') else None)
         self.play_hero = hero
         hero.pixmap = QPixmap(self.asset(game, 'HeaderImage' if 'HeaderImage' in game else 'BackgroundImage'))
@@ -2425,7 +2436,16 @@ class LibraryWindow(QMainWindow):
             active.raise_()
             active.activateWindow()
             return
+        # Keep navigation stable even if editing a name changes the sort order.
+        order = [self.list.item(index).data(Qt.ItemDataRole.UserRole)['Id']
+                 for index in range(self.list.count())]
+        if self.current is None:
+            return
+        if self.current['Id'] not in order:
+            order = [self.current['Id']]
+        position = order.index(self.current['Id'])
         dialog = MetadataEditor(self.current, self.data, self)
+        dialog.set_game_navigation(position, len(order))
         while run_dialog(dialog) == QDialog.DialogCode.Accepted:
             try:
                 save = lambda: save_game(self.data, self.games, dialog.result_game)
@@ -2433,11 +2453,29 @@ class LibraryWindow(QMainWindow):
             except (OSError, ValueError) as error:
                 dialog.error.setText(f'Could not save game: {error}')
                 continue
-            self.update_filter_choices()
-            self.refresh_library()
             for cache in dialog.download_caches:
                 cache.cleanup()
-            break
+            offset = dialog.navigation_offset
+            if not offset:
+                self.update_filter_choices()
+                self.refresh_library()
+                break
+            position += offset
+            target = next((game for game in self.games if game['Id'] == order[position]), None)
+            if target is None:
+                self.update_filter_choices()
+                self.refresh_library()
+                break
+            geometry = dialog.saveGeometry()
+            tab = dialog.tabs.currentIndex()
+            dialog.deleteLater()
+            self.current = target
+            self.update_filter_choices()
+            self.refresh_library()
+            dialog = MetadataEditor(target, self.data, self)
+            dialog.set_game_navigation(position, len(order))
+            dialog.restoreGeometry(geometry)
+            dialog.tabs.setCurrentIndex(tab)
 
 
 def main():
