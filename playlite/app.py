@@ -71,7 +71,7 @@ QPushButton { background: #363638; border: 0; border-radius: 7px; padding: 10px 
 QPushButton:hover { background: #48494b; }
 QPushButton:pressed { background: #292a2c; }
 QPushButton:focus { border: 1px solid #2196f3; padding: 9px 17px; }
-QPushButton[primary="true"] { background: #2196f3; color: #151515; font-weight: bold; }
+QPushButton[primary="true"] { background: #2196f3; color: white; font-weight: bold; }
 QPushButton[primary="true"]:hover { background: #98caff; }
 QPushButton[primary="true"]:pressed { background: #879bb7; }
 QPushButton[primary="true"]:disabled { background: #292a2b; color: #777; }
