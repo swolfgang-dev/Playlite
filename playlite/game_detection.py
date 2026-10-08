@@ -165,3 +165,16 @@ def _record_playtime(data, games, identity, seconds, count, stamp):
     temporary.write_text(json.dumps(latest, indent=2, ensure_ascii=False))
     temporary.replace(path)
     return latest
+
+
+def clear_play_progress(data, games):
+    """Reset play history across the latest complete library in one transaction."""
+    from .library_storage import library_lock
+    from .storage import atomic_json
+    with library_lock(data):
+        path = data / 'library.json'
+        latest = json.loads(path.read_text()) if path.exists() else copy.deepcopy(games)
+        for game in latest:
+            game.update(Playtime=0, PlayCount=0, LastActivity=None)
+        atomic_json(path, latest)
+        return latest

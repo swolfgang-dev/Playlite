@@ -8,13 +8,13 @@ from pathlib import Path
 import shutil
 import uuid
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, QSize
 from PyQt6.QtGui import QImageReader
 from PyQt6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
     QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
     QTabWidget, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
-    QHeaderView, QAbstractItemView, QGridLayout, QComboBox,
+    QHeaderView, QAbstractItemView, QGridLayout, QComboBox, QStyle,
 )
 
 from .metadata_dialog import MetadataDownloader
@@ -365,17 +365,23 @@ class MetadataEditor(QDialog):
     def set_game_navigation(self, index, count):
         self.navigation_offset = 0
         header = QHBoxLayout()
-        self.previous_game = QPushButton('Previous game')
-        self.next_game = QPushButton('Next game')
+        header.addStretch()
+        self.previous_game = QPushButton()
+        self.next_game = QPushButton()
+        self.previous_game.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowLeft))
+        self.next_game.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
         self.previous_game.setEnabled(index > 0)
         self.next_game.setEnabled(index < count - 1)
         for button, offset in ((self.previous_game, -1), (self.next_game, 1)):
-            button.setToolTip('Save changes and open the adjacent game in the displayed library order')
+            label = 'Previous game' if offset < 0 else 'Next game'
+            button.setAccessibleName(label)
+            button.setToolTip(f'{label}: save changes and open the adjacent game in the displayed library order')
+            button.setFixedSize(40, 40)
+            button.setIconSize(QSize(20, 20))
             button.clicked.connect(lambda checked=False, step=offset: self.save(step))
         header.addWidget(self.previous_game)
         header.addWidget(QLabel(f'{index + 1} / {count}'))
         header.addWidget(self.next_game)
-        header.addStretch()
         self.layout().insertLayout(0, header)
 
     def attach_installation_header(self, widget):

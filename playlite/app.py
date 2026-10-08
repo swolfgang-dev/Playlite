@@ -2283,6 +2283,18 @@ class LibraryWindow(QMainWindow):
             return
         run_dialog(InstallerDialog(self, self.settings))
 
+    def clear_play_progress(self):
+        from .game_detection import clear_play_progress
+        import time
+        self.games = clear_play_progress(self.data, self.games)
+        # Running games begin accruing fresh history from the reset time.
+        now = time.monotonic()
+        for session in self.game_detection.sessions.values():
+            session.update(start=now, saved=0, counted=False, checkpoint=now)
+        for identity in self.game_detection.missing:
+            self.game_detection.missing[identity] = now
+        self.refresh_library()
+
     def open_settings(self):
         from .settings import SettingsDialog
         active = next((dialog for dialog in self.findChildren(SettingsDialog) if dialog.isVisible()), None)
@@ -2290,7 +2302,7 @@ class LibraryWindow(QMainWindow):
             active.raise_()
             active.activateWindow()
             return
-        if run_dialog(SettingsDialog(self.settings, self)) == QDialog.DialogCode.Accepted:
+        if run_dialog(SettingsDialog(self.settings, self, clear_progress=self.clear_play_progress)) == QDialog.DialogCode.Accepted:
             self.order.setIcon(toolbar_icon('descending' if self.order.isChecked() else 'ascending'))
             self.filter_button.setIcon(toolbar_icon('filters'))
             self.compact_button.setIcon(toolbar_icon('compact'))

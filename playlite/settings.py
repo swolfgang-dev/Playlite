@@ -6,7 +6,7 @@ import os
 import json
 from PyQt6.QtCore import QUrl, Qt, QItemSelectionModel
 from PyQt6.QtGui import QDesktopServices, QColor, QIcon, QPixmap
-from PyQt6.QtWidgets import (QMenu, QCheckBox, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QToolButton,
+from PyQt6.QtWidgets import (QMessageBox, QMenu, QCheckBox, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QToolButton,
                              QPlainTextEdit, QFormLayout, QGridLayout, QFrame, QPushButton, QLabel, QLineEdit, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget, QSlider, QHBoxLayout, QColorDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
 from .theme import ROLES, BUILTIN_THEMES, palette, base_palette, apply as apply_theme
 from .image_filters import OPTIONS, defaults as image_filter_defaults, FilterChecks
@@ -21,9 +21,10 @@ class SettingsSlider(QSlider):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, settings, parent=None, metadata=False):
+    def __init__(self, settings, parent=None, metadata=False, clear_progress=None):
         super().__init__(parent)
         self.settings = settings
+        self.clear_progress = clear_progress
         self.link_names = load_names(settings)
         self.setWindowTitle('Playlite Settings')
         set_style(self, DROPDOWN_STYLE + """
@@ -149,6 +150,12 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.link_names_button = QPushButton('Link names…')
         self.link_names_button.clicked.connect(self.edit_link_names)
         links.addWidget(self.link_names_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        history = self.card(general, 'Play progress')
+        history.addWidget(self.hint('Reset play time, play count, and last played for every game in the library.'))
+        self.clear_progress_button = QPushButton('Clear play progress')
+        self.clear_progress_button.setEnabled(callable(self.clear_progress))
+        self.clear_progress_button.clicked.connect(self.confirm_clear_progress)
+        history.addWidget(self.clear_progress_button, alignment=Qt.AlignmentFlag.AlignLeft)
         general.addStretch()
 
         appearance = page('Appearance', 'Adjust the background, panel transparency, and interface colours.')
@@ -1097,6 +1104,24 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         dialog.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog)
         if run_dialog(dialog) == QDialog.DialogCode.Accepted:
             self.set_colour_button(button, dialog.selectedColor().name())
+
+    def confirm_clear_progress(self):
+        warning = QMessageBox(QMessageBox.Icon.Warning, 'Clear play progress',
+            'Clear play progress for ALL games, including hidden and filtered games?\n\n'
+            'This resets play time and play count to zero and removes last played dates. '
+            'Game saves and completion status are unchanged.\n\n'
+            'This takes effect immediately and cannot be undone with Cancel in Settings.',
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel, self)
+        warning.button(QMessageBox.StandardButton.Ok).setText('Clear play progress')
+        warning.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        warning.setEscapeButton(QMessageBox.StandardButton.Cancel)
+        if run_dialog(warning) != QMessageBox.StandardButton.Ok:
+            return
+        try:
+            self.clear_progress()
+        except (OSError, ValueError) as error:
+            from .lifecycle import show_warning
+            show_warning(self, 'Could not clear play progress', str(error))
 
     def edit_link_names(self):
         dialog = LinkNamesDialog(self.link_names, self)
