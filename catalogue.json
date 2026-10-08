@@ -55,6 +55,16 @@
       "id": "BepInExInstaller",
       "name": "BepInEx Installer",
       "repository": "swolfgang-dev/playlite-plugin-bepinex"
+    },
+    {
+      "id": "CrackTools",
+      "name": "Crack Tools",
+      "repository": "swolfgang-dev/playlite-plugin-crack-tools"
+    },
+    {
+      "id": "GameCopyWorld",
+      "name": "GameCopyWorld",
+      "repository": "swolfgang-dev/playlite-plugin-gamecopyworld"
     }
   ]
 }
