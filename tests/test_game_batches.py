@@ -49,7 +49,10 @@ class GameBatchTests(unittest.TestCase):
         observer.name = "Observer"
         observer.game_actions.return_value = []
         self.window.generic_plugins = [observer]
-        def edit(dialog):
+        def edit(shell):
+            from playlite.editor import MetadataEditor
+            shell.show()
+            dialog = next(editor for editor in shell.findChildren(MetadataEditor) if not editor.isHidden())
             visits.append(dialog.game['Id'])
             if len(visits) == 1:
                 self.assertFalse(dialog.previous_game.isEnabled())
@@ -62,7 +65,10 @@ class GameBatchTests(unittest.TestCase):
             else:
                 self.assertEqual(dialog.fields['Name'].text(), 'AAA')
                 dialog.reject()
-            return dialog.result()
+            if len(visits) < 3:
+                self.assertTrue(shell.isVisible())
+                edit(shell)
+            return shell.result()
         with patch('playlite.app.run_dialog', side_effect=edit):
             self.window.edit_game()
         self.assertEqual(visits, [shown[0], shown[1], shown[0]])
@@ -78,7 +84,10 @@ class GameBatchTests(unittest.TestCase):
         observer.name = "Observer"
         observer.game_actions.return_value = []
         self.window.generic_plugins = [observer]
-        def edit(dialog):
+        def edit(shell):
+            from playlite.editor import MetadataEditor
+            shell.show()
+            dialog = next(editor for editor in shell.findChildren(MetadataEditor) if not editor.isHidden())
             visits.append(dialog.game['Id'])
             if len(visits) == 1:
                 dialog.fields['Name'].setText('Unsaved edit')
@@ -87,7 +96,10 @@ class GameBatchTests(unittest.TestCase):
                 self.assertIn('Could not save game', dialog.error.text())
                 self.assertEqual(dialog.fields['Name'].text(), 'Unsaved edit')
                 dialog.reject()
-            return dialog.result()
+            if len(visits) == 1:
+                self.assertTrue(shell.isVisible())
+                edit(shell)
+            return shell.result()
         with patch('playlite.app.run_dialog', side_effect=edit), patch('playlite.app.save_game', side_effect=OSError('disk full')):
             self.window.edit_game()
         self.assertEqual(visits, [current, current])

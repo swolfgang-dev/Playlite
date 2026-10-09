@@ -10,26 +10,23 @@ import json
 import copy
 import os
 import shutil
-import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from .editor import MetadataEditor, save_game
 from .artwork import repair_artwork
 from .ui_style import DROPDOWN_STYLE
-from .library import FILTER_FIELDS, SORT_FIELDS, query_games, values, filter_values
+from .library import FILTER_FIELDS, SORT_FIELDS, query_games, filter_values
 from .library_filters import LibraryFilter
-from .scroll_fades import ScrollFades, HorizontalValuesScroll
+from .scroll_fades import ContentFade, ScrollFades, HorizontalValuesScroll
 from .link_names import load_names, friendly_name
 
 from PyQt6.QtCore import QAbstractAnimation, QItemSelectionModel, Qt, QSize, QUrl, QTimer, QRect, QRectF, QSettings, QThreadPool, QEvent, QVariantAnimation, QEasingCurve, QElapsedTimer
-from PyQt6.QtGui import QFontMetrics, QColor, QDesktopServices, QIcon, QImage, QImageReader, QCursor, QPainter, QPen, QPainterPath, QPixmap, QTextDocument, QRegion
+from PyQt6.QtGui import QFontMetrics, QColor, QDesktopServices, QIcon, QImageReader, QCursor, QPainter, QPen, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyleOptionButton, QStyle, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout,
+    QApplication, QStyledItemDelegate, QStyleOptionViewItem, QStyleOptionButton, QStyle, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout,
     QLabel, QLayout, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-    QPushButton, QScrollArea, QSizePolicy, QSplitter, QTextBrowser, QTextEdit,
-    QVBoxLayout, QBoxLayout, QWidget, QComboBox, QCheckBox, QGridLayout, QListView, QMenu, QAbstractItemView,
+    QPushButton, QScrollArea, QSizePolicy, QSplitter, QTextBrowser, QVBoxLayout, QBoxLayout, QWidget, QComboBox, QCheckBox, QGridLayout, QListView, QMenu, QAbstractItemView,
 )
 
 DATA = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite'
@@ -46,7 +43,8 @@ QMainWindow, QWidget#toolbar { background: #171819; }
 QWidget#rail { background: #151617; border-right: 1px solid #252628; }
 QLabel { background: transparent; }
 QLabel#brand { color: #dc69a1; font-weight: bold; font-size: 22px; }
-QLineEdit { background: #2c2d2f; border: 0; border-radius: 15px; padding: 8px 13px; }
+QLineEdit { background: #2c2d2f; border: 0; border-radius: 8px; padding: 8px 12px; }
+QDialog QLineEdit, QDialog QComboBox, QDialog QSpinBox { min-height: 20px; border-radius: 8px; }
 QListWidget { border: 0; background: #141516; outline: 0; padding: 8px; font-size: 15px; }
 QListWidget::item { padding: 8px; border-radius: 7px; }
 QListWidget::item:selected { background: #292a2c; }
@@ -73,7 +71,7 @@ QPushButton { background: #363638; border: 0; border-radius: 7px; padding: 10px 
 QPushButton:hover { background: #48494b; }
 QPushButton:pressed { background: #292a2c; }
 QPushButton:focus { border: 1px solid #2196f3; padding: 9px 17px; }
-QPushButton[primary="true"] { background: #2196f3; color: white; font-weight: bold; }
+QPushButton[primary="true"] { background: #2196f3; color: @accent_text; font-weight: bold; }
 QPushButton[primary="true"]:hover { background: #98caff; }
 QPushButton[primary="true"]:pressed { background: #879bb7; }
 QPushButton[primary="true"]:disabled { background: #292a2b; color: #777; }
@@ -147,34 +145,66 @@ class ArtworkPage(QWidget):
     def __init__(self):
         super().__init__()
         self.background = QPixmap()
-        self.rendered_background = QPixmap()
-        self.defer_background_render = False
+        self.previous_backgrounds = []
+        self.background_mix = 1.0
+        self.background_fade = QVariantAnimation(self)
+        self.background_fade.setDuration(240)
+        self.background_fade.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.background_fade.valueChanged.connect(self.blend_background)
+        self.background_fade.finished.connect(self.finish_background_fade)
 
-    def set_background(self, source, blur_radius=2, darkness=84):
+    def blend_background(self, value):
+        self.background_mix = float(value)
+        self.update()
+
+    def finish_background_fade(self):
+        self.previous_backgrounds.clear()
+        self.background_mix = 1.0
+        self.update()
+
+    def transition_background(self, pixmap):
+        if pixmap.cacheKey() == self.background.cacheKey():
+            return
+        # Preserve an interrupted fade exactly, rather than snapping to its target.
+        self.background_fade.stop()
+        if self.background_mix >= 1:
+            self.previous_backgrounds = [(self.background, 1.0)]
+        elif self.background_mix > 0:
+            self.previous_backgrounds.append((self.background, self.background_mix))
+        self.background = pixmap
+        self.background_mix = 0.0
+        self.background_fade.setStartValue(0.0)
+        self.background_fade.setEndValue(1.0)
+        self.background_fade.start()
+
+    def set_background(self, source, blur_radius=2, darkness=84, preserve=False):
+        # Keep the historical keyword for callers; transitions always preserve
+        # the currently visible frame while the next one is prepared.
+        ratio = self.devicePixelRatioF()
+        available = self.screen().geometry()
+        target = (round(available.width() * ratio), round(available.height() * ratio))
         self.background_generation = getattr(self, 'background_generation', 0) + 1
         generation = self.background_generation
-        self.background = QPixmap()
-        self.rendered_background = QPixmap()
-        self.update()
         if isinstance(source, QPixmap):
             if source.isNull():
+                self.transition_background(QPixmap())
                 return
             source = source.toImage()
             key = None
         else:
             path = Path(source)
             if not path.is_file():
+                self.transition_background(QPixmap())
                 return
-            key = (str(path), path.stat().st_mtime_ns, blur_radius, darkness, colour('#101112'))
+            key = (str(path), path.stat().st_mtime_ns, blur_radius, darkness, colour('#101112'), target)
         self.background_cache = getattr(self, 'background_cache', {})
         if key is not None and key in self.background_cache:
-            self.background = self.background_cache[key]
-            self.update()
+            self.transition_background(self.background_cache[key])
             return
         from .metadata_dialog import Task
         from .background_art import prepare
         base = colour('#101112')
-        task = Task(lambda: prepare(source, blur_radius, base, darkness))
+        task = Task(lambda: prepare(source, blur_radius, base, darkness, target))
         self.background_tasks = getattr(self, 'background_tasks', [])
         self.background_tasks.append(task)
         def complete(image):
@@ -184,14 +214,18 @@ class ArtworkPage(QWidget):
                 return
             pixmap = QPixmap.fromImage(image)
             if key is not None:
-                if len(self.background_cache) >= 12:
-                    self.background_cache.pop(next(iter(self.background_cache)))
                 self.background_cache[key] = pixmap
+                # Keep viewport-sized artwork bounded even on high-DPI screens.
+                while len(self.background_cache) > 1 and (len(self.background_cache) > 12 or
+                        sum(p.width() * p.height() * 4 for p in self.background_cache.values()) > 96 * 1024 * 1024):
+                    self.background_cache.pop(next(iter(self.background_cache)))
             if generation == self.background_generation:
-                self.background = pixmap
-                self.update()
+                self.transition_background(pixmap)
             self.background_tasks.remove(task)
         def failed(error):
+            from PyQt6 import sip
+            if not sip.isdeleted(self) and generation == self.background_generation:
+                self.transition_background(QPixmap())
             self.background_tasks.remove(task)
         task.signals.succeeded.connect(complete)
         task.signals.failed.connect(failed)
@@ -199,27 +233,39 @@ class ArtworkPage(QWidget):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self.background.isNull():
+        if self.background.isNull() and not self.previous_backgrounds:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        # Draw the cached image directly; resize animations never regenerate it.
-        source = self.background.rect()
-        aspect = self.width() / max(1, self.height())
-        image_aspect = source.width() / max(1, source.height())
-        if image_aspect > aspect:
-            width = round(source.height() * aspect)
-            source.setX((source.width() - width) // 2)
-            source.setWidth(width)
-        else:
-            height = round(source.width() / aspect)
-            source.setY((source.height() - height) // 2)
-            source.setHeight(height)
-        painter.drawPixmap(self.rect(), self.background, source)
+        for pixmap, opacity in [*self.previous_backgrounds, (self.background, self.background_mix)]:
+            if opacity <= 0:
+                continue
+            painter.setOpacity(opacity)
+            if pixmap.isNull():
+                painter.fillRect(self.rect(), QColor(colour('#101112')))
+                continue
+            source = QRectF(pixmap.rect())
+            aspect = self.width() / max(1, self.height())
+            image_aspect = source.width() / max(1, source.height())
+            if image_aspect > aspect:
+                width = source.height() * aspect
+                source.setX((source.width() - width) / 2)
+                source.setWidth(width)
+            else:
+                height = source.width() / aspect
+                source.setY((source.height() - height) / 2)
+                source.setHeight(height)
+            painter.drawPixmap(QRectF(self.rect()), pixmap, source)
 
 
 def game_context_menu(parent, edit_handler, delete_handler, plugin_actions=(), open_folder_handler=None):
     menu = QMenu(parent)
+    def add_entries(target, entries):
+        for title, callback in entries:
+            if isinstance(callback, (list, tuple)):
+                add_entries(target.addMenu(title), callback)
+            else:
+                target.addAction(title).triggered.connect(callback)
     def populate():
         menu.clear()
         if edit_handler is not None:
@@ -236,8 +282,7 @@ def game_context_menu(parent, edit_handler, delete_handler, plugin_actions=(), o
                     submenu = crack_tools.addMenu(plugin_name)
                 else:
                     submenu = menu.addMenu(plugin_name)
-                for title, callback in actions:
-                    submenu.addAction(title).triggered.connect(callback)
+                add_entries(submenu, actions)
         menu.addSeparator()
         menu.addAction('Delete…').triggered.connect(delete_handler)
     populate()
@@ -769,9 +814,28 @@ class LibraryRowExpansion(QWidget):
     def __init__(self, view):
         super().__init__(view.window())
         self.view = view
+        self.area = view
+        self.horizontal = False
+        self.edge_fade = ContentFade(self)
+        self.setGraphicsEffect(self.edge_fade)
+        view.viewport().installEventFilter(self)
+        view.verticalScrollBar().valueChanged.connect(self.edge_fade.update)
+        view.verticalScrollBar().rangeChanged.connect(self.edge_fade.update)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         set_style(self, 'background: transparent;')
+
+    def update_bounds(self):
+        viewport = self.view.viewport()
+        origin = self.parentWidget().mapFromGlobal(viewport.mapToGlobal(viewport.rect().topLeft()))
+        # Allow horizontal expansion over details, but never outside the list's
+        # vertical viewport (including its toolbar and status-bar boundaries).
+        self.setGeometry(0, origin.y(), self.parentWidget().width(), viewport.height())
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Move, QEvent.Type.Show):
+            self.update_bounds()
+        return False
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -786,7 +850,7 @@ class LibraryRowExpansion(QWidget):
             row = self.view.visualItemRect(item)
             if not self.view.viewport().rect().intersects(row):
                 continue
-            origin = self.view.viewport().mapTo(self, row.topLeft())
+            origin = self.mapFromGlobal(self.view.viewport().mapToGlobal(row.topLeft()))
             rect = QRect(origin, QSize(round(width), row.height()))
             icon = QRect(origin.x() + 8, origin.y() + (row.height() - 48) // 2, 48, 48)
             path = QPainterPath()
@@ -844,6 +908,7 @@ class LibraryList(QListWidget):
         set_style(self, 'QListWidget { padding: 8px; } QListWidget[compactRail="true"] { padding-right: 0; } QListWidget > QWidget#qt_scrollarea_viewport, QListWidget > QWidget#qt_scrollarea_vcontainer, QListWidget > QWidget#qt_scrollarea_hcontainer { background: transparent; } QScrollBar:vertical { background: transparent; width: 24px; margin: 0 8px 0 8px; } QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }')
         self.verticalScrollBar().valueChanged.connect(self.refresh_hover)
         self.verticalScrollBar().rangeChanged.connect(self.update_scrollbar_padding)
+        self.fades = ScrollFades(self)
         self.currentItemChanged.connect(self.update_selected_row)
         self.itemSelectionChanged.connect(self.update_selected_rows)
 
@@ -949,7 +1014,7 @@ class LibraryList(QListWidget):
                 else:
                     self.setFixedWidth(target)
         if self.expansion_layer is not None:
-            self.expansion_layer.setGeometry(self.window().rect())
+            self.expansion_layer.update_bounds()
             self.expansion_layer.setVisible((self.compact_enabled or self.width_transition) and any(width > 0 for width in self.row_widths.values()))
             self.expansion_layer.raise_()
             self.expansion_layer.update()
@@ -1118,6 +1183,9 @@ class LibraryWindow(QMainWindow):
         self.installation_sizes = {}
         self.size_tasks = []
         self.stop_tasks = {}
+        from .automation import Automation
+        self.automation = Automation(self)
+        QApplication.instance().aboutToQuit.connect(self.automation.cancel_all)
         self.is_grid = self.settings.value('library/view', 'list') == 'grid'
         startup_view = self.settings.value('app/defaultView', 'remember')
         if startup_view != 'remember':
@@ -1136,6 +1204,8 @@ class LibraryWindow(QMainWindow):
         size = QSize(default_width, 1140)
         self.resize(size)
         self.last_normal_size = QSize(size)
+        # Reserve status space before layout, even without a temporary message.
+        self.statusBar().show()
         root = QWidget()
         outer = QVBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -1164,9 +1234,9 @@ class LibraryWindow(QMainWindow):
         self.logo_menu = QMenu(self.logo)
         self.logo_menu.addAction('Add Game…').triggered.connect(self.add_game)
         from .background_tasks import show_tasks
-        from .installation_health import show_health
         self.logo_menu.addAction('Background tasks…').triggered.connect(lambda: show_tasks(self))
-        self.logo_menu.addAction('Check library installations…').triggered.connect(lambda: show_health(self, self.games))
+        from .readiness import show_readiness
+        self.logo_menu.addAction('Check library readiness…').triggered.connect(lambda: show_readiness(self,self.games))
         for plugin in self.generic_plugins:
             for action_label, callback in getattr(plugin, 'main_menu_actions', lambda window: [])(self):
                 self.logo_menu.addAction(action_label).triggered.connect(callback)
@@ -1399,6 +1469,15 @@ class LibraryWindow(QMainWindow):
         self.game_detection.session_finished.connect(self.game_session_finished)
         self.game_detection.changed.connect(self.game_status_changed)
         self.game_detection.start()
+        for plugin in self.generic_plugins:
+            QTimer.singleShot(0, lambda plugin=plugin: self.initialize_generic_plugin(plugin))
+
+    def initialize_generic_plugin(self, plugin):
+        try:
+            plugin.library_ready(self)
+        except Exception as error:
+            self.statusBar().showMessage(f'{plugin.name}: {error}', 15000)
+
 
     def asset(self, game, key):
         repaired = repair_artwork(game, self.data)
@@ -1491,7 +1570,6 @@ class LibraryWindow(QMainWindow):
         self.filters_expanded = expanded
         start = self.filter_panel.height() if self.filter_panel.isVisible() else 0
         self.filter_animation.stop()
-        self.game_background.defer_background_render = True
         self.filter_panel.setFixedHeight(start)
         self.filter_panel.show()
         self.library_scrollbar_opacity.setOpacity(0)
@@ -1506,7 +1584,6 @@ class LibraryWindow(QMainWindow):
         self.filter_panel.setVisible(self.filters_expanded)
         if self.filters_expanded:
             self.filter_panel.setFixedHeight(self.filter_panel.sizeHint().height())
-        self.game_background.defer_background_render = False
         self.game_background.update()
         self.update_library_scrollbar_policy()
         bar = self.game_scroll.verticalScrollBar()
@@ -1621,7 +1698,7 @@ class LibraryWindow(QMainWindow):
                 # Showing new children and sizing the header posts more layout
                 # requests. Resolve these without processing any paint events.
                 self.page.ensurePolished()
-                for _ in range(3):
+                for _ in range(1):
                     self.details.invalidate()
                     self.details.activate()
                     self.page.layout().activate()
@@ -1630,6 +1707,38 @@ class LibraryWindow(QMainWindow):
             finally:
                 self.game_scroll.setUpdatesEnabled(True)
         QTimer.singleShot(0, finish_switch)
+
+    def load_detail_artwork(self, header_source, cover_source, hero, cover, row, information):
+        ratio=self.devicePixelRatioF()
+        from .detail_artwork import load
+        from .metadata_dialog import Task
+        cache=getattr(self,'detail_art_cache',None)
+        if cache is None:cache=self.detail_art_cache={}
+        key=(header_source,cover_source,ratio)
+        # Modification timestamps are checked in the worker, not on every frame.
+        def apply(images):
+            if self.play_hero is not hero:return
+            header,poster=images
+            hero.pixmap=QPixmap.fromImage(header)
+            if not header.isNull():
+                hero.setFixedHeight(max(240,round(self.content.width()*header.height()/header.width())))
+            hero.update();hero.position_play_control()
+            if not poster.isNull():
+                pixmap=QPixmap.fromImage(poster);pixmap.setDevicePixelRatio(ratio)
+                cover.setPixmap(pixmap);size=pixmap.deviceIndependentSize().toSize();cover.setFixedSize(size)
+                row.setFixedHeight(size.height());information.setFixedHeight(size.height())
+                hero.align_with_cover(size.width());self.content.update_cover()
+        if key in cache:apply(cache[key])
+        task=Task(lambda:load(header_source,cover_source,ratio))
+        tasks=getattr(self,'detail_art_tasks',None)
+        if tasks is None:tasks=self.detail_art_tasks=[]
+        tasks.append(task)
+        def loaded(images):
+            if len(cache)>=12 and key not in cache:cache.pop(next(iter(cache)))
+            cache[key]=images;apply(images);tasks.remove(task)
+        task.signals.succeeded.connect(loaded)
+        task.signals.failed.connect(lambda _:tasks.remove(task))
+        QThreadPool.globalInstance().start(task)
 
     def build_game_view(self, item):
         while self.details.count():
@@ -1667,9 +1776,10 @@ class LibraryWindow(QMainWindow):
         hero = Hero(play, self.edit_game, self.delete_game, lambda: self.plugin_game_actions(game),
                     (lambda: open_folder(game['InstallDirectory'])) if game.get('InstallDirectory') else None)
         self.play_hero = hero
-        hero.pixmap = QPixmap(self.asset(game, 'HeaderImage' if 'HeaderImage' in game else 'BackgroundImage'))
+        header_source = self.asset(game, 'HeaderImage' if 'HeaderImage' in game else 'BackgroundImage')
+        hero.pixmap = QPixmap()
         if hero.pixmap.isNull():
-            hero.setFixedHeight(hero.play_control.sizeHint().height() + 16)
+            hero.setFixedHeight(max(240, round(self.content.width() * .5)) if header_source else hero.play_control.sizeHint().height() + 16)
         else:
             hero.setFixedHeight(max(240, round(self.content.width() * hero.pixmap.height() / hero.pixmap.width())))
         self.details.addWidget(hero)
@@ -1680,17 +1790,11 @@ class LibraryWindow(QMainWindow):
         columns.setSpacing(24)
         cover = QLabel()
         cover.setObjectName('cover')
-        image = QPixmap(self.asset(game, 'CoverImage'))
-        has_cover = not image.isNull()
+        cover_source = self.asset(game, 'CoverImage')
+        has_cover = bool(game.get('CoverImage'))
         if has_cover:
             self.content.cover = cover
-            ratio = self.devicePixelRatioF()
-            scaled_cover = image.scaled(round(190 * ratio), round(295 * ratio),
-                                       Qt.AspectRatioMode.KeepAspectRatio,
-                                       Qt.TransformationMode.SmoothTransformation)
-            scaled_cover.setDevicePixelRatio(ratio)
-            cover.setPixmap(scaled_cover)
-            logical_size = scaled_cover.deviceIndependentSize().toSize()
+            logical_size = QSize(190, 295)
             cover.setFixedSize(logical_size)
             panel_height = logical_size.height()
         else:
@@ -1731,6 +1835,7 @@ class LibraryWindow(QMainWindow):
         columns.addWidget(information, 1, Qt.AlignmentFlag.AlignTop)
         links_size = QSize(logical_size) if has_cover else QSize(190, panel_height)
         self.content.update_cover()
+        self.load_detail_artwork(header_source, cover_source if has_cover else '', hero, cover, row, information)
         self.details.addWidget(row)
         description_row = DescriptionLinksRow()
         description_columns = description_row.columns
@@ -1801,18 +1906,19 @@ class LibraryWindow(QMainWindow):
         for plugin in self.generic_plugins:
             plugin.augment_game_view(self, game, heading, installation_form)
         if game.get('InstallDirectory'):
-            folder = QPushButton(game['InstallDirectory'])
+            from .ui_style import PathButton
+            folder = PathButton(game['InstallDirectory'])
             folder.setObjectName('folder')
             folder.clicked.connect(lambda: open_folder(game['InstallDirectory']))
             set_style(folder, 'QPushButton#folder { padding: 0; }')
-            folder.setFixedSize(folder.sizeHint().width(), folder.fontMetrics().height())
+            folder.setFixedHeight(folder.fontMetrics().height())
             folder.setToolTip(game['InstallDirectory'])
             folder_scroll = HorizontalValuesScroll()
             set_style(folder_scroll, 'QScrollArea, QScrollArea > QWidget { background: transparent; border: 0; }')
             folder_scroll.setFrameShape(QFrame.Shape.NoFrame)
             folder_scroll.viewport().setAutoFillBackground(False)
             folder_scroll.setWidget(folder)
-            folder_scroll.setWidgetResizable(False)
+            folder_scroll.setWidgetResizable(True)
             folder_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             folder_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             folder_scroll.setFixedHeight(folder.height())
@@ -1884,13 +1990,19 @@ class LibraryWindow(QMainWindow):
         action = self.launched_actions.pop(game_id, None)
         game = next((entry for entry in self.games if entry['Id'] == game_id), None)
         if game is None:
+            automation = getattr(self, 'automation', None)
+            if automation is not None: automation.exited(game_id, lambda: None)
             return
-        for plugin in self.generic_plugins:
-            try:
-                plugin.after_game_stopped(self, copy.deepcopy(game), copy.deepcopy(action))
-            except Exception:
-                import logging
-                logging.exception('Plugin %s failed after game exit', plugin.id)
+        def notify_plugins():
+            for plugin in self.generic_plugins:
+                try:
+                    plugin.after_game_stopped(self, copy.deepcopy(game), copy.deepcopy(action))
+                except Exception:
+                    import logging
+                    logging.exception('Plugin %s failed after game exit', plugin.id)
+        automation = getattr(self, 'automation', None)
+        if automation is not None: automation.exited(game_id, notify_plugins)
+        else: notify_plugins()
 
     def game_status_changed(self, game_id, status):
         for index in range(self.list.count()):
@@ -1898,10 +2010,10 @@ class LibraryWindow(QMainWindow):
             if item.data(Qt.ItemDataRole.UserRole)['Id'] == game_id:
                 item.setToolTip(status if status in ('Running', 'Launching', 'Launch failed') else '')
         if self.current and self.current['Id'] == game_id:
-            active = status in ('Running', 'Launching')
             stopping = game_id in self.stop_tasks
-            self.play_button.setText('Stopping…' if stopping else 'Stop' if status == 'Running' else 'Launching…' if status == 'Launching' else 'Play')
-            self.play_button.setEnabled(not stopping and status != 'Launching' and
+            preparing = self.automation.busy(game_id)
+            self.play_button.setText('Preparing…' if preparing == 'before_launch' else 'Finishing…' if preparing == 'after_exit' else 'Stopping…' if stopping else 'Stop' if status == 'Running' else 'Launching…' if status == 'Launching' else 'Play')
+            self.play_button.setEnabled(not stopping and not preparing and status != 'Launching' and
                                         (status == 'Running' or self.has_play_actions(self.current)))
             self.play_hero.position_play_control()
 
@@ -1912,7 +2024,15 @@ class LibraryWindow(QMainWindow):
         self.list.update_scrollbar_padding()
         transparency = max(0, min(100, self.settings.value('appearance/gamePanelTransparency', 0, type=int)))
         alpha = round(255 * (1 - transparency / 100))
-        for panel in self.content.findChildren(QFrame):
+        if self.settings.value('appearance/readablePanels', True, type=bool) and alpha:
+            alpha = max(204, alpha)
+        panels=[]
+        for index in range(self.details.count()):
+            widget=self.details.itemAt(index).widget()
+            if widget is not None:
+                if isinstance(widget,QFrame):panels.append(widget)
+                panels.extend(widget.findChildren(QFrame))
+        for panel in panels:
             if panel.objectName() == 'card':
                 set_style(panel, f'QFrame#card {{ background: rgba(29, 30, 32, {alpha}); border-radius: 16px; }}')
 
@@ -1990,6 +2110,9 @@ class LibraryWindow(QMainWindow):
     def play_game(self):
         if self.current is None:
             return
+        automation = getattr(self, 'automation', None)
+        if automation is not None and automation.busy(self.current['Id']):
+            return
         if self.game_detection.status(self.current['Id']) == 'Running':
             self.stop_game()
             return
@@ -2022,18 +2145,40 @@ class LibraryWindow(QMainWindow):
             for plugin in self.generic_plugins:
                 if not plugin.before_launch(self, game):
                     return
-            game = next(entry for entry in self.games if entry['Id'] == game['Id'])
-            from .providers import IntegrationPlugin
-            if isinstance(provider, IntegrationPlugin):
-                self.game_detection.launching(game['Id'])
-            provider.launch_action(game, action)
-            self.launched_actions[game['Id']] = copy.deepcopy(action)
-            for plugin in self.generic_plugins:
+            game = copy.deepcopy(next(entry for entry in self.games if entry['Id'] == game['Id']))
+            automation_action = copy.deepcopy(action)
+            if automation is not None and action.get('Integration') == 'LutrisIntegration' and callable(getattr(provider, 'launch_configuration', None)) and (action.get('Prefix') or str(action.get('Executable', '')).lower().endswith('.exe')):
+                configuration = provider.launch_configuration(action.get('GameId')).get('game') or {}
+                automation_action['Prefix'] = configuration.get('prefix') or action.get('Prefix') or ''
+                automation_action['InstallDirectory'] = configuration.get('working_dir') or action.get('InstallDirectory') or game.get('InstallDirectory') or ''
+            def launch():
                 try:
-                    plugin.after_launch(self, copy.deepcopy(game), copy.deepcopy(action))
-                except Exception:
-                    import logging
-                    logging.exception('Plugin %s failed after launch', plugin.id)
+                    if not any(entry['Id'] == game['Id'] for entry in self.games):
+                        raise ValueError('The game was removed while preparing to launch.')
+                    health = check_action(game, action, self.game_providers, getattr(self, 'download_queue', None))
+                    if health['issues']:
+                        raise ValueError('Installation needs attention:\n' + '\n'.join(health['issues']))
+                    from .providers import IntegrationPlugin
+                    if isinstance(provider, IntegrationPlugin):
+                        self.game_detection.launching(game['Id'])
+                    provider.launch_action(game, action)
+                    self.launched_actions[game['Id']] = copy.deepcopy(action)
+                    for plugin in self.generic_plugins:
+                        try:
+                            plugin.after_launch(self, copy.deepcopy(game), copy.deepcopy(action))
+                        except Exception:
+                            import logging
+                            logging.exception('Plugin %s failed after launch', plugin.id)
+                    if automation is not None:
+                        automation.launched(game, automation_action)
+                except Exception as error:
+                    self.game_detection.launch_failed(game['Id'])
+                    show_warning(self, 'Cannot launch game', str(error))
+            if automation is not None:
+                automation.run(game, automation_action, 'before_launch', completed=launch)
+            else:
+                launch()
+
         except Exception as error:
             self.game_detection.launch_failed(game['Id'])
             show_warning(self, 'Cannot launch game', str(error))
@@ -2075,8 +2220,11 @@ class LibraryWindow(QMainWindow):
 
     def plugin_game_actions(self, game):
         from .installation_health import show_health
-        return [('Installation', [('Check installation…', lambda: show_health(self, [game]))])] + [(plugin.name, actions) for plugin in self.generic_plugins
-                if (actions := plugin.game_actions(self, game))]
+        from .readiness import show_readiness, grouped_actions
+        actions=grouped_actions(self.generic_plugins,self,[game])
+        installation=[('Ready to play…',lambda:show_readiness(self,[game])),('Check installation…',lambda:show_health(self,[game]))]
+        existing=next((items for name,items in actions if name=='Installation'),[])
+        return [('Installation',installation+existing)]+[(name,items) for name,items in actions if name!='Installation']
 
     def import_provider_games(self, provider):
         try:
@@ -2282,6 +2430,35 @@ class LibraryWindow(QMainWindow):
                 if normal.isValid():
                     self.last_normal_size = QSize(normal)
 
+    def preload_ui(self, ready):
+        """Settle the initial artwork and layout before exposing the window."""
+        self.ensurePolished()
+        timer = QTimer(self)
+        timer.setInterval(16)
+        self.startup_timer = timer
+        def finish():
+            if (getattr(self, 'detail_art_tasks', []) or
+                    getattr(self.game_background, 'background_tasks', [])):
+                return
+            timer.stop()
+            self.game_background.background_fade.stop()
+            self.game_background.finish_background_fade()
+            self.fit_default_height = False
+            # Hidden widgets need explicit layout activation before measuring.
+            for widget in [self, *self.findChildren(QWidget)]:
+                if widget.layout() is not None:
+                    widget.layout().activate()
+            self.fit_content_height(False)
+            for widget in [self, *self.findChildren(QWidget)]:
+                if widget.layout() is not None:
+                    widget.layout().activate()
+            # Populate paint caches offscreen; the first visible frame is complete.
+            self.grab()
+            ready()
+            timer.deleteLater()
+        timer.timeout.connect(finish)
+        timer.start()
+
     def showEvent(self, event):
         super().showEvent(event)
         if hasattr(self, 'game_detection'):
@@ -2436,12 +2613,11 @@ class LibraryWindow(QMainWindow):
         self.list.setCurrentItem(item, QItemSelectionModel.SelectionFlag.NoUpdate)
         self.list.hide_hover_immediately(preserve_selected=True)
         games = self.selected_games()
-        actions = self.plugin_game_actions(games[0]) if len(games) == 1 else [
-            (plugin.name, actions) for plugin in self.generic_plugins
-            if (actions := plugin.batch_game_actions(self, games))]
+        from .readiness import grouped_actions, show_readiness
+        actions = self.plugin_game_actions(games[0]) if len(games) == 1 else grouped_actions(self.generic_plugins,self,games)
         from .installation_health import show_health
         if len(games) > 1:
-            actions.append(('Installation', [('Check installations…', lambda: show_health(self, games))]))
+            actions.append(('Installation', [('Ready to play…',lambda:show_readiness(self,games)),('Check installations…', lambda: show_health(self, games))]))
         menu = game_context_menu(self.list, self.edit_game if len(games) == 1 else None,
                                  lambda: self.delete_games(games), actions,
                                  (lambda: open_folder(games[0]['InstallDirectory']))
@@ -2498,6 +2674,12 @@ class LibraryWindow(QMainWindow):
             show_warning(self, 'Could not delete games', str(error))
             return
         self.games = remaining
+        for game in games:
+            for plugin in self.generic_plugins:
+                try:
+                    plugin.after_game_removed(self, copy.deepcopy(game))
+                except Exception as error:
+                    self.statusBar().showMessage(f'{plugin.name}: {error}', 15000)
         self.update_filter_choices()
         self.refresh_library()
 
@@ -2515,43 +2697,72 @@ class LibraryWindow(QMainWindow):
         if self.current['Id'] not in order:
             order = [self.current['Id']]
         position = order.index(self.current['Id'])
-        dialog = MetadataEditor(self.current, self.data, self)
-        dialog.set_game_navigation(position, len(order))
-        while run_dialog(dialog) == QDialog.DialogCode.Accepted:
+        shell = QDialog(self)
+        shell.setProperty('playliteLayoutReady', True)
+        body = QVBoxLayout(shell)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        state = {'editor': None}
+
+        def load(target, tab=0):
+            editor = MetadataEditor(target, self.data, self)
+            editor.set_game_navigation(position, len(order))
+            editor.setProperty('playliteLayoutReady', True)
+            editor.setWindowFlags(Qt.WindowType.Widget)
+            editor.setParent(shell)
+            editor.tabs.setCurrentIndex(tab)
+            editor.save_handler = persist
+            editor.rejected.connect(shell.reject)
+            old = state['editor']
+            if old is not None:
+                body.removeWidget(old)
+                old.hide()
+                old.cleanup_downloads()
+                old.deleteLater()
+            else:
+                shell.resize(editor.size())
+            state['editor'] = editor
+            shell.setWindowTitle(editor.windowTitle())
+            body.addWidget(editor)
+            editor.show()
+
+        def persist(offset):
+            nonlocal position
+            editor = state['editor']
             try:
-                save = lambda: save_game(self.data, self.games, dialog.result_game)
-                self.games = dialog.play_actions.save_with_removals(save) if hasattr(dialog, 'play_actions') else save()
+                save = lambda: save_game(self.data, self.games, editor.result_game)
+                self.games = editor.play_actions.save_with_removals(save) if hasattr(editor, 'play_actions') else save()
             except (OSError, ValueError) as error:
-                dialog.error.setText(f'Could not save game: {error}')
-                continue
-            for cache in dialog.download_caches:
+                editor.error.setText(f'Could not save game: {error}')
+                return
+            for cache in editor.download_caches:
                 cache.cleanup()
+            editor.download_caches.clear()
             for plugin in self.generic_plugins:
                 try:
-                    plugin.after_game_updated(self, dialog.result_game)
+                    plugin.after_game_updated(self, editor.result_game)
                 except Exception as error:
                     self.statusBar().showMessage(f"Could not update {plugin.name}: {error}", 10000)
-            offset = dialog.navigation_offset
-            if not offset:
-                self.update_filter_choices()
-                self.refresh_library()
-                break
-            position += offset
-            target = next((game for game in self.games if game['Id'] == order[position]), None)
-            if target is None:
-                self.update_filter_choices()
-                self.refresh_library()
-                break
-            geometry = dialog.saveGeometry()
-            tab = dialog.tabs.currentIndex()
-            dialog.deleteLater()
-            self.current = target
             self.update_filter_choices()
+            if not offset:
+                self.refresh_library()
+                shell.accept()
+                return
+            target_position = position + offset
+            target = next((game for game in self.games if game['Id'] == order[target_position]), None)
+            if target is None:
+                editor.error.setText('The adjacent game is no longer in the library.')
+                return
+            position = target_position
+            tab = editor.tabs.currentIndex()
+            self.current = target
             self.refresh_library()
-            dialog = MetadataEditor(target, self.data, self)
-            dialog.set_game_navigation(position, len(order))
-            dialog.restoreGeometry(geometry)
-            dialog.tabs.setCurrentIndex(tab)
+            load(target, tab)
+
+        load(self.current)
+        run_dialog(shell)
+        state['editor'].cleanup_downloads()
+        shell.deleteLater()
 
 
 def main():
@@ -2585,12 +2796,12 @@ def main():
     if not args.screenshot:
         lifecycle = TrayLifecycle(window, app)
         window.lifecycle = lifecycle
-    window.show()
-    if args.screenshot:
-        for _ in range(5):
-            app.processEvents()
-        window.grab().save(str(args.screenshot))
-    else:
-        if not window.settings.value('onboarding/completed', False, type=bool):
+    def reveal():
+        window.show()
+        if args.screenshot:
+            window.grab().save(str(args.screenshot))
+            app.quit()
+        elif not window.settings.value('onboarding/completed', False, type=bool):
             QTimer.singleShot(0, window.open_get_started)
-        sys.exit(app.exec())
+    window.preload_ui(reveal)
+    sys.exit(app.exec())

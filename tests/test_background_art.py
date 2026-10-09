@@ -20,6 +20,16 @@ class BackgroundAppearanceTests(unittest.TestCase):
                 rendered = prepare(str(image), 0, '#000000', darkness)
                 self.assertAlmostEqual(rendered.pixelColor(16, 16).red(), expected, delta=3)
 
+    def test_viewport_render_uses_display_resolution_without_blocky_grain(self):
+        with TemporaryDirectory() as directory:
+            source=Path(directory)/'background.png'
+            Image.new('RGB',(320,240),(80,120,160)).save(source)
+            rendered=prepare(str(source),2,'#000000',0,(2560,1440))
+            self.assertEqual((rendered.width(),rendered.height()),(2560,1920))
+            colours={rendered.pixelColor(x,y).rgb() for x,y in ((0,0),(128,128),(1000,700),(2559,1439))}
+            self.assertEqual(len(colours),1)
+            self.assertEqual(rendered.pixelColor(1000,700).red(),80)
+
     def test_darkening_save_cancel_and_reopen(self):
         with TemporaryDirectory() as directory:
             settings = QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat)

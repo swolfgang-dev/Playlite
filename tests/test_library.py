@@ -33,6 +33,58 @@ class QueryTests(unittest.TestCase):
 
 
 class LibraryControlsTests(unittest.TestCase):
+    def test_startup_waits_for_artwork_before_revealing_window(self):
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtGui import QPixmap, QColor
+        with TemporaryDirectory() as directory:
+            window = LibraryWindow(Path(directory))
+            try:
+                window.detail_art_tasks = [object()]
+                window.game_background.background_tasks = [object()]
+                next_frame = QPixmap(40, 40)
+                next_frame.fill(QColor('red'))
+                window.game_background.transition_background(next_frame)
+                shown = []
+                def reveal():
+                    shown.append(window.centralWidget().size())
+                    window.show()
+                window.preload_ui(reveal)
+                QTest.qWait(50)
+                self.assertFalse(window.isVisible())
+                window.detail_art_tasks.clear()
+                QTest.qWait(50)
+                self.assertFalse(window.isVisible())
+                window.game_background.background_tasks.clear()
+                QTest.qWait(50)
+                self.assertTrue(window.isVisible())
+                self.assertEqual(len(shown), 1)
+                self.assertEqual(window.centralWidget().size(), shown[0])
+                self.assertEqual(window.game_background.background_mix, 1.0)
+                self.assertFalse(window.fit_default_height)
+                self.assertTrue(window.toolbar_launch_settled)
+            finally:
+                window.close()
+
+    def test_status_messages_do_not_resize_the_content(self):
+        with TemporaryDirectory() as directory:
+            window = LibraryWindow(Path(directory))
+            try:
+                window.show()
+                self.app.processEvents()
+                status = window.statusBar()
+                self.assertTrue(status.isVisible())
+                self.assertGreater(status.height(), 0)
+                before = window.centralWidget().geometry()
+                status.showMessage('Operation completed')
+                self.app.processEvents()
+                self.assertEqual(window.centralWidget().geometry(), before)
+                status.clearMessage()
+                self.app.processEvents()
+                self.assertTrue(status.isVisible())
+                self.assertEqual(window.centralWidget().geometry(), before)
+            finally:
+                window.close()
+
     def test_styled_header_fits_at_card_breakpoint(self):
         from playlite.app import STYLE, ResponsiveContent
         from playlite.theme import set_style
@@ -474,6 +526,40 @@ class LibraryControlsTests(unittest.TestCase):
         self.assertLess(view.row_widths['a'], view.row_animations['a'].endValue())
         animation = view.row_animations['a']
         self.assertEqual(animation.duration(), 250)
+        host.close()
+
+    def test_expanded_rows_stay_within_faded_list_viewport(self):
+        from PyQt6.QtCore import QSize, Qt
+        from PyQt6.QtWidgets import QListWidgetItem, QWidget
+        from playlite.app import LibraryList
+        from playlite.scroll_fades import ContentFade
+        host = QWidget()
+        host.resize(700, 400)
+        view = LibraryList()
+        view.setParent(host)
+        view.setGeometry(0, 40, 88, 240)
+        view.compact_enabled = True
+        for index in range(10):
+            item = QListWidgetItem('')
+            item.setData(Qt.ItemDataRole.UserRole, {'Id': str(index), 'Name': 'Game title'})
+            item.setSizeHint(QSize(64, 66))
+            view.addItem(item)
+        host.show()
+        QApplication.processEvents()
+        view.animate_row('3', 220)
+        view.fit_compact_width()
+        layer = view.expansion_layer
+        viewport = view.viewport()
+        expected = host.mapFromGlobal(viewport.mapToGlobal(viewport.rect().topLeft()))
+        self.assertEqual(layer.y(), expected.y())
+        self.assertEqual(layer.height(), viewport.height())
+        self.assertLess(layer.geometry().bottom(), host.height() - 40)
+        self.assertIsInstance(layer.graphicsEffect(), ContentFade)
+        self.assertIsInstance(viewport.graphicsEffect(), ContentFade)
+        view.verticalScrollBar().setValue(33)
+        view.resize(88, 180)
+        QApplication.processEvents()
+        self.assertEqual(layer.height(), viewport.height())
         host.close()
 
     def test_library_width_persists_without_compact_overwrite(self):

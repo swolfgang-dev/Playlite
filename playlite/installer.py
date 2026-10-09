@@ -1,7 +1,7 @@
 """First-launch preferences and optional plugin setup."""
 import sys
 from pathlib import Path
-from PyQt6.QtCore import Qt, QThreadPool, QTimer, QSettings
+from PyQt6.QtCore import Qt, QThreadPool, QSettings
 from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QHBoxLayout, QTabWidget, QWidget, QFormLayout, QComboBox, QCheckBox, QLineEdit
 from .metadata_dialog import Task
 from .plugin_manager import available_plugins, install_plugins, installed_plugins, plugin_directory

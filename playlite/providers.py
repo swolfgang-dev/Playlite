@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import sys
-import hashlib
 from pathlib import Path
 
 
@@ -183,6 +182,14 @@ class GenericPlugin(Plugin):
         pass
 
     def prepare_add(self, editor, game, registration):
+        pass
+
+    def library_ready(self, window):
+        """The library window is ready for asynchronous initialization."""
+        pass
+
+    def after_game_removed(self, window, game):
+        """Observe a successfully removed library entry."""
         pass
 
     def after_game_updated(self, window, game):

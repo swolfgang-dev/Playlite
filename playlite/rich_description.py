@@ -25,7 +25,7 @@ def set_description_html(viewer, content):
     cursor.mergeCharFormat(formatting)
     # Imported paragraph margins and empty lines can otherwise leave large gaps.
     blank_format = QTextCharFormat()
-    blank_format.setProperty(QTextFormat.Property.FontPixelSize, 6)
+    blank_format.setProperty(QTextFormat.Property.FontPixelSize, 2)
     block = viewer.document().begin()
     while block.isValid():
         cursor = QTextCursor(block)
@@ -33,7 +33,7 @@ def set_description_html(viewer, content):
         spacing.setTopMargin(0)
         spacing.setBottomMargin(8 if block.text().strip() and block.next().isValid() else 0)
         if not block.text().strip():
-            spacing.setLineHeight(6, QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+            spacing.setLineHeight(2, QTextBlockFormat.LineHeightTypes.FixedHeight.value)
         cursor.setBlockFormat(spacing)
         # HTML <br> creates a line separator inside a paragraph, rather than a block.
         text = block.text()

@@ -44,8 +44,7 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(settings.value('app/defaultView'), 'list')
 
     def dialog(self):
-        with patch('playlite.installer.QTimer.singleShot'):
-            return InstallerDialog()
+        return InstallerDialog()
 
     def test_selected_plugins_only_and_post_install_setup(self):
         dialog=self.dialog()

@@ -3,7 +3,7 @@ import copy
 from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
-    QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog, QLabel, QCheckBox, QDialogButtonBox)
+    QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog, QLabel, QCheckBox, QDialogButtonBox, QToolButton)
 from .theme import set_style
 
 
@@ -54,18 +54,25 @@ class LaunchSettings(QWidget):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.fields = {}
+        advanced_rows = {}
         directory_defaults = directory_defaults or {}
         for key, title in [('Executable', 'Executable'), ('Prefix', 'Wine prefix'),
                            ('Arguments', 'Arguments'), ('InstallDirectory', 'Folder override')]:
             field = QLineEdit(str(action.get(key) or ''))
             field.setFixedHeight(40)
             self.fields[key] = field
+            field.setToolTip(field.text())
+            field.textChanged.connect(field.setToolTip)
             if key == 'InstallDirectory':
                 field.setPlaceholderText('Use the shared installation folder')
             if key == 'Arguments':
+                advanced_rows[key] = form.rowCount()
                 form.addRow(title, field)
                 continue
-            row = QHBoxLayout()
+            row_widget = QWidget()
+            row_widget.setMinimumHeight(40)
+            row = QHBoxLayout(row_widget)
+            row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(8)
             row.addWidget(field)
             browse = QPushButton('Browse…')
@@ -79,7 +86,23 @@ class LaunchSettings(QWidget):
                     field.setText(value)
             browse.clicked.connect(select)
             row.addWidget(browse)
-            form.addRow(title, row)
+            if key == 'InstallDirectory': advanced_rows[key] = form.rowCount()
+            form.addRow(title, row_widget)
+
+        advanced = QToolButton()
+        advanced.setText('Advanced launch settings')
+        advanced.setFixedHeight(32)
+        set_style(advanced, 'QToolButton { background: transparent; border: 0; padding: 4px 0; text-align: left; } QToolButton:hover, QToolButton:focus { color: #2196f3; }')
+        advanced.setCheckable(True)
+        advanced.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        form.addRow(advanced)
+        def expanded(visible):
+            advanced.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
+            for key in ('Arguments','InstallDirectory'):
+                form.setRowVisible(advanced_rows[key], visible)
+        advanced.toggled.connect(expanded)
+        visible=any(self.fields[key].text() for key in ('Arguments','InstallDirectory'))
+        advanced.setChecked(visible);expanded(visible)
 
     def collect(self):
         result = {key: field.text().strip() for key, field in self.fields.items()}
@@ -102,9 +125,10 @@ class ActionCard(QFrame):
         ''')
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(14)
+        layout.setSpacing(16)
         columns = QGridLayout()
-        columns.setHorizontalSpacing(20)
+        columns.setHorizontalSpacing(16)
+        columns.setVerticalSpacing(16)
         columns.setColumnStretch(0, 1)
         columns.setColumnStretch(1, 2)
         left = QWidget()
@@ -125,17 +149,22 @@ class ActionCard(QFrame):
         if selected:
             self.integration.setCurrentIndex(self.integration.findData(selected))
         self.game_id = QLineEdit(str(action.get('GameId') or ''))
-        for title, field in [('Name', self.name), ('Integration', self.integration), ('Game ID', self.game_id)]:
-            field.setFixedHeight(40)
-            form.addRow(title, field)
-        columns.addWidget(left, 0, 0, Qt.AlignmentFlag.AlignTop)
+        for field in (self.name,self.integration,self.game_id):field.setFixedHeight(40)
+        form.addRow('Name',self.name)
+        identity=QHBoxLayout();identity.setSpacing(8)
+        identity.addWidget(self.integration,3)
+        identity.addWidget(QLabel('Game ID'))
+        identity.addWidget(self.game_id,1)
+        form.addRow('Integration',identity)
+        columns.addWidget(left, 0, 0, 1, 2, Qt.AlignmentFlag.AlignTop)
         self.controls = QVBoxLayout()
         self.controls.setContentsMargins(0, 0, 0, 0)
         self.controls.setAlignment(Qt.AlignmentFlag.AlignTop)
-        columns.addLayout(self.controls, 0, 1)
+        columns.addLayout(self.controls, 1, 0, 1, 2)
         layout.addLayout(columns)
         self.settings = self.create_settings(action)
         self.controls.addWidget(self.settings)
+        self.align_form_labels()
         self.integration.currentIndexChanged.connect(self.change_integration)
         buttons = QHBoxLayout()
         buttons.addStretch()
@@ -156,6 +185,16 @@ class ActionCard(QFrame):
             buttons.addWidget(button)
         layout.addLayout(buttons)
 
+    def align_form_labels(self):
+        forms=self.findChildren(QFormLayout)
+        labels=[form.itemAt(row,QFormLayout.ItemRole.LabelRole).widget()
+                for form in forms for row in range(form.rowCount())
+                if form.itemAt(row,QFormLayout.ItemRole.LabelRole) is not None]
+        if labels:
+            width=max(label.sizeHint().width() for label in labels)
+            for label in labels:label.setFixedWidth(width)
+        for form in forms:form.setHorizontalSpacing(16)
+
     def create_settings(self, action):
         provider = next((p for p in self.editor.providers if p.id == self.integration.currentData()), None)
         return provider.create_action_editor(action, self) if provider else LaunchSettings(action, self)
@@ -169,6 +208,7 @@ class ActionCard(QFrame):
         self.settings.deleteLater()
         self.settings = self.create_settings(self.action)
         self.controls.addWidget(self.settings)
+        self.align_form_labels()
 
     def collect(self):
         action = dict(self.action)

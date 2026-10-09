@@ -61,8 +61,8 @@ def main(argv=None):
     data=base('XDG_DATA_HOME',home/'.local/share')/'playlite'
     if data.is_symlink():parser.error('Refusing to uninstall through a symlinked data directory.')
     config=base('XDG_CONFIG_HOME',home/'.config')
-    cache=base('XDG_CACHE_HOME',home/'.cache')
-    state=base('XDG_STATE_HOME',home/'.local/state')
+    base('XDG_CACHE_HOME',home/'.cache')
+    base('XDG_STATE_HOME',home/'.local/state')
     binary=base('PLAYLITE_BIN_DIR',home/'.local/bin')
     failures=[]
     def remove(path):

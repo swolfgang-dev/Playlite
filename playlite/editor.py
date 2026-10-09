@@ -1,20 +1,18 @@
 from .theme import set_style
-from .lifecycle import choose_file
 """Metadata editing for Playlite's local library."""
 from .lifecycle import run_dialog
 import copy
 from datetime import datetime
 from pathlib import Path
 import shutil
-import uuid
 
 from PyQt6.QtCore import Qt, QUrl, QSize
 from PyQt6.QtGui import QImageReader
 from PyQt6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
-    QTabWidget, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
-    QHeaderView, QAbstractItemView, QGridLayout, QComboBox, QStyle,
+    QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea,
+    QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QComboBox, QStyle,
 )
 
 from .metadata_dialog import MetadataDownloader
@@ -50,12 +48,12 @@ class MetadataEditor(QDialog):
         available = self.screen().availableGeometry()
         self.resize(min(1000, available.width() - 60), min(720, available.height() - 80))
         set_style(self, '''
-            QLineEdit, QPlainTextEdit, QTextEdit, QTableWidget {
+            QLineEdit, QPlainTextEdit, QTextEdit, QTableWidget, QSpinBox {
                 background: #2c2d2f; color: #e9e9e9;
                 border: 1px solid #404144; border-radius: 6px; padding: 8px;
                 selection-background-color: #48566c;
             }
-            QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QTableWidget:focus {
+            QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QTableWidget:focus, QSpinBox:focus {
                 border: 1px solid #879bb7;
             }
             QPushButton#compact { padding: 0; min-height: 36px; }
@@ -243,17 +241,18 @@ class MetadataEditor(QDialog):
         artwork_page = QWidget()
         artwork = QVBoxLayout(artwork_page)
         artwork.setContentsMargins(24, 24, 24, 24)
-        artwork.setSpacing(12)
-        tabs.addTab(artwork_page, 'Images')
+        artwork.setSpacing(16)
+        artwork_scroll = QScrollArea()
+        artwork_scroll.setWidgetResizable(True)
+        artwork_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        artwork_scroll.setWidget(artwork_page)
+        tabs.addTab(artwork_scroll, 'Images')
         self.artwork_layout = artwork
         artwork.addWidget(QLabel('Selected images are copied into Playlite when you save.'))
         download_images = QPushButton('Download images…')
         download_images.clicked.connect(self.download_images)
-        from .media import MediaCard
-        cards = QWidget()
-        grid = QGridLayout(cards)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(12)
+        from .media import MediaCard, ArtworkGrid
+        cards = ArtworkGrid()
         self.media_cards = {}
         for key, title, row, column, row_span, column_span, height in [
                 ('CoverImage', 'Cover', 0, 0, 2, 1, 440),
@@ -263,16 +262,10 @@ class MetadataEditor(QDialog):
             panel = MediaCard(title, str(data / game[key]) if game.get(key) else '', self, height)
             self.media[key] = panel.path
             self.media_cards[key] = panel
-            grid.addWidget(panel, row, column, row_span, column_span)
-        grid.setColumnStretch(0, 3)
-        grid.setColumnStretch(1, 2)
-        grid.setColumnStretch(2, 4)
-        grid.setRowStretch(0, 2)
-        grid.setRowStretch(1, 3)
-        artwork.addWidget(cards, 1)
+        cards.set_cards(self.media_cards)
+        artwork.addWidget(cards)
         folder = QPushButton('Open metadata folder')
         def open_folder():
-            from PyQt6.QtGui import QDesktopServices
             directory = self.data / 'artwork' / self.game['Id']
             directory.mkdir(parents=True, exist_ok=True)
             from .desktop import open_folder
@@ -282,6 +275,7 @@ class MetadataEditor(QDialog):
         folder_row.addWidget(folder, 0, Qt.AlignmentFlag.AlignLeft)
         folder_row.addStretch()
         artwork.addLayout(folder_row)
+        artwork.addStretch()
 
         installation = page('Installation')
         self.installation_form = installation
@@ -321,6 +315,9 @@ class MetadataEditor(QDialog):
         tabs.removeTab(2)
         tabs.insertTab(0, installation_page, 'Installation')
 
+        from .automation import add_editor
+        add_editor(self, page('Automation'))
+
         self.error = QLabel()
         self.error.setWordWrap(True)
         set_style(self.error, 'color: #ffaaaa;')
@@ -333,8 +330,8 @@ class MetadataEditor(QDialog):
         footer.addWidget(download)
         footer.addWidget(download_images)
         footer.addStretch()
-        self.previous_tab = QPushButton('Previous')
-        self.next_tab = QPushButton('Next')
+        self.previous_tab = QPushButton('Previous tab')
+        self.next_tab = QPushButton('Next tab')
         navigation_button_width = max(self.previous_tab.sizeHint().width(), self.next_tab.sizeHint().width())
         self.previous_tab.setFixedWidth(navigation_button_width)
         self.next_tab.setFixedWidth(navigation_button_width)
@@ -529,13 +526,10 @@ class MetadataEditor(QDialog):
     def add_link(self, name='', url=''):
         self.links.add(name, url)
 
-    def choose_image(self, field):
-        filename, _ = choose_file(self, 'Select artwork', '', 'Images (*.png *.jpg *.jpeg *.webp *.bmp);;All files (*)')
-        if filename:
-            field.setText(filename)
-
     def collect(self):
         result = copy.deepcopy(self.game)
+        from .automation import collect_editor
+        collect_editor(self, result)
         for key, _ in TEXT_FIELDS:
             result[key] = self.fields[key].text().strip()
         if not result['SortingName']:
@@ -623,7 +617,11 @@ class MetadataEditor(QDialog):
             self.error.setText(str(error))
             return
         self.navigation_offset = navigation_offset
-        self.accept()
+        handler = getattr(self, 'save_handler', None)
+        if handler is not None:
+            handler(navigation_offset)
+        else:
+            self.accept()
 
 
 def save_game(data, games, updated):

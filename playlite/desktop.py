@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 
-def open_folder(path):
+def host_environment():
     environment = os.environ.copy()
     if environment.get('PLAYLITE_PROFILE') == 'repo':
         environment['HOME'] = environment.get('PLAYLITE_HOST_HOME') or pwd.getpwuid(os.getuid()).pw_dir
@@ -15,5 +15,10 @@ def open_folder(path):
                 environment[key] = value
             else:
                 environment.pop(key, None)
+    return environment
+
+
+def open_folder(path):
+    environment = host_environment()
     subprocess.Popen(['xdg-open', str(Path(path).absolute())], env=environment,
                      start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

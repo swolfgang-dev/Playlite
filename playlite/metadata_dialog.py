@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
     QHeaderView, QCheckBox, QComboBox, QStackedWidget, QWidget, QSizePolicy, QTabWidget,
-    QRadioButton, QButtonGroup, QTextBrowser, QFormLayout, QScrollArea, QAbstractItemView,
+    QRadioButton, QButtonGroup, QTextBrowser, QScrollArea, QAbstractItemView,
 )
 from PyQt6.QtGui import QPixmap
 
@@ -132,10 +132,21 @@ class Task(QRunnable):
         self.signals = Signals()
 
     def run(self):
+        from PyQt6 import sip
         try:
-            self.signals.succeeded.emit(self.function())
+            value = self.function()
+            signal, payload = self.signals.succeeded, value
         except Exception as error:
-            self.signals.failed.emit(str(error))
+            if sip.isdeleted(self.signals):
+                return
+            signal, payload = self.signals.failed, str(error)
+        if not sip.isdeleted(self.signals):
+            try:
+                signal.emit(payload)
+            except RuntimeError:
+                # Qt can tear down signal objects while a worker finishes on exit.
+                if not sip.isdeleted(self.signals):
+                    raise
 
 
 LABELS = {'Icon': 'Icon', 'Name': 'Name', 'SortingName': 'Sorting name', 'Description': 'Short description', 'FullDescription': 'Description', 'Developers': 'Developers',
@@ -446,6 +457,7 @@ class MetadataDownloader(QDialog):
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.apply_button = self.buttons.button(QDialogButtonBox.StandardButton.Apply)
+        self.apply_button.setProperty('primary',True)
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self.apply)
         self.buttons.rejected.connect(self.reject)

@@ -7,7 +7,7 @@ import json
 from PyQt6.QtCore import QUrl, Qt, QItemSelectionModel
 from PyQt6.QtGui import QDesktopServices, QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (QMessageBox, QMenu, QCheckBox, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QToolButton,
-                             QPlainTextEdit, QFormLayout, QGridLayout, QFrame, QPushButton, QLabel, QLineEdit, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget, QSlider, QHBoxLayout, QColorDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
+                             QPlainTextEdit, QFormLayout, QGridLayout, QFrame, QPushButton, QLabel, QLineEdit, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget, QSlider, QHBoxLayout, QColorDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QListWidget, QListWidgetItem, QSplitter)
 from .theme import ROLES, BUILTIN_THEMES, palette, base_palette, apply as apply_theme
 from .image_filters import OPTIONS, defaults as image_filter_defaults, FilterChecks
 from .lifecycle import run_dialog
@@ -44,8 +44,9 @@ QScrollArea#settingsScroll QScrollBar,
 QScrollArea#settingsScroll QScrollBar::add-page,
 QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
 """)
-        available_height = self.screen().availableGeometry().height() - 80
-        self.resize(820, min(800, max(400, available_height)))
+        available = self.screen().availableGeometry()
+        available_height = available.height() - 80
+        self.resize(min(1120, max(320, available.width() - 48)), min(840, max(400, available_height)))
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
         self.tabs = tabs
@@ -200,6 +201,10 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             slider.valueChanged.connect(lambda value, label=value_label: label.setText(f'{value}%'))
             slider_field(label, slider, value_label, hint + ' · 0% opaque / 100% transparent')
             self.panel_transparency[key] = slider
+        self.readable_panels = QCheckBox('Keep text panels readable over artwork')
+        self.readable_panels.setChecked(settings.value('appearance/readablePanels', True, type=bool))
+        background.addWidget(self.readable_panels)
+        background.addWidget(self.hint('Limits game-panel transparency to 20%. Fully transparent panels remain available at 100%.'))
 
         from .providers import discover_plugins, ThemePlugin
         theme_row = QHBoxLayout()
@@ -266,8 +271,35 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.plugins = discover_plugins()
         plugins_page = QWidget()
         plugins_layout = QVBoxLayout(plugins_page)
+        plugins_layout.setContentsMargins(16, 16, 16, 16)
+        browser = QSplitter(Qt.Orientation.Horizontal)
+        browser.setChildrenCollapsible(False)
+        browser.setHandleWidth(8)
+        sidebar = QWidget()
+        sidebar.setMinimumWidth(160)
+        sidebar.setMaximumWidth(300)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        self.plugin_search = QLineEdit()
+        self.plugin_search.setPlaceholderText('Find a plugin…')
+        sidebar_layout.addWidget(self.plugin_search)
+        self.plugin_list = QListWidget()
+        self.plugin_list.setMinimumWidth(160)
+        self.plugin_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.plugin_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sidebar_layout.addWidget(self.plugin_list)
+        browser.addWidget(sidebar)
         self.plugin_tabs = QTabWidget()
-        plugins_layout.addWidget(self.plugin_tabs)
+        self.plugin_tabs.tabBar().hide()
+        self.plugin_tabs.setDocumentMode(True)
+        set_style(self.plugin_tabs, "QTabWidget::pane { border: 0; }")
+        browser.addWidget(self.plugin_tabs)
+        browser.setStretchFactor(0, 0)
+        browser.setStretchFactor(1, 1)
+        browser.setSizes([200, 820])
+        self.plugin_browser = browser
+        plugins_layout.addWidget(browser, 1)
+        self.plugin_pages = {}
         installed_page = QWidget()
         installed_layout = QVBoxLayout(installed_page)
         installed_layout.setContentsMargins(16, 16, 16, 16)
@@ -276,12 +308,13 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         installed_layout.addWidget(self.installed_status)
         self.installed_plugins = QTableWidget(0, 5)
         self.installed_plugins.setHorizontalHeaderLabels(['Plugin', 'Version', 'Type', 'Status', 'Plugin ID'])
+        self.installed_plugins.setColumnHidden(4,True)
         self.installed_plugins.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.configure_plugin_table(self.installed_plugins)
         self.installed_plugins.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.installed_plugins.customContextMenuRequested.connect(self.installed_plugin_context_menu)
         self.installed_plugins.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self.installed_plugins.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.installed_plugins.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.refresh_installed_plugins()
         installed_layout.addWidget(self.installed_plugins, 1)
         self.installed_plugin_details = self.operation_log(rows=3)
@@ -333,10 +366,12 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             area.setWidgetResizable(True)
             page = QWidget()
             sections = QVBoxLayout(page)
-            sections.setSpacing(14)
-            heading = QLabel('General settings')
+            sections.setContentsMargins(16, 16, 16, 16)
+            sections.setSpacing(24)
+            heading = QLabel('Default artwork searches' if kind == 'metadata' else kind_title)
             set_style(heading, 'font-weight: bold;')
             sections.addWidget(heading)
+            heading.hide()
             shared = QWidget()
             form = QFormLayout(shared)
             form.setContentsMargins(0, 0, 0, 0)
@@ -376,12 +411,12 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                         self.image_filter_defaults[key][name] = selector
                         grid.addWidget(selector, row, column, Qt.AlignmentFlag.AlignTop)
                 form.addRow(table)
-                # Include both tab frames, page margins and the vertical scrollbar.
-                required_width = table.minimumSizeHint().width() + 100
-                available_width = self.screen().availableGeometry().width() - 40
+                # Include navigation, page margins and the vertical scrollbar.
+                required_width = table.minimumSizeHint().width() + 320
+                available_width = self.screen().availableGeometry().width() - 48
                 self.resize(min(max(self.width(), required_width), available_width), self.height())
             else:
-                form.addRow(QLabel('Settings for these plugins are configured individually below.'))
+                shared.hide()
             sections.addWidget(shared)
             from .manual_installation import ManualInstallation
             candidates = list(self.plugins.values()) + ([ManualInstallation()] if kind == 'installation' else [])
@@ -408,6 +443,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 separator = QFrame()
                 separator.setFrameShape(QFrame.Shape.HLine)
                 sections.addWidget(separator)
+                separator.hide()
                 header = QToolButton()
                 header.setText(plugin.name)
                 header.setCheckable(True)
@@ -417,6 +453,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 set_style(header, 'text-align: left; font-weight: bold; padding: 8px;')
                 sections.addWidget(header)
+                header.hide()
                 content = QWidget()
                 content.hide()
                 content_layout = QVBoxLayout(content)
@@ -427,6 +464,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                     header.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
                 header.toggled.connect(toggle_section)
                 self.plugin_sections[plugin.id] = (header, content)
+                self.plugin_pages[plugin.id] = (kind, heading, shared, plugin.name)
                 sections.addWidget(content)
                 for method in add_methods:
                     checkbox = QCheckBox('Use as default installation method')
@@ -452,15 +490,58 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             sections.addStretch()
             area.setWidget(page)
             self.plugin_tabs.addTab(area, kind_title)
+        for title, data in [('Installed plugins', ('tab', 0)), ('Find new plugins', ('tab', 1)),
+                            ('Artwork search defaults', ('defaults', 3))]:
+            item = QListWidgetItem(title)
+            item.setData(Qt.ItemDataRole.UserRole, data)
+            self.plugin_list.addItem(item)
+        for identity, (kind, heading, shared, name) in sorted(self.plugin_pages.items(), key=lambda pair: pair[1][3].casefold()):
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, ('plugin', identity))
+            item.setToolTip(name)
+            self.plugin_list.addItem(item)
+        def selected_plugin(current, previous=None):
+            if current is None: return
+            mode, value = current.data(Qt.ItemDataRole.UserRole)
+            for identity, (header, content) in self.plugin_sections.items():
+                header.setChecked(mode == 'plugin' and identity == value)
+                header.hide()
+                content.setVisible(mode == 'plugin' and identity == value)
+            for kind, heading, shared, name in self.plugin_pages.values():
+                heading.setVisible(mode == 'defaults' and kind == 'metadata')
+                shared.setVisible(mode == 'defaults' and kind == 'metadata')
+            if mode == 'plugin':
+                kind, heading, shared, name = self.plugin_pages[value]
+                self.plugin_tabs.setCurrentIndex({'generic': 2, 'metadata': 3, 'installation': 4}[kind])
+                heading.setText(name)
+                heading.show()
+                # Ensure other headings sharing this category stay hidden.
+            else:
+                self.plugin_tabs.setCurrentIndex(value)
+        self.plugin_list.currentItemChanged.connect(selected_plugin)
+        def filter_plugins(text):
+            for index in range(self.plugin_list.count()):
+                item = self.plugin_list.item(index)
+                item.setHidden(text.casefold() not in item.text().casefold())
+            current = self.plugin_list.currentItem()
+            if current is None or current.isHidden():
+                first = next((self.plugin_list.item(i) for i in range(self.plugin_list.count())
+                              if not self.plugin_list.item(i).isHidden()), None)
+                if first is not None: self.plugin_list.setCurrentItem(first)
+        self.plugin_search.textChanged.connect(filter_plugins)
+        self.plugin_list.setCurrentRow(0)
         self.plugins_directory = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite/plugins'
         folder = QPushButton('Open plugins folder')
         folder.clicked.connect(self.open_plugins_folder)
-        plugins_layout.addWidget(folder)
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(folder)
+        folder_row.addStretch()
+        plugins_layout.addLayout(folder_row)
         tabs.addTab(plugins_page, 'Plugins')
         self.setMinimumSize(700, 380)
         if metadata:
             tabs.setCurrentWidget(plugins_page)
-            self.plugin_tabs.setCurrentIndex(3)
+            self.plugin_list.setCurrentRow(2)
         self.error = QLabel()
         self.error.setWordWrap(True)
         layout.addWidget(self.error)
@@ -1161,6 +1242,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.settings.setValue('app/closeToTray', self.close_to_tray.isChecked())
         self.settings.setValue('appearance/backgroundBlur', self.background_blur.value() / 10)
         self.settings.setValue('appearance/backgroundDarken', self.background_darken.value())
+        self.settings.setValue('appearance/readablePanels', self.readable_panels.isChecked())
         for key, slider in self.panel_transparency.items():
             self.settings.setValue(f'appearance/{key}', slider.value())
         self.settings.setValue('appearance/theme', self.theme_source.currentData())

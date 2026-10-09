@@ -1,6 +1,6 @@
 from pathlib import Path
 from PyQt6.QtCore import Qt, QSettings
-from PyQt6.QtWidgets import QWidget, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QFormLayout, QLineEdit, QPushButton, QHBoxLayout
 from playlite.providers import InstallationPlugin
 from playlite.lifecycle import choose_file, choose_directory
 

@@ -1,5 +1,5 @@
 """Shared checkbox filters and migration of saved image search defaults."""
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QCheckBox, QPushButton, QMenu, QWidgetAction
 from .theme import set_style
 from .ui_style import CHEVRON

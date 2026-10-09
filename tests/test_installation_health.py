@@ -23,10 +23,32 @@ class HealthTests(unittest.TestCase):
         self.exe.unlink()
         self.assertIn('Executable is missing', '\n'.join(check_action(self.game, self.action, [self.provider])['issues']))
 
-    def test_missing_prefix_and_unavailable_integration_are_reported(self):
+    def test_missing_managed_prefix_does_not_block_launch(self):
         (self.prefix / 'drive_c').rmdir(); self.prefix.rmdir()
-        self.assertIn('prefix is missing', '\n'.join(check_action(self.game, self.action, [self.provider])['issues']))
+        result = check_action(self.game, self.action, [self.provider])
+        self.assertFalse(result['issues'])
+        self.assertIn('will create the prefix', '\n'.join(result['checked']))
+        self.assertFalse(self.prefix.exists())
         self.assertTrue(check_action(self.game, self.action, [])['issues'])
+
+    def test_steam_can_create_missing_prefix_and_lutris_can_initialize_empty_one(self):
+        (self.prefix / 'drive_c').rmdir()
+        self.assertFalse(check_action(self.game, self.action, [self.provider])['issues'])
+        self.prefix.rmdir()
+        steam = SimpleNamespace(id='SteamIntegration')
+        action = dict(self.action, Integration='SteamIntegration')
+        self.assertFalse(check_action(self.game, action, [steam])['issues'])
+        self.assertFalse(self.prefix.exists())
+
+    def test_invalid_prefix_paths_still_block_launch(self):
+        (self.prefix / 'drive_c').rmdir(); self.prefix.rmdir()
+        self.prefix.write_text('not a prefix directory')
+        self.assertIn('not a directory', '\n'.join(check_action(self.game, self.action, [self.provider])['issues']))
+        provider = SimpleNamespace(id='OtherIntegration')
+        action = dict(self.action, Integration=provider.id, Prefix='relative/prefix')
+        self.assertIn('absolute path', '\n'.join(check_action(self.game, action, [provider])['issues']))
+        action['Prefix'] = str(self.root / 'missing-prefix')
+        self.assertIn('prefix is missing', '\n'.join(check_action(self.game, action, [provider])['issues']))
 
     def test_vm_and_native_launchers_do_not_require_host_wine_configuration(self):
         vm = dict(self.action, IsVM=True)

@@ -2,6 +2,8 @@
 from pathlib import Path
 import re
 import sqlite3
+import shutil
+import os
 from .play_actions import actions_for
 
 
@@ -19,6 +21,14 @@ def check_action(game, action, providers, downloads=None):
             checked.append('Lutris configuration is readable.')
         except (OSError, ValueError, sqlite3.Error) as error:
             issues.append('Could not read the Lutris configuration: ' + str(error))
+    if config.get('runner'):
+        runner=config['runner']; version=(config.get('wine') or {}).get('version')
+        checked.append('Runner: '+runner+(' / '+version if version else ''))
+        if runner=='wine' and version=='system' and not shutil.which('wine'):
+            issues.append('The selected system Wine executable is unavailable.')
+        custom=(config.get('wine') or {}).get('custom_wine_path')
+        if runner=='wine' and version=='custom' and custom and not (Path(custom).is_file() and os.access(custom,os.X_OK)):
+            issues.append('The custom Wine executable is missing or not executable: '+custom)
     values = config.get('game') or {}
     prefix = values.get('prefix') or action.get('Prefix') or ''
     directory = values.get('working_dir') or action.get('InstallDirectory') or game.get('InstallDirectory') or ''
@@ -31,9 +41,17 @@ def check_action(game, action, providers, downloads=None):
                 issues.append('Download is not complete: ' + row.name + ' (' + row.state + ')')
     if prefix:
         path = Path(prefix).expanduser()
-        if not path.is_dir(): issues.append('Wine/Proton prefix is missing: ' + str(path))
+        managed = action.get('Integration') in ('LutrisIntegration', 'SteamIntegration')
+        if not path.is_absolute():
+            issues.append('Wine/Proton prefix must be an absolute path: ' + str(path))
+        elif (path.exists() or path.is_symlink()) and not path.is_dir():
+            issues.append('Wine/Proton prefix path is not a directory: ' + str(path))
+        elif not path.is_dir():
+            if managed: checked.append('The integration will create the prefix on launch: ' + str(path))
+            else: issues.append('Wine/Proton prefix is missing: ' + str(path))
         elif (config.get('runner') == 'wine' or str(executable).lower().endswith('.exe')) and not (path / 'drive_c').is_dir():
-            issues.append('Wine prefix has no drive_c directory: ' + str(path))
+            if managed: checked.append('The integration will initialize the prefix on launch: ' + str(path))
+            else: issues.append('Wine prefix has no drive_c directory: ' + str(path))
         else: checked.append('Prefix exists: ' + str(path))
     if directory:
         path = Path(directory).expanduser()

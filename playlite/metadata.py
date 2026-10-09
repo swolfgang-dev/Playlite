@@ -1,13 +1,11 @@
 """Shared metadata, links, dates, and artwork utilities."""
 from datetime import datetime
-import html
 import json
 from pathlib import Path
-import re
 import urllib.parse
 import urllib.request
-from .sorting_name import sorting_name
-from .description_html import without_images
+from .sorting_name import sorting_name as sorting_name
+from .description_html import without_images as without_images
 
 
 class MetadataError(Exception):

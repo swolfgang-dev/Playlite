@@ -3,8 +3,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import uuid
 import json
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QEvent, QVariantAnimation, QEasingCurve, Qt, QUrl, QSize, QPoint
-from PyQt6.QtGui import QDesktopServices, QColor, QIcon
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QEvent, QVariantAnimation, QEasingCurve, Qt, QSize, QPoint
+from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import QFrame, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QProgressBar, QMessageBox, QGraphicsOpacityEffect
 from .theme import set_style, colour
 from .desktop import open_folder
@@ -412,7 +412,6 @@ class DownloadsPanel(QFrame):
         self.pause_all_button.setText('Resume all' if resume else 'Pause all')
         self.pause_all_button.setEnabled(not self.queue.stopped and (self.queue.paused_all or running or any(row.state=='Paused' and callable(row.factory) for row in self.queue.entries)))
         queued=sum(row.state=='Queued' for row in self.queue.entries)
-        waiting=[row for row in self.queue.entries if row.state=='Queued']
         active=self.queue.active or next((row for row in self.queue.ordered() if row.state in ('Downloading','Queued','Paused')),None)
         previous=next((row for row in self.queue.entries if row.id==self.pinned_id),None)
         if previous and previous.state=='Complete' and previous.id not in self.completed_shown:

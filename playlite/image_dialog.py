@@ -191,6 +191,8 @@ class ImageDownloader(QDialog):
         self.load_more_button.hide()
         self.load_more_button.clicked.connect(lambda: self.load_images(more=True))
         self.apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
+        self.apply_button.setProperty('primary',True)
+        self.apply_button.setText('Use selected image')
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)

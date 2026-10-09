@@ -3,10 +3,9 @@ from .lifecycle import ask_text
 from .lifecycle import run_dialog
 import csv
 import io
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QInputDialog,
-                             QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget, QMenu)
+from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget, QMenu)
 
 
 class ListField(QWidget):

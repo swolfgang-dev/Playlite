@@ -171,6 +171,8 @@ def stylesheet(template):
         rgb = QColor(default)
         pattern = rf'rgba\({rgb.red()},\s*{rgb.green()},\s*{rgb.blue()},\s*(\d+)\)'
         result = re.sub(pattern, lambda match: rgba(default, int(match[1])), result)
+    accent = QColor(colour('accent'))
+    result = result.replace('@accent_text', '#151515' if accent.lightnessF() > .55 else '#ffffff')
     return re.sub(r'url\(["\']?([^()"\']+\.svg)["\']?\)',
                   lambda match: f'url("{themed_asset(match[1])}")' if Path(match[1]).is_file() else match[0], result)
 

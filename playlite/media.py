@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 from PyQt6.QtCore import Qt, QUrl, QEvent
 from PyQt6.QtGui import QDesktopServices, QImageReader, QPixmap
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QSizePolicy
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QSizePolicy, QWidget, QGridLayout
 from .lifecycle import choose_file, ask_text
 from .metadata_dialog import Task
 from PyQt6.QtCore import QThreadPool
@@ -20,12 +20,14 @@ class MediaCard(QFrame):
         self.setObjectName('mediaCard')
         set_style(self, 'QFrame#mediaCard { background: #1d1e20; border-radius: 12px; }')
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
         heading = QLabel(title)
         set_style(heading, 'font-weight: bold;')
         layout.addWidget(heading)
         actions = QHBoxLayout()
         self.actions = actions
+        actions.setSpacing(8)
         for text, tooltip, handler in [('+', 'Choose image file', self.browse),
                                         ('↗', 'Download image from URL', self.from_url),
                                         ('×', 'Remove image', self.clear),
@@ -42,7 +44,7 @@ class MediaCard(QFrame):
         layout.addWidget(self.dimensions)
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumHeight(0)
+        self.preview.setMinimumHeight({'Cover': 280, 'Icon': 112, 'Header': 112, 'Background': 176}.get(title,112))
         self.preview.setMaximumHeight(preview_height)
         self.preview.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.preview.installEventFilter(self)
@@ -113,3 +115,39 @@ class MediaCard(QFrame):
         self.task.signals.failed.connect(lambda error: self.editor.error.setText('Could not download image. Check the URL and try again.'))
         self.editor.error.setText('Downloading image…')
         QThreadPool.globalInstance().start(self.task)
+
+
+class ArtworkGrid(QWidget):
+    """Reflow artwork cards without squeezing their preview areas to tiny strips."""
+    def __init__(self):
+        super().__init__()
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Maximum)
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(0,0,0,0)
+        self.grid.setSpacing(16)
+        self.cards = {}
+        self.columns = None
+
+    def set_cards(self, cards):
+        self.cards = cards
+        self.arrange()
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        self.arrange()
+
+    def arrange(self):
+        if not self.cards:return
+        columns = 3 if self.width() >= 820 else 2 if self.width() >= 540 else 1
+        if columns == self.columns:return
+        self.columns = columns
+        for card in self.cards.values():self.grid.removeWidget(card)
+        for column in range(3):self.grid.setColumnStretch(column,1 if column < columns else 0)
+        for row in range(4):self.grid.setRowStretch(row,0)
+        if columns == 3:
+            positions = [('CoverImage',0,0,2,1),('Icon',0,1,1,1),('HeaderImage',0,2,1,1),('BackgroundImage',1,1,1,2)]
+        elif columns == 2:
+            positions = [('CoverImage',0,0,2,1),('Icon',0,1,1,1),('HeaderImage',1,1,1,1),('BackgroundImage',2,0,1,2)]
+        else:
+            positions = [(key,row,0,1,1) for row,key in enumerate(('CoverImage','Icon','HeaderImage','BackgroundImage'))]
+        for key,row,column,rows,cols in positions:self.grid.addWidget(self.cards[key],row,column,rows,cols)

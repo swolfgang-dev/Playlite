@@ -1,11 +1,8 @@
 from .lifecycle import choose_file
 """Manual library entries and add-game method selection."""
-import json
-import os
 import sqlite3
 import uuid
 from pathlib import Path
-from PyQt6.QtCore import QProcess, QTimer
 from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
 from .editor import MetadataEditor
 ROOT = Path.home() / 'Games'

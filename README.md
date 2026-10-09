@@ -112,3 +112,17 @@ Plugin manifests can declare dependencies on other plugins using `plugin_depende
 GitHub installation installs or updates required plugins first and reports dependencies in its progress output. Local archives require dependencies to be installed already. Disabled dependencies must be enabled explicitly. Circular dependencies and conflicting repository identities are rejected; plugins with unsatisfied dependencies are not loaded.
 
 Use **Playlite menu → Background tasks…** to inspect downloads and supported plugin jobs, copy logs, cancel downloads, or retry available tasks. History survives restarts; unfinished work is marked interrupted. **Check library installations…** and the game Installation menu check explicit launch paths and readable Lutris Wine configurations. These checks do not verify Steam file hashes. Missing configured paths prevent launching until corrected.
+
+Per-game commands are available in **Edit → Automation**. Enable automation and enter Bash commands before launch, after launch or after exit. Before-launch commands must succeed before the selected play action starts. Exit commands use the settings captured at launch, wait for after-launch work, and finish before plugin exit hooks such as save backup. External game sessions do not run these commands. Playlite must remain running and the integration must support game-exit detection for after-exit commands. Set a timeout; view output or cancel running commands through **Background tasks…**. Commands run on the host, including when the selected action uses a VM. Saving or cancelling the editor never executes a command.
+
+Commands run in the selected action's installation folder when available and receive `PLAYLITE_GAME_NAME`, `PLAYLITE_GAME_ID`, `PLAYLITE_INSTALL_DIR`, `PLAYLITE_PREFIX` and `PLAYLITE_ACTION_NAME`. Use quoted variables for paths. To start a companion app without waiting for its window to close, append `&`; its cleanup can be handled by an after-exit command. Playlite does not automatically stop successfully started companion apps.
+
+Dialog layouts share a 24-pixel outer margin, 16-pixel card padding, 12-pixel
+form-row spacing, and 8-pixel action spacing. Plugin dialogs receive the same
+layout conventions through the application style. Tall forms keep their action
+footer outside the scrolling body. Settings → Plugins uses searchable navigation.
+
+Background artwork is prepared at display resolution in a worker, preserving the
+complete image. Resizing uses the same frame; game changes crossfade without a blank
+intermediate background. Appearance → Keep text panels readable over artwork limits
+partial game-panel transparency to 20%; switch it off to use the exact slider value.

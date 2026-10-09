@@ -50,3 +50,5 @@ class ApplicationStyle(QProxyStyle):
 
 def configure(app):
     app.setStyle(ApplicationStyle())
+    from .ui_layout import install
+    install(app)
