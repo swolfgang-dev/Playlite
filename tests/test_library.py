@@ -33,6 +33,34 @@ class QueryTests(unittest.TestCase):
 
 
 class LibraryControlsTests(unittest.TestCase):
+    def test_styled_header_fits_at_card_breakpoint(self):
+        from playlite.app import STYLE, ResponsiveContent
+        from playlite.theme import set_style
+        previous = self.app.styleSheet()
+        set_style(self.app, STYLE)
+        try:
+            with TemporaryDirectory() as directory:
+                data = Path(directory)
+                (data / 'library.json').write_text(json.dumps([{'Id': str(i), 'Name': f'Game {i}'} for i in range(24)]))
+                window = LibraryWindow(data)
+                try:
+                    window.show()
+                    toolbar = window.count.parentWidget()
+                    area = toolbar.parentWidget().parentWidget()
+                    for width in (960, 720, ResponsiveContent.columns_breakpoint):
+                        window.resize(width, 800)
+                        self.app.processEvents()
+                        self.assertEqual(area.horizontalScrollBar().maximum(), 0)
+                        self.assertLessEqual(toolbar.minimumSizeHint().width(), width)
+                    window.resize(500, 800)
+                    self.app.processEvents()
+                    self.assertGreater(area.horizontalScrollBar().maximum(), 0)
+                finally:
+                    window.game_detection.stop()
+                    window.close()
+        finally:
+            set_style(self.app, previous)
+
     def test_downloads_follow_count_and_multiple_selection_updates_count(self):
         with TemporaryDirectory() as directory:
             data = Path(directory)
@@ -281,8 +309,8 @@ class LibraryControlsTests(unittest.TestCase):
             window.filter_animation.setCurrentTime(240)
             self.assertEqual(window.list.verticalScrollBarPolicy(), Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             genre = window.filter_controls['Genres']
-            genre.setCurrentIndex(genre.findData('RPG'))
-            self.assertEqual(window.active_filters['Genres'], 'RPG')
+            genre.set_values(['RPG'])
+            self.assertEqual(window.active_filters['Genres'], ['RPG'])
             window.filter_button.customContextMenuRequested.emit(QPoint())
             self.assertFalse(any(window.active_filters.values()))
             window.set_filters_expanded(False)
@@ -515,7 +543,7 @@ class LibraryControlsTests(unittest.TestCase):
             window.view.setCurrentIndex(window.view.findData('grid'))
             self.assertEqual(window.list.viewMode(), QListView.ViewMode.IconMode)
             self.assertEqual(window.current['Id'], selected)
-            window.filter_controls['Genres'].setCurrentIndex(window.filter_controls['Genres'].findData('RPG'))
+            window.filter_controls['Genres'].set_values(['RPG'])
             self.assertEqual(window.list.count(), 2)
             window.sort.setCurrentIndex(window.sort.findData('Playtime'))
             window.order.click()

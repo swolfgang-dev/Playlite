@@ -348,3 +348,9 @@ Each entry uses `artwork`, `shape`, and `resolution` lists with values from
 initial provider. Installation seeds preferences only when they are unset;
 updates and additional installations preserve explicit user choices. Installed
 plugin declarations also supply defaults for profiles without saved preferences.
+
+### Game exit hooks
+
+Generic plugins can implement `after_launch(window, game, action)` to capture a successfully launched play action and `after_game_stopped(window, game, action)` to observe a confirmed session end. Both run on the UI thread and must queue slow work. `action` is a snapshot of the chosen play action, or `None` for a game launched outside Playlite. Closing Playlite records playtime without firing the exit hook. Exceptions from either hook are logged and do not disrupt launching or other plugins.
+
+The optional Ludusavi Save Backup plugin uses these hooks to back up host Steam/Lutris game saves through the Ludusavi Flatpak or a native executable. It snapshots the selected prefix and isolates scan roots, backs up locally using Ludusavi’s destination/retention, and only uploads automatically when the previous cloud backup is consistent with the local copy. Conflicts require resolution in Ludusavi. Per-game title/prefix overrides and automatic-backup settings appear on Installation; the game menu provides manual backup, status/retry, and access to Ludusavi for restore/custom save locations.

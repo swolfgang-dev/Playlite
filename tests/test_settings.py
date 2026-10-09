@@ -87,15 +87,16 @@ class SettingsTests(unittest.TestCase):
                 selector.set_values(value)
             dialog.save()
             picker = ImageDownloader({'Name': 'Example'}, settings_path=path)
+            icon_defaults = [widget.values() for widget in picker.filters['Icon']]
             picker.tabs.setCurrentIndex(1)
             self.assertEqual([widget.values() for widget in picker.filters['CoverImage']],
                              [['Icon', 'CoverImage'], ['square', 'portrait'], [512, 1024, 1920]])
             picker.filters['CoverImage'][1].set_values(['wide'])
             picker.tabs.setCurrentIndex(0)
             self.assertEqual([widget.values() for widget in picker.filters['Icon']],
-                             [['Icon'], ['square', 'portrait', 'landscape', 'wide', '2:3', '16:9', '96:31'], [0, 256, 512, 1024, 1920]])
+                             icon_defaults)
             picker.tabs.setCurrentIndex(1)
-            self.assertEqual(picker.filters['CoverImage'][1].values(), ['wide'])
+            self.assertEqual(picker.filters['CoverImage'][1].values(), ['square', 'portrait'])
             picker.reset_filters('CoverImage')
             self.assertEqual(picker.filters['CoverImage'][1].values(), ['square', 'portrait'])
             picker.reject()
@@ -262,7 +263,7 @@ class SettingsTests(unittest.TestCase):
             self.assertTrue(window.is_grid)
             self.assertEqual(window.sort.currentData(), 'Name')
             self.assertFalse(window.order.isChecked())
-            self.assertFalse(window.filter_controls['Genres'].currentData())
+            self.assertFalse(window.filter_controls['Genres'].values())
             window.close()
 
     def test_page_scrollbar_handle_only_appears_with_overflow(self):

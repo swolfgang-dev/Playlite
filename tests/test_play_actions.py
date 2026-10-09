@@ -105,6 +105,31 @@ class PlayActionTests(unittest.TestCase):
             reopened.reject()
             editor.reject()
 
+    def test_double_click_and_button_follow_available_play_actions(self):
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            game = dict(self.game, PlayActions=[])
+            (data / 'library.json').write_text(json.dumps([game]))
+            window = LibraryWindow(data)
+            item = window.list.item(0)
+            window.list.setCurrentItem(item)
+            self.assertFalse(window.play_button.isEnabled())
+            window.game_status_changed(game['Id'], 'Stopped')
+            self.assertFalse(window.play_button.isEnabled())
+            with patch.object(window, 'play_game') as launch:
+                window.list.itemDoubleClicked.emit(item)
+                launch.assert_not_called()
+                window.current['PlayActions'] = [dict(Name='Play', Integration='LutrisIntegration', GameId='42')]
+                window.game_status_changed(game['Id'], 'Stopped')
+                self.assertTrue(window.play_button.isEnabled())
+                window.list.itemDoubleClicked.emit(item)
+                launch.assert_called_once()
+                launch.reset_mock()
+                with patch.object(window.game_detection, 'status', return_value='Running'):
+                    window.list.itemDoubleClicked.emit(item)
+                launch.assert_not_called()
+            window.close()
+
     def test_play_picker_launches_selected_action_and_cancel_does_not_launch(self):
         with TemporaryDirectory() as directory:
             data = Path(directory)

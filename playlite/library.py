@@ -4,9 +4,9 @@ from datetime import datetime
 SORT_FIELDS = [('Name', 'Name'), ('ReleaseDate', 'Release date'), ('Developers', 'Developer'),
                ('Publishers', 'Publisher'), ('Added', 'Date added'), ('LastActivity', 'Last played'),
                ('Playtime', 'Playtime'), ('UserScore', 'User score')]
-FILTER_FIELDS = [('Genres', 'Genre'), ('Platforms', 'Platform'), ('Features', 'Feature'),
-                 ('Developers', 'Developer'), ('Publishers', 'Publisher'),
-                 ('Source', 'Source'), ('CompletionStatus', 'Completion status'), ('ReleaseDate', 'Release date')]
+FILTER_FIELDS = [('Genres', 'Genres'), ('Platforms', 'Platforms'), ('Features', 'Features'),
+                 ('Developers', 'Developers'), ('Publishers', 'Publishers'),
+                 ('Source', 'Sources'), ('CompletionStatus', 'Completion statuses'), ('ReleaseDate', 'Release dates')]
 
 
 def values(game, field):
@@ -16,6 +16,28 @@ def values(game, field):
     if field == 'Platforms' and value is None:
         return ['PC (Windows)']
     return value if isinstance(value, list) else ([value] if value else [])
+
+
+def filter_values(game, field):
+    """Use assigned metadata and launch integrations; None means no assignment."""
+    if field == 'Source':
+        actions = game.get('PlayActions')
+        if 'PlayActions' not in game:
+            actions = [{'Integration': game.get('GameProvider')}]
+        return list(dict.fromkeys(action['Integration'] for action in actions or []
+                                  if isinstance(action, dict) and action.get('Integration')))
+    value = game.get(field)
+    if field == 'ReleaseDate' and isinstance(value, dict):
+        value = value.get('ReleaseDate')
+    return [item for item in (value if isinstance(value, list) else [value]) if item not in (None, '')]
+
+
+def matches_filter(game, field, selected):
+    if not selected:
+        return True
+    selected = selected if isinstance(selected, list) else [selected]
+    available = filter_values(game, field)
+    return any((not available) if value is None else value in available for value in selected)
 
 
 def sort_value(game, field):
@@ -45,11 +67,13 @@ def query_games(games, search='', filters=None, sort='Name', descending=False):
     for game in games:
         if search.strip().casefold() not in game['Name'].casefold():
             continue
-        if any(selected and selected not in values(game, field)
+        if any(not matches_filter(game, field, selected)
                for field, selected in filters.items() if field in dict(FILTER_FIELDS)):
             continue
         installed = filters.get('Installed', '')
-        if installed and bool(game.get('IsInstalled')) != (installed == 'Installed'):
+        installed = installed if isinstance(installed, list) else [installed] if installed else []
+        state = 'Installed' if game.get('IsInstalled') else 'Not installed'
+        if installed and state not in installed:
             continue
         if filters.get('Favorite') and not game.get('Favorite'):
             continue

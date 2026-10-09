@@ -48,7 +48,7 @@ Exported game folders, manually added untracked files/plugins, the repo version,
 
 Select a game and press **Play**. Right-click a game and choose **Edit…** to change its details. Play actions on the Installation tab define how the game launches; multiple actions open a chooser when you press Play. Compatible integrations can also detect running games and record playtime.
 
-Use the toolbar to search, sort, filter, and switch between list and grid views. The list also supports a compact view.
+Use the toolbar to search, sort, filter, and switch between list and grid views. Filter dropdowns use checkboxes: select multiple values to match any of them, choose **None** for missing metadata, or **All** to clear that filter. Different filters combine. **Sources** lists the integrations attached to each game’s play actions, such as Steam or Lutris; a game can match multiple sources. The list also supports a compact view.
 
 ## Plugins
 

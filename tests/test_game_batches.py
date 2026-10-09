@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from PyQt6.QtCore import Qt, QTimer, QThreadPool
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import QApplication, QAbstractItemView, QCheckBox, QDialog, QMenu
@@ -45,6 +45,10 @@ class GameBatchTests(unittest.TestCase):
         shown = [self.window.list.item(i).data(Qt.ItemDataRole.UserRole)['Id']
                  for i in range(self.window.list.count())]
         visits = []
+        observer = Mock()
+        observer.name = "Observer"
+        observer.game_actions.return_value = []
+        self.window.generic_plugins = [observer]
         def edit(dialog):
             visits.append(dialog.game['Id'])
             if len(visits) == 1:
@@ -62,12 +66,18 @@ class GameBatchTests(unittest.TestCase):
         with patch('playlite.app.run_dialog', side_effect=edit):
             self.window.edit_game()
         self.assertEqual(visits, [shown[0], shown[1], shown[0]])
+        self.assertEqual(observer.after_game_updated.call_count, 2)
+        self.assertEqual(observer.after_game_updated.call_args_list[0].args[1]['Name'], 'AAA')
         saved = json.loads((self.data / 'library.json').read_text())
         self.assertEqual(next(g for g in saved if g['Id'] == shown[0])['Name'], 'AAA')
 
     def test_editor_navigation_stays_on_current_game_when_saving_fails(self):
         current = self.window.current['Id']
         visits = []
+        observer = Mock()
+        observer.name = "Observer"
+        observer.game_actions.return_value = []
+        self.window.generic_plugins = [observer]
         def edit(dialog):
             visits.append(dialog.game['Id'])
             if len(visits) == 1:
@@ -81,6 +91,7 @@ class GameBatchTests(unittest.TestCase):
         with patch('playlite.app.run_dialog', side_effect=edit), patch('playlite.app.save_game', side_effect=OSError('disk full')):
             self.window.edit_game()
         self.assertEqual(visits, [current, current])
+        observer.after_game_updated.assert_not_called()
         self.assertEqual(json.loads((self.data / 'library.json').read_text()), self.games)
 
     def test_archive_information_is_only_shown_when_editing(self):

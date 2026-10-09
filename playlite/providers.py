@@ -155,6 +155,14 @@ class GenericPlugin(Plugin):
     def before_launch(self, window, game):
         return True
 
+    def after_launch(self, window, game, action):
+        """Observe a successfully launched action; must not block the UI."""
+        pass
+
+    def after_game_stopped(self, window, game, action):
+        """A detected game session ended; action is None for external launches."""
+        pass
+
     def augment_editor(self, editor):
         """Contribute controls to both Edit and Add game windows."""
         pass
@@ -175,6 +183,10 @@ class GenericPlugin(Plugin):
         pass
 
     def prepare_add(self, editor, game, registration):
+        pass
+
+    def after_game_updated(self, window, game):
+        """Apply plugin changes after a game edit has been saved."""
         pass
 
     def after_game_added(self, window, game, editor):

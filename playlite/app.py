@@ -7,6 +7,7 @@ from .lifecycle import run_dialog
 import argparse
 import html
 import json
+import copy
 import os
 import shutil
 import subprocess
@@ -17,7 +18,8 @@ from pathlib import Path
 from .editor import MetadataEditor, save_game
 from .artwork import repair_artwork
 from .ui_style import DROPDOWN_STYLE
-from .library import FILTER_FIELDS, SORT_FIELDS, query_games, values
+from .library import FILTER_FIELDS, SORT_FIELDS, query_games, values, filter_values
+from .library_filters import LibraryFilter
 from .scroll_fades import ScrollFades, HorizontalValuesScroll
 from .link_names import load_names, friendly_name
 
@@ -89,6 +91,7 @@ QPushButton#sortOrder:checked:hover { background: #48494b; }
 QPushButton#filters[activeFilter="true"] { background: #48494b; }
 QPushButton#play { background: #f0f0f0; color: #151515; font-weight: bold; }
 QPushButton#play:hover { background: #ffffff; }
+QPushButton#play:disabled { color: #777; background: #292a2b; }
 QPushButton:disabled { color: #777; background: #292a2b; }
 QPushButton#link, QPushButton#folder { background: transparent; text-align: left; padding: 5px 0; }
 QPushButton#link:hover, QPushButton#folder:hover { color: #98caff; }
@@ -1146,6 +1149,7 @@ class LibraryWindow(QMainWindow):
         self.library_animation.valueChanged.connect(self.animate_library_width)
         self.library_animation.finished.connect(self.finish_library_transition)
         bar.setContentsMargins(8, 12, 22, 12)
+        bar.setSpacing(4)
         self.logo = QPushButton()
         self.logo.setObjectName('logo')
         menu_art = QPixmap(str(Path(__file__).parent / 'assets' / 'playlite.png'))
@@ -1178,7 +1182,7 @@ class LibraryWindow(QMainWindow):
         self.search.setPlaceholderText('Search your library')
         self.search.setClearButtonEnabled(True)
         self.search.setMaximumWidth(290)
-        self.search.setMinimumWidth(140)
+        self.search.setMinimumWidth(100)
         self.search.textChanged.connect(self.filter_games)
         self.search.ensurePolished()
         control_height = self.search.sizeHint().height()
@@ -1194,6 +1198,8 @@ class LibraryWindow(QMainWindow):
         self.logo.setIcon(QIcon(menu_icon))
         bar.addWidget(self.search)
         self.sort = QComboBox()
+        self.sort.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.sort.setMinimumContentsLength(4)
         self.sort.setFixedHeight(control_height)
         set_style(self.sort, DROPDOWN_STYLE)
         for key, title in SORT_FIELDS:
@@ -1266,19 +1272,19 @@ class LibraryWindow(QMainWindow):
         filters_layout.setContentsMargins(18, 8, 18, 12)
         self.filter_controls = {}
         for index, (key, title) in enumerate(FILTER_FIELDS):
-            combo = QComboBox()
-            combo.addItem(f'All {title.lower()}s', '')
-            for value in sorted({value for game in self.games for value in values(game, key)}, key=str.casefold):
-                combo.addItem(value, value)
-            combo.setCurrentIndex(max(0, combo.findData(self.active_filters.get(key, ''))))
-            combo.currentIndexChanged.connect(self.refresh_library)
-            self.filter_controls[key] = combo
-            filters_layout.addWidget(combo, index // 4, index % 4)
-        self.installed_filter = QComboBox()
-        for title, value in [('All installation states', ''), ('Installed', 'Installed'), ('Not installed', 'Not installed')]:
-            self.installed_filter.addItem(title, value)
-        self.installed_filter.setCurrentIndex(max(0, self.installed_filter.findData(self.active_filters.get('Installed', ''))))
-        self.installed_filter.currentIndexChanged.connect(self.refresh_library)
+            options = self.library_filter_options(key)
+            selected = self.active_filters.get(key, [])
+            if key == 'Source':
+                selected = selected if isinstance(selected, list) else [selected] if selected else []
+                labels = {label: value for label, value in options}
+                selected = [labels.get(value, value) for value in selected]
+            control = LibraryFilter(title, options, selected)
+            control.changed.connect(self.refresh_library)
+            self.filter_controls[key] = control
+            filters_layout.addWidget(control, index // 4, index % 4)
+        self.installed_filter = LibraryFilter('Installation states',
+            [('Installed', 'Installed'), ('Not installed', 'Not installed')], self.active_filters.get('Installed', []))
+        self.installed_filter.changed.connect(self.refresh_library)
         filters_layout.addWidget(self.installed_filter, 2, 2)
         self.favorites_filter = QCheckBox('Favorites only')
         self.favorites_filter.setChecked(bool(self.active_filters.get('Favorite')))
@@ -1314,6 +1320,7 @@ class LibraryWindow(QMainWindow):
         self.list.setMinimumWidth(160)
         self.list.setIconSize(QSize(48, 48))
         self.list.currentItemChanged.connect(self.select_game)
+        self.list.itemDoubleClicked.connect(self.play_game_entry)
         self.list.itemSelectionChanged.connect(self.update_compact_library)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self.show_game_context_menu)
@@ -1381,6 +1388,8 @@ class LibraryWindow(QMainWindow):
         from .game_detection import GameDetection
         self.game_detection = GameDetection(self.game_providers, lambda: self.games, self,
                                             recorder=self.record_game_session)
+        self.launched_actions = {}
+        self.game_detection.session_finished.connect(self.game_session_finished)
         self.game_detection.changed.connect(self.game_status_changed)
         self.game_detection.start()
 
@@ -1431,8 +1440,8 @@ class LibraryWindow(QMainWindow):
         self.list.blockSignals(True)
         self.list.clear()
         selected = None
-        self.active_filters = {key: control.currentData() for key, control in self.filter_controls.items()}
-        self.active_filters.update(Installed=self.installed_filter.currentData(),
+        self.active_filters = {key: control.values() for key, control in self.filter_controls.items()}
+        self.active_filters.update(Installed=self.installed_filter.values(),
                                    Favorite=self.favorites_filter.isChecked(), ShowHidden=self.hidden_filter.isChecked())
         games = query_games(self.games, query, self.active_filters, self.sort.currentData(), self.order.isChecked())
         for game in games:
@@ -1498,20 +1507,18 @@ class LibraryWindow(QMainWindow):
 
     def apply_metadata_filter(self, key, value):
         control = self.filter_controls[key]
-        index = control.findData(value)
-        if index < 0:
-            control.addItem(str(value), value)
-            index = control.count() - 1
+        if value not in control.boxes:
+            control.set_options(control.options + [(str(value), value)], control.values())
         self.search.clear()
-        control.setCurrentIndex(index)
+        control.set_values([value])
         self.set_filters_expanded(True)
 
     def reset_filters(self):
         controls = list(self.filter_controls.values()) + [self.installed_filter, self.favorites_filter, self.hidden_filter]
         for control in controls:
             control.blockSignals(True)
-            if isinstance(control, QComboBox):
-                control.setCurrentIndex(0)
+            if isinstance(control, LibraryFilter):
+                control.set_values([])
             else:
                 control.setChecked(False)
             control.blockSignals(False)
@@ -1570,16 +1577,20 @@ class LibraryWindow(QMainWindow):
         self.update_library_scrollbar_policy()
         QTimer.singleShot(0, lambda: setattr(self, 'switching_library_view', False))
 
+    def library_filter_options(self, key):
+        assigned = {value for game in self.games for value in filter_values(game, key)}
+        labels = {provider.id: provider.name.removesuffix(' Integration') for provider in self.game_providers}
+        options = [(labels.get(value, value.removesuffix('Integration')) if key == 'Source' else value, value)
+                   for value in assigned]
+        return [('None', None)] + sorted(options, key=lambda item: item[0].casefold())
+
     def update_filter_choices(self):
         for key, title in FILTER_FIELDS:
             control = self.filter_controls[key]
-            selected = control.currentData()
+            selected = control.values()
             control.blockSignals(True)
-            control.clear()
-            control.addItem(f'All {title.lower()}s', '')
-            for value in sorted({value for game in self.games for value in values(game, key)}, key=str.casefold):
-                control.addItem(value, value)
-            control.setCurrentIndex(max(0, control.findData(selected)))
+            options = self.library_filter_options(key)
+            control.set_options(options, selected)
             control.blockSignals(False)
 
     def select_game(self, item, previous=None):
@@ -1644,7 +1655,7 @@ class LibraryWindow(QMainWindow):
         play = QPushButton('Play')
         self.play_button = play
         play.setObjectName('play')
-        play.setEnabled(any(provider.owns(game) for provider in self.game_providers))
+        play.setEnabled(self.has_play_actions(game))
         play.clicked.connect(self.play_game)
         hero = Hero(play, self.edit_game, self.delete_game, lambda: self.plugin_game_actions(game),
                     (lambda: open_folder(game['InstallDirectory'])) if game.get('InstallDirectory') else None)
@@ -1862,6 +1873,18 @@ class LibraryWindow(QMainWindow):
             self.history_labels['Play count'].setText(str(updated['PlayCount']))
             self.history_labels['Last played'].setText(display_date(stamp))
 
+    def game_session_finished(self, game_id):
+        action = self.launched_actions.pop(game_id, None)
+        game = next((entry for entry in self.games if entry['Id'] == game_id), None)
+        if game is None:
+            return
+        for plugin in self.generic_plugins:
+            try:
+                plugin.after_game_stopped(self, copy.deepcopy(game), copy.deepcopy(action))
+            except Exception:
+                import logging
+                logging.exception('Plugin %s failed after game exit', plugin.id)
+
     def game_status_changed(self, game_id, status):
         for index in range(self.list.count()):
             item = self.list.item(index)
@@ -1871,7 +1894,8 @@ class LibraryWindow(QMainWindow):
             active = status in ('Running', 'Launching')
             stopping = game_id in self.stop_tasks
             self.play_button.setText('Stopping…' if stopping else 'Stop' if status == 'Running' else 'Launching…' if status == 'Launching' else 'Play')
-            self.play_button.setEnabled(not stopping and status != 'Launching' and any(provider.owns(self.current) for provider in self.game_providers))
+            self.play_button.setEnabled(not stopping and status != 'Launching' and
+                                        (status == 'Running' or self.has_play_actions(self.current)))
             self.play_hero.position_play_control()
 
     def apply_panel_appearance(self):
@@ -1943,6 +1967,19 @@ class LibraryWindow(QMainWindow):
         task.signals.failed.connect(failed)
         QThreadPool.globalInstance().start(task)
 
+    def has_play_actions(self, game):
+        from .play_actions import actions_for
+        available = {provider.id for provider in self.game_providers}
+        return any(action.get('Integration') in available for action in actions_for(game, self.game_providers))
+
+    def play_game_entry(self, item):
+        if item is not self.list.currentItem():
+            self.list.setCurrentItem(item)
+        if (self.current and self.has_play_actions(self.current) and
+                self.game_detection.status(self.current['Id']) not in ('Running', 'Launching') and
+                self.current['Id'] not in self.stop_tasks):
+            self.play_game()
+
     def play_game(self):
         if self.current is None:
             return
@@ -1979,6 +2016,13 @@ class LibraryWindow(QMainWindow):
             if isinstance(provider, IntegrationPlugin):
                 self.game_detection.launching(game['Id'])
             provider.launch_action(game, action)
+            self.launched_actions[game['Id']] = copy.deepcopy(action)
+            for plugin in self.generic_plugins:
+                try:
+                    plugin.after_launch(self, copy.deepcopy(game), copy.deepcopy(action))
+                except Exception:
+                    import logging
+                    logging.exception('Plugin %s failed after launch', plugin.id)
         except Exception as error:
             self.game_detection.launch_failed(game['Id'])
             show_warning(self, 'Cannot launch game', str(error))
@@ -2467,6 +2511,11 @@ class LibraryWindow(QMainWindow):
                 continue
             for cache in dialog.download_caches:
                 cache.cleanup()
+            for plugin in self.generic_plugins:
+                try:
+                    plugin.after_game_updated(self, dialog.result_game)
+                except Exception as error:
+                    self.statusBar().showMessage(f"Could not update {plugin.name}: {error}", 10000)
             offset = dialog.navigation_offset
             if not offset:
                 self.update_filter_choices()

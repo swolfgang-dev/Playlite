@@ -12,6 +12,7 @@ from .metadata_dialog import Task
 class GameDetection(QObject):
     changed = pyqtSignal(str, str)
     recorded = pyqtSignal(str, int, int, str)
+    session_finished = pyqtSignal(str)
 
     def __init__(self, integrations, games, parent=None, recorder=None):
         super().__init__(parent)
@@ -142,6 +143,8 @@ class GameDetection(QObject):
                         self.checkpoint(identity, missing, finish=True)
                         self.missing.pop(identity, None)
                         self.set_status(identity, 'Stopped')
+                        if identity not in self.sessions:
+                            self.session_finished.emit(identity)
 
 
 def record_playtime(data, games, identity, seconds, count, stamp):
