@@ -110,3 +110,5 @@ Plugin manifests can declare dependencies on other plugins using `plugin_depende
 ```
 
 GitHub installation installs or updates required plugins first and reports dependencies in its progress output. Local archives require dependencies to be installed already. Disabled dependencies must be enabled explicitly. Circular dependencies and conflicting repository identities are rejected; plugins with unsatisfied dependencies are not loaded.
+
+Use **Playlite menu → Background tasks…** to inspect downloads and supported plugin jobs, copy logs, cancel downloads, or retry available tasks. History survives restarts; unfinished work is marked interrupted. **Check library installations…** and the game Installation menu check explicit launch paths and readable Lutris Wine configurations. These checks do not verify Steam file hashes. Missing configured paths prevent launching until corrected.

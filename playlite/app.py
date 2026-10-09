@@ -1091,6 +1091,8 @@ class LibraryWindow(QMainWindow):
     def __init__(self, data):
         super().__init__()
         self.data = data
+        from .background_tasks import BackgroundTasks
+        self.background_tasks = BackgroundTasks(self, data / "background-tasks.json")
         from .providers import discover_plugins, GameProvider, GenericPlugin
         self.plugins = discover_plugins()
         self.game_providers = [plugin for plugin in self.plugins.values() if isinstance(plugin, GameProvider)]
@@ -1161,6 +1163,10 @@ class LibraryWindow(QMainWindow):
         self.logo.setAccessibleName('Playlite menu')
         self.logo_menu = QMenu(self.logo)
         self.logo_menu.addAction('Add Game…').triggered.connect(self.add_game)
+        from .background_tasks import show_tasks
+        from .installation_health import show_health
+        self.logo_menu.addAction('Background tasks…').triggered.connect(lambda: show_tasks(self))
+        self.logo_menu.addAction('Check library installations…').triggered.connect(lambda: show_health(self, self.games))
         for plugin in self.generic_plugins:
             for action_label, callback in getattr(plugin, 'main_menu_actions', lambda window: [])(self):
                 self.logo_menu.addAction(action_label).triggered.connect(callback)
@@ -1375,6 +1381,7 @@ class LibraryWindow(QMainWindow):
         for plugin in self.generic_plugins:
             restore=getattr(plugin,'restore_downloads',None)
             if callable(restore):restore(self,self.download_queue)
+        self.background_tasks.follow_downloads(self.download_queue)
         self.downloads_panel = DownloadsPanel(self.game_scroll, self.download_queue)
         self.downloads_button = DownloadsButton(toolbar, self.downloads_panel, self.download_queue, toolbar=True)
         self.downloads_button.button.setFixedSize(control_height, control_height)
@@ -2008,6 +2015,10 @@ class LibraryWindow(QMainWindow):
                              if provider.id == action['Integration']), None)
             if provider is None:
                 raise ValueError(f'The integration for “{action["Name"]}” is unavailable.')
+            from .installation_health import check_action
+            health = check_action(game, action, self.game_providers, getattr(self, "download_queue", None))
+            if health['issues']:
+                raise ValueError('Installation needs attention:\n' + '\n'.join(health['issues']) + '\nReview the Installation page before launching.')
             for plugin in self.generic_plugins:
                 if not plugin.before_launch(self, game):
                     return
@@ -2063,7 +2074,8 @@ class LibraryWindow(QMainWindow):
         QThreadPool.globalInstance().start(task)
 
     def plugin_game_actions(self, game):
-        return [(plugin.name, actions) for plugin in self.generic_plugins
+        from .installation_health import show_health
+        return [('Installation', [('Check installation…', lambda: show_health(self, [game]))])] + [(plugin.name, actions) for plugin in self.generic_plugins
                 if (actions := plugin.game_actions(self, game))]
 
     def import_provider_games(self, provider):
@@ -2427,6 +2439,9 @@ class LibraryWindow(QMainWindow):
         actions = self.plugin_game_actions(games[0]) if len(games) == 1 else [
             (plugin.name, actions) for plugin in self.generic_plugins
             if (actions := plugin.batch_game_actions(self, games))]
+        from .installation_health import show_health
+        if len(games) > 1:
+            actions.append(('Installation', [('Check installations…', lambda: show_health(self, games))]))
         menu = game_context_menu(self.list, self.edit_game if len(games) == 1 else None,
                                  lambda: self.delete_games(games), actions,
                                  (lambda: open_folder(games[0]['InstallDirectory']))
