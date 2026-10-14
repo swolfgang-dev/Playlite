@@ -73,9 +73,9 @@ provides **Delete VM…**, which removes private VM data and logins while
 preserving shared games.
 
 Steam downloads directly into the mounted game folder without copying. The VM,
-Steam and VPN stay active for the Playlite session; game launches pause the VM
-when downloads are idle, and game detection resumes it after exit. Closing
-Playlite shuts down the VM normally. The installer and bridge are maintained in the
+Steam and VPN stay active while downloads or setup need them. The downloader
+shuts down an idle VM after a minute without activity and starts it again when
+needed. Closing Playlite shuts down the VM normally. The installer and bridge are maintained in the
 [Steam Downloader plugin repository](https://github.com/swolfgang-dev/playlite-plugin-steam-depot-downloader).
 
 ## Metadata and artwork

@@ -12,7 +12,6 @@ class AddGameMethods(QDialog):
     def __init__(self, methods, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Add Game')
-        self.resize(380, 200)
         self.selected_method = None
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel('Choose how to add games.'))
@@ -26,6 +25,18 @@ class AddGameMethods(QDialog):
         cancel = QPushButton('Cancel')
         cancel.clicked.connect(self.reject)
         layout.addWidget(cancel)
+
+    def setVisible(self, visible):
+        if visible and not self.isVisible():
+            # Resolve themed controls and shared margins before the first frame.
+            # The play chooser changes its prompt after construction.
+            from .ui_layout import configure_dialog
+            self.ensurePolished()
+            configure_dialog(self)
+            self.layout().activate()
+            size = self.sizeHint()
+            self.resize(max(380, size.width()), size.height())
+        super().setVisible(visible)
 
     def choose(self, callback):
         self.selected_method = callback

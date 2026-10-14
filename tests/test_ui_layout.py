@@ -2,7 +2,7 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import unittest
 from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLabel
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +14,26 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LayoutWorkflowTests(unittest.TestCase):
+    def test_play_chooser_has_room_for_labels_before_showing(self):
+        from playlite.add_game import AddGameMethods
+        from playlite.ui_layout import install
+        install(APP)
+        dialog = AddGameMethods([('Play Elden Ring', None),
+                                 ('Play Elden Ring - Modded with a longer action name', None)])
+        dialog.findChild(QLabel).setText('Choose how to launch this game.')
+        sizes = []
+        original = dialog.showEvent
+        def shown(event):
+            sizes.append(dialog.size())
+            original(event)
+        dialog.showEvent = shown
+        dialog.show()
+        APP.processEvents()
+        self.assertEqual(sizes[0], dialog.size())
+        for button in dialog.method_buttons:
+            self.assertGreaterEqual(button.width(), button.sizeHint().width())
+        dialog.close()
+
     def test_tall_form_scrolls_without_moving_footer_and_preserves_joined_buttons(self):
         dialog = QDialog(); root = QVBoxLayout(dialog)
         root.addWidget(QPushButton('Long form'))
