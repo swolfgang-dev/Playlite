@@ -86,10 +86,10 @@ class GameDetection(QObject):
         def detect():
             result = {}
             for integration in self.integrations:
-                owned = [game for game in games if integration.owns(game)]
-                if not owned:
-                    continue
                 try:
+                    owned = [game for game in games if integration.owns(game)]
+                    if not owned:
+                        continue
                     result[integration.id] = (owned, set(integration.detect_running(owned)))
                 except Exception:
                     logging.exception('Game detection failed for %s', integration.id)
@@ -106,45 +106,70 @@ class GameDetection(QObject):
     def observe(self, result, now=None):
         now = time.monotonic() if now is None else now
         current = {game['Id']: game for game in self.games()}
-        for identity in list(self.states):
-            if identity not in current or not any(plugin.owns(current[identity]) for plugin in self.integrations):
+        # Aggregate before changing state: a stopped launcher must not override
+        # another integration that confirms the same library entry is running.
+        for identity in set(current) | set(self.states) | set(self.sessions):
+            game = current.get(identity)
+            owners = []
+            uncertain = False
+            if game is not None:
+                for plugin in self.integrations:
+                    try:
+                        if plugin.owns(game):
+                            owners.append(plugin)
+                    except Exception:
+                        logging.exception('Could not determine game ownership for %s', plugin.id)
+                        uncertain = True
+            if not owners and not uncertain:
                 self.checkpoint(identity, min(now, self.missing.get(identity, now)), finish=True)
                 self.set_status(identity, 'Stopped')
                 self.states.pop(identity, None)
                 self.pending.pop(identity, None)
-                self.missing.pop(identity, None)
-        for provider_id, (games, running) in result.items():
-            for game in games:
-                identity = game['Id']
-                integration = next(plugin for plugin in self.integrations if plugin.id == provider_id)
-                if (identity not in current or not integration.owns(current[identity]) or
-                        str(integration.detection_association_id(game)) != str(integration.detection_association_id(current[identity]))):
-                    self.checkpoint(identity, min(now, self.missing.get(identity, now)), finish=True)
-                    self.set_status(identity, 'Stopped')
-                    self.states.pop(identity, None)
-                    self.pending.pop(identity, None)
+                if identity not in self.sessions:
                     self.missing.pop(identity, None)
+                continue
+            observations = []
+            for plugin in owners:
+                snapshot = result.get(plugin.id)
+                if snapshot is None:
+                    uncertain = True
                     continue
-                if identity in running:
+                games, running = snapshot
+                previous = next((row for row in games if row['Id'] == identity), None)
+                try:
+                    valid = (previous is not None and
+                             plugin.detection_association_id(previous) == plugin.detection_association_id(game))
+                except Exception:
+                    logging.exception('Could not compare game detection snapshot for %s', plugin.id)
+                    valid = False
+                if valid:
+                    observations.append(identity in running)
+                else:
+                    uncertain = True
+            if any(observations):
+                if identity not in self.sessions:
+                    self.sessions[identity] = dict(start=now, saved=0, counted=False, checkpoint=now)
+                    self.checkpoint(identity, now)
+                elif now - self.sessions[identity]['checkpoint'] >= 30:
+                    self.checkpoint(identity, now)
+                self.pending.pop(identity, None)
+                self.missing.pop(identity, None)
+                self.set_status(identity, 'Running')
+            elif uncertain or not observations:
+                # Failed or stale scans cannot confirm an exit. Require a fresh
+                # uninterrupted grace period once detection becomes available.
+                self.missing.pop(identity, None)
+            elif identity in self.pending:
+                if now - self.pending[identity] >= 60:
+                    self.launch_failed(identity)
+            elif identity in self.sessions:
+                missing = self.missing.setdefault(identity, now)
+                if now - missing >= 2:
+                    self.checkpoint(identity, missing, finish=True)
                     if identity not in self.sessions:
-                        self.sessions[identity] = dict(start=now, saved=0, counted=False, checkpoint=now)
-                        self.checkpoint(identity, now)
-                    elif now - self.sessions[identity]['checkpoint'] >= 30:
-                        self.checkpoint(identity, now)
-                    self.pending.pop(identity, None)
-                    self.missing.pop(identity, None)
-                    self.set_status(identity, 'Running')
-                elif identity in self.pending:
-                    if now - self.pending[identity] >= 60:
-                        self.launch_failed(identity)
-                elif self.status(identity) == 'Running':
-                    missing = self.missing.setdefault(identity, now)
-                    if now - missing >= 2:
-                        self.checkpoint(identity, missing, finish=True)
                         self.missing.pop(identity, None)
                         self.set_status(identity, 'Stopped')
-                        if identity not in self.sessions:
-                            self.session_finished.emit(identity)
+                        self.session_finished.emit(identity)
 
 
 def record_playtime(data, games, identity, seconds, count, stamp):

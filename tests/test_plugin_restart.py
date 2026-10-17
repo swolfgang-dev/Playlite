@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import Mock,patch
+from pathlib import Path
 from PyQt6.QtWidgets import QApplication,QWidget,QMessageBox,QDialog
 from playlite.settings import SettingsDialog
 from playlite.lifecycle import restart_application
@@ -33,3 +34,11 @@ class RestartTests(unittest.TestCase):
             self.assertTrue(restart_application(window))
             self.assertIn('os.kill(pid,0)',launch.call_args.args[0][2])
             window.lifecycle.quit.assert_called_once()
+
+    def test_restart_preserves_custom_library(self):
+        window = Mock()
+        window.data = Path('/tmp/review-library')
+        window.close.return_value = True
+        with patch('subprocess.Popen') as launch:
+            self.assertTrue(restart_application(window))
+        self.assertEqual(launch.call_args.args[0][-2:], ['--data', str(window.data)])

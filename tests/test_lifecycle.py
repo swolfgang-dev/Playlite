@@ -11,6 +11,22 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_dialog_can_finish_synchronously_when_shown(self):
+        class ImmediateDialog(QDialog):
+            def showEvent(self, event):
+                super().showEvent(event)
+                self.accept()
+        dialog = ImmediateDialog()
+        # This timer prevents an implementation regression from hanging tests.
+        timer = QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(dialog.reject)
+        timer.start(500)
+        try:
+            self.assertEqual(run_dialog(dialog), QDialog.DialogCode.Accepted)
+        finally:
+            timer.stop()
+
     def test_activation_socket_and_lock_share_the_profile_runtime_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch('playlite.lifecycle.QStandardPaths.writableLocation', return_value=directory):

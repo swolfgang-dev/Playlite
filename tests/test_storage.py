@@ -1,11 +1,33 @@
 import json
 from pathlib import Path
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from playlite.storage import atomic_json
+
+
+class LibraryLockTests(unittest.TestCase):
+    def test_nested_lock_reuses_process_lock_and_releases_after_failure(self):
+        # A subprocess gives a deadlock a strict deadline instead of hanging Qt.
+        script = '''
+import tempfile
+from pathlib import Path
+from playlite.library_storage import library_lock
+with tempfile.TemporaryDirectory() as directory:
+    try:
+        with library_lock(directory):
+            with library_lock(Path(directory) / '.'):
+                raise ValueError('rollback')
+    except ValueError:
+        pass
+    with library_lock(directory):
+        pass
+'''
+        subprocess.run([sys.executable, '-c', script], check=True, timeout=5)
 
 
 class AtomicJsonTests(unittest.TestCase):

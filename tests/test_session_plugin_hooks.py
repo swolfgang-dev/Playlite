@@ -35,6 +35,35 @@ class SessionHookTests(unittest.TestCase):
         self.detection.stop()
         self.finished.assert_not_called()
 
+    def test_failed_exit_checkpoint_retries_at_original_stop_time(self):
+        recorder = Mock(side_effect=[True, False, True])
+        self.detection.recorder = recorder
+        self.detection.observe({'Example': ([self.game], {'one'})}, now=0)
+        for now in (10, 13, 15):
+            self.detection.observe({'Example': ([self.game], set())}, now=now)
+        self.assertEqual([call.args[1:3] for call in recorder.call_args_list],
+                         [(0, 1), (10, 0), (10, 0)])
+        self.finished.assert_called_once_with('one')
+
+    def test_multiple_integrations_reach_one_combined_decision(self):
+        other = Integration()
+        other.id = 'Other'
+        self.detection.integrations.append(other)
+        self.game['PlayActions'] = [{'Integration': 'Example'}, {'Integration': 'Other'}]
+        for now in (0, 10, 13):
+            self.detection.observe({'Example': ([self.game], {'one'}),
+                                    'Other': ([self.game], set())}, now=now)
+        self.assertEqual(self.detection.status('one'), 'Running')
+        self.finished.assert_not_called()
+        # A missing detector result is uncertainty rather than a confirmed stop.
+        for now in (20, 23):
+            self.detection.observe({'Other': ([self.game], set())}, now=now)
+        self.assertEqual(self.detection.status('one'), 'Running')
+        for now in (30, 33):
+            self.detection.observe({'Example': ([self.game], set()),
+                                    'Other': ([self.game], set())}, now=now)
+        self.finished.assert_called_once_with('one')
+
     def test_exit_hook_receives_launched_action_once(self):
         plugin = Mock()
         action = {'Integration': 'Example', 'GameId': '42'}

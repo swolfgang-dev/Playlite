@@ -10,13 +10,19 @@ from PyQt6.QtGui import QAction
 def run_dialog(dialog):
     """Wait for a dialog's result without disabling the main window's close button."""
     loop = QEventLoop()
+    finished = False
+    def complete():
+        nonlocal finished
+        finished = True
+        loop.quit()
     dialog.setWindowModality(Qt.WindowModality.NonModal)
-    dialog.finished.connect(loop.quit)
+    dialog.finished.connect(complete)
     dialog.show()
-    dialog.raise_()
-    loop.exec()
+    if not finished:
+        dialog.raise_()
+        loop.exec()
     try:
-        dialog.finished.disconnect(loop.quit)
+        dialog.finished.disconnect(complete)
     except TypeError:
         pass
     return dialog.result()
@@ -43,8 +49,12 @@ def restart_application(window):
               ' try: os.kill(pid,0)\n'
               ' except ProcessLookupError: break\n'
               ' time.sleep(0.1)\n'
-              'subprocess.Popen([sys.executable,"-m","playlite"],start_new_session=True)\n')
-    subprocess.Popen([sys.executable, '-c', script, str(os.getpid())],
+              'subprocess.Popen([sys.executable,"-m","playlite",*sys.argv[2:]],start_new_session=True)\n')
+    arguments = []
+    data = getattr(window, 'data', None)
+    if isinstance(data, (str, Path)):
+        arguments = ['--data', str(Path(data).resolve())]
+    subprocess.Popen([sys.executable, '-c', script, str(os.getpid()), *arguments],
                      cwd=os.getcwd(), env=os.environ.copy(), start_new_session=True,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if lifecycle is not None:
