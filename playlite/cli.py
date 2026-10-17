@@ -40,7 +40,7 @@ def main(argv=None):
             validate = getattr(args.plugin, 'validate_cli_library', None)
             if validate:
                 validate(game, games)
-            from .editor import save_game
+            from .game_storage import save_game
             with args.plugin.cli_commit_transaction(args, game, plugins) as committed:
                 save_game(args.data, games, committed)
                 game = committed

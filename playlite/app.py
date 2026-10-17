@@ -14,7 +14,8 @@ import shutil
 import sys
 from pathlib import Path
 
-from .editor import MetadataEditor, save_game
+from .editor import MetadataEditor
+from .game_storage import save_game
 from .artwork import repair_artwork
 from .ui_style import DROPDOWN_STYLE
 from .library import FILTER_FIELDS, SORT_FIELDS, query_games, filter_values

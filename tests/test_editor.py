@@ -264,6 +264,34 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(QImage(str(target)).pixelColor(0, 0), QColor('red'))
         self.assertFalse(list(self.data.rglob('*.tmp')))
 
+    def test_failed_library_save_restores_artwork_permissions(self):
+        source = self.data / 'chosen.png'
+        source.write_bytes(b'old image')
+        saved = save_game(self.data, [self.game], dict(self.game, Icon=str(source)))
+        target = self.data / saved[0]['Icon']
+        target.chmod(0o640)
+        source.write_bytes(b'new image')
+        source.chmod(0o600)
+        with patch('playlite.game_storage.atomic_json', side_effect=RuntimeError('plugin failed')):
+            with self.assertRaisesRegex(RuntimeError, 'plugin failed'):
+                save_game(self.data, saved, dict(saved[0], Icon=str(source)))
+        self.assertEqual(target.read_bytes(), b'old image')
+        self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+
+    def test_failed_library_save_keeps_concurrent_artwork_edit(self):
+        source = self.data / 'chosen.png'
+        source.write_bytes(b'old image')
+        saved = save_game(self.data, [self.game], dict(self.game, Icon=str(source)))
+        target = self.data / saved[0]['Icon']
+        source.write_bytes(b'new image')
+        def fail(*args):
+            target.write_bytes(b'external edit')
+            raise OSError('library write failed')
+        with patch('playlite.game_storage.atomic_json', side_effect=fail):
+            with self.assertRaises(OSError):
+                save_game(self.data, saved, dict(saved[0], Icon=str(source)))
+        self.assertEqual(target.read_bytes(), b'external edit')
+
 
 if __name__ == '__main__':
     unittest.main()
