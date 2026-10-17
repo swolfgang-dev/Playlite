@@ -78,6 +78,15 @@ class AutomationTests(unittest.TestCase):
         self.assertEqual(result['state'], 'Complete')
         self.assertLess(time.monotonic() - start, 1)
 
+    def test_large_output_is_drained_and_retained_with_a_fixed_memory_limit(self):
+        import shlex
+        import sys
+        command = shlex.quote(sys.executable) + ' -c ' + shlex.quote("import sys; sys.stdout.write('x' * (3 * 1024 * 1024))")
+        result = execute_command(command, self.game, self.action, 3, threading.Event())
+        self.assertEqual(result['state'], 'Complete')
+        self.assertIn('Output truncated after 1 MiB', result['details'])
+        self.assertLess(len(result['details']), 1024 * 1024 + 200)
+
     def test_missing_folder_does_not_fall_back_to_an_unrelated_directory(self):
         self.game['InstallDirectory'] = str(self.root / 'missing')
         with self.assertRaisesRegex(ValueError, 'folder does not exist'):

@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import signal
 import subprocess
-import tempfile
 import threading
 import time
 from PyQt6.QtCore import QObject, QThreadPool, QTimer
@@ -72,35 +71,54 @@ def execute_command(command, game, action, timeout, cancelled):
         raise ValueError('Automation folder does not exist: ' + directory)
     cwd = directory or environment.get('HOME')
     if cancelled.is_set(): return {'state': 'Cancelled', 'details': 'Command cancelled before starting.'}
-    with tempfile.TemporaryFile() as output:
-        process = subprocess.Popen(['/bin/bash', '-c', command], cwd=cwd, env=environment,
-            stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
-        deadline = time.monotonic() + timeout
-        state = None
-        while process.poll() is None:
-            if cancelled.is_set() or time.monotonic() >= deadline:
-                state = 'Cancelled' if cancelled.is_set() else 'Failed'
-                try: os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError: pass
-                try: process.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    try: os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError: pass
-                    process.wait()
-                # The shell can exit before its children; cancel the whole group.
+    process = subprocess.Popen(['/bin/bash', '-c', command], cwd=cwd, env=environment,
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        start_new_session=True, bufsize=0)
+    output = bytearray()
+    capture = {'active': True, 'truncated': False}
+    output_lock = threading.Lock()
+    stream = process.stdout
+    def drain_output():
+        # A background companion can retain stdout after its launching shell
+        # exits. Keep draining it without delaying launch or spooling to disk.
+        with stream:
+            while chunk := stream.read(8192):
+                with output_lock:
+                    if capture['active']:
+                        remaining = 1024 * 1024 - len(output)
+                        output.extend(chunk[:remaining])
+                        capture['truncated'] |= len(chunk) > remaining
+    reader = threading.Thread(target=drain_output, daemon=True)
+    reader.start()
+    deadline = time.monotonic() + timeout
+    state = None
+    while process.poll() is None:
+        if cancelled.is_set() or time.monotonic() >= deadline:
+            state = 'Cancelled' if cancelled.is_set() else 'Failed'
+            try: os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError: pass
+            try: process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
                 try: os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError: pass
-                break
-            cancelled.wait(.1)
-        output.seek(0); data = output.read(1024 * 1024 + 1)
-        text = data[:1024 * 1024].decode('utf-8', errors='replace')
-        if len(data) > 1024 * 1024: text += '\n[Output truncated after 1 MiB.]'
-        if state == 'Cancelled': message = 'Command cancelled.'
-        elif state == 'Failed': message = f'Command timed out after {timeout} seconds.'
-        else:
-            state = 'Complete' if process.returncode == 0 else 'Failed'
-            message = f'Command exited with code {process.returncode}.'
-        return {'state': state, 'details': message + ('\n\n' + text if text else '')}
+                process.wait()
+            # The shell can exit before its children; cancel the whole group.
+            try: os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+            break
+        cancelled.wait(.1)
+    reader.join(timeout=.1)
+    with output_lock:
+        text = output.decode('utf-8', errors='replace')
+        if capture['truncated']:text += '\n[Output truncated after 1 MiB.]'
+        capture['active'] = False
+        output.clear()
+    if state == 'Cancelled': message = 'Command cancelled.'
+    elif state == 'Failed': message = f'Command timed out after {timeout} seconds.'
+    else:
+        state = 'Complete' if process.returncode == 0 else 'Failed'
+        message = f'Command exited with code {process.returncode}.'
+    return {'state': state, 'details': message + ('\n\n' + text if text else '')}
 
 
 class Automation(QObject):
