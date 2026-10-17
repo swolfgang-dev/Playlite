@@ -243,11 +243,26 @@ class MetadataTests(unittest.TestCase):
     def test_write_failure_preserves_original(self):
         updated = self.editor.collect()
         updated['Name'] = 'Failed edit'
-        with patch.object(Path, 'replace', side_effect=OSError('disk error')):
+        with patch('playlite.storage.os.replace', side_effect=OSError('disk error')):
             with self.assertRaises(OSError):
                 save_game(self.data, [self.game], updated)
         self.assertEqual(json.loads((self.data / 'library.json').read_text()), [self.original])
         self.assertEqual(self.game, self.original)
+
+    def test_serialization_failure_restores_artwork_and_preserves_library(self):
+        source = self.data / 'chosen.png'
+        image = QImage(16, 16, QImage.Format.Format_ARGB32)
+        image.fill(QColor('red'));image.save(str(source))
+        saved = save_game(self.data, [self.game], dict(self.game, Icon=str(source)))
+        target = self.data / saved[0]['Icon']
+        original = (self.data / 'library.json').read_bytes()
+        image.fill(QColor('blue'));image.save(str(source))
+        invalid = dict(saved[0], Icon=str(source), UnknownFutureField=object())
+        with self.assertRaises(TypeError):
+            save_game(self.data, saved, invalid)
+        self.assertEqual((self.data / 'library.json').read_bytes(), original)
+        self.assertEqual(QImage(str(target)).pixelColor(0, 0), QColor('red'))
+        self.assertFalse(list(self.data.rglob('*.tmp')))
 
 
 if __name__ == '__main__':

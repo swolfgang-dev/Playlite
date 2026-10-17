@@ -10,6 +10,18 @@ class DownloadTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
 
+    def test_removing_completed_entry_releases_controller_once_and_keeps_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory);content = destination / 'downloaded.bin'
+            content.write_bytes(b'completed data')
+            queue = DownloadQueue();controller = Mock()
+            row = queue.enqueue('Game', str(destination), lambda *_: controller)
+            queue.pump();queue.finish(row, True, 'Complete')
+            queue.remove_completed(row);queue.remove_completed(row)
+            controller.dispose.assert_called_once()
+            self.assertNotIn(row, queue.entries)
+            self.assertEqual(content.read_bytes(), b'completed data')
+
     def test_enqueue_shows_strip_and_confirmation_without_expanding(self):
         host=QWidget();host.resize(800,600)
         queue=DownloadQueue();panel=DownloadsPanel(host,queue);host.show()

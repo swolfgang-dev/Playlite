@@ -1,4 +1,6 @@
 """Shared spacing and dialog sizing for core and plugin windows."""
+import atexit
+from PyQt6 import sip
 from PyQt6.QtCore import QObject, QEvent
 from PyQt6.QtWidgets import (QDialog, QFileDialog, QMessageBox, QFormLayout,
     QHBoxLayout, QVBoxLayout, QGridLayout, QLayout, QWidget, QGroupBox,
@@ -73,6 +75,10 @@ def configure_dialog(dialog):
 
 
 class DialogLayouts(QObject):
+    def detach(self):
+        if not sip.isdeleted(self) and self.parent() is not None:
+            self.parent().removeEventFilter(self)
+
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.Show and isinstance(watched, QDialog):
             configure_dialog(watched)
@@ -83,28 +89,41 @@ def install(app):
     if not hasattr(app, '_dialog_layouts'):
         app._dialog_layouts = DialogLayouts(app)
         app.installEventFilter(app._dialog_layouts)
-        app.aboutToQuit.connect(lambda: app.removeEventFilter(app._dialog_layouts))
+        app.aboutToQuit.connect(app._dialog_layouts.detach)
+        # Embedded/test applications may never enter exec(), and therefore do
+        # not emit aboutToQuit before Python starts destroying Qt wrappers.
+        atexit.register(app._dialog_layouts.detach)
 
 
 def scroll_dialog_body(dialog, footer):
     """Give tall forms a scrolling body while their action footer stays visible."""
     from PyQt6.QtWidgets import QScrollArea, QFrame
     root = dialog.layout()
+    if not isinstance(root, QVBoxLayout):
+        raise ValueError('A scrolling dialog needs a vertical root layout.')
+    footer_index = next((index for index in range(root.count())
+                         if root.itemAt(index).layout() is footer or root.itemAt(index).widget() is footer), -1)
+    if footer_index < 0:
+        raise ValueError('The footer must belong directly to the dialog layout.')
     body = QWidget()
     content = QVBoxLayout(body)
     content.setContentsMargins(0, 0, 0, 0)
     content.setSpacing(ROW)
+    # Recalculate the body's minimum when sections expand or collapse. The
+    # viewport supplies spare space; the form supplies its natural minimum.
+    content.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
     retained = None
     while root.count():
+        stretch = root.stretch(0)
         item = root.takeAt(0)
-        if item.layout() is footer:
+        if item.layout() is footer or item.widget() is footer:
             retained = item
         elif item.widget() is not None:
-            content.addWidget(item.widget(), 0, item.alignment())
+            content.addWidget(item.widget(), stretch, item.alignment())
         elif item.layout() is not None:
             child_layout = item.layout()
             child_layout.setParent(None)
-            content.addLayout(child_layout)
+            content.addLayout(child_layout, stretch)
         else:
             content.addItem(item)
     scroll = QScrollArea()
@@ -115,3 +134,12 @@ def scroll_dialog_body(dialog, footer):
     if retained is not None:
         root.addItem(retained)
     return scroll
+
+
+def insert_form_row_after(form, anchor, *row):
+    """Place a contribution relative to an owned control, independent of rows."""
+    index, _ = (form.getLayoutPosition(anchor) if isinstance(anchor, QLayout)
+                else form.getWidgetPosition(anchor))
+    if index < 0:
+        raise ValueError('The anchor must belong directly to the form.')
+    form.insertRow(index + 1, *row)

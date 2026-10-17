@@ -169,6 +169,8 @@ class DownloadQueue(QObject):
 
     def remove_completed(self,row):
         if row.state!='Complete' or row not in self.entries:return
+        dispose=getattr(row.controller,'dispose',None)
+        if callable(dispose):dispose()
         self.entries.remove(row)
         self.changed.emit()
 

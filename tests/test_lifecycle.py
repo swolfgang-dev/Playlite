@@ -11,6 +11,13 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_activation_socket_and_lock_share_the_profile_runtime_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('playlite.lifecycle.QStandardPaths.writableLocation', return_value=directory):
+                instance = SingleInstance()
+            self.assertEqual(Path(instance.name).parent, Path(directory))
+            self.assertEqual(instance.lock.fileName(), instance.name + '.lock')
+
     def test_repo_and_release_have_independent_activation_locks(self):
         import os
         with patch.dict(os.environ, {'PLAYLITE_PROFILE': 'installed'}):

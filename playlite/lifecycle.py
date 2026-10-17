@@ -107,8 +107,11 @@ class SingleInstance(QObject):
         super().__init__(parent)
         runtime = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.RuntimeLocation))
         runtime.mkdir(parents=True, exist_ok=True)
-        self.name = f'playlite-{os.getuid()}' + ('-repo' if os.environ.get('PLAYLITE_PROFILE') == 'repo' else '')
-        self.lock = QLockFile(str(runtime / (self.name + '.lock')))
+        identity = f'playlite-{os.getuid()}' + ('-repo' if os.environ.get('PLAYLITE_PROFILE') == 'repo' else '')
+        # Qt otherwise places named sockets in the shared temporary directory,
+        # outside the profile-specific runtime directory used by the lock.
+        self.name = str(runtime / identity)
+        self.lock = QLockFile(self.name + '.lock')
         self.server = QLocalServer(self)
         self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
 

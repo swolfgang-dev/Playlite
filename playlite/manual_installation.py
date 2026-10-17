@@ -20,6 +20,7 @@ class ManualInstallation(InstallationPlugin):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         widget.fields = {}
+        widget.field_rows = {}
         directory_defaults = dict(directory_defaults or {})
         if getattr(editor, 'data', None):
             general = QSettings(str(Path(editor.data) / 'ui.ini'), QSettings.Format.IniFormat)
@@ -68,8 +69,10 @@ class ManualInstallation(InstallationPlugin):
                 browse.clicked.connect(select_executable if key == 'Executable' else select_folder)
                 row.addWidget(browse)
                 form.addRow(label, row)
+                widget.field_rows[key] = row
             else:
                 form.addRow(label, field)
+                widget.field_rows[key] = field
         widget.default_directory = str(Path(game['Executable']).parent) if game.get('Executable') else ''
         def update_directory(value):
             folder = widget.fields['InstallDirectory']

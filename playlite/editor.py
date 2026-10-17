@@ -326,10 +326,17 @@ class MetadataEditor(QDialog):
         buttons.button(QDialogButtonBox.StandardButton.Save).setProperty('primary', True)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
-        footer = QHBoxLayout()
-        footer.addWidget(download)
-        footer.addWidget(download_images)
-        footer.addStretch()
+        # Nested wrapping forms let secondary actions and navigation occupy
+        # additional rows when the dialog is narrow, without clipping Save.
+        footer = QFormLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        footer.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        footer.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        downloads = QWidget()
+        downloads_row = QHBoxLayout(downloads)
+        downloads_row.setContentsMargins(0, 0, 0, 0)
+        downloads_row.addWidget(download)
+        downloads_row.addWidget(download_images)
         self.previous_tab = QPushButton('Previous tab')
         self.next_tab = QPushButton('Next tab')
         navigation_button_width = max(self.previous_tab.sizeHint().width(), self.next_tab.sizeHint().width())
@@ -338,13 +345,17 @@ class MetadataEditor(QDialog):
         self.previous_tab.clicked.connect(lambda: tabs.setCurrentIndex(tabs.currentIndex() - 1))
         self.next_tab.clicked.connect(lambda: tabs.setCurrentIndex(tabs.currentIndex() + 1))
         navigation = QWidget()
-        navigation_row = QHBoxLayout(navigation)
+        navigation_row = QFormLayout(navigation)
         navigation_row.setContentsMargins(0, 0, 0, 0)
-        navigation_row.addWidget(self.previous_tab)
-        navigation_row.addWidget(self.next_tab)
-        navigation_row.addWidget(buttons)
-        navigation.setFixedWidth(navigation.sizeHint().width())
-        footer.addWidget(navigation, 0, Qt.AlignmentFlag.AlignRight)
+        navigation_row.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        navigation_row.setFormAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        tab_buttons = QWidget()
+        tab_row = QHBoxLayout(tab_buttons)
+        tab_row.setContentsMargins(0, 0, 0, 0)
+        tab_row.addWidget(self.previous_tab)
+        tab_row.addWidget(self.next_tab)
+        navigation_row.addRow(tab_buttons, buttons)
+        footer.addRow(downloads, navigation)
         layout.addLayout(footer)
         def update_download_buttons(index):
             download.setVisible(index == 1)
@@ -405,7 +416,7 @@ class MetadataEditor(QDialog):
 
     def recalculate_size(self):
         from .installation import installation_size
-        from .metadata_dialog import Task
+        from .tasks import Task
         from PyQt6.QtCore import QThreadPool
         directory = self.fields['InstallDirectory'].text().strip()
         if not directory or not Path(directory).is_dir():
@@ -652,7 +663,6 @@ def _persist_game(data, games, updated):
     games = [repair_artwork(game, data) for game in games]
     backups = {}
     obsolete = set()
-    temporary = data / 'library.tmp'
     names = {'Icon': 'icon', 'HeaderImage': 'header', 'CoverImage': 'cover-art', 'BackgroundImage': 'background'}
     directory = data / 'artwork' / result['Id']
     previous = next((game for game in games if game['Id'] == result['Id']), {})
@@ -702,18 +712,17 @@ def _persist_game(data, games, updated):
         if not any(game['Id'] == result['Id'] for game in games):
             replacement.append(result)
         data.mkdir(parents=True, exist_ok=True)
-        temporary.write_text(json.dumps(replacement, indent=2, ensure_ascii=False))
         if (data / 'library.json').exists():
             shutil.copy2(data / 'library.json', data / 'library.json.bak')
-        temporary.replace(data / 'library.json')
+        from .storage import atomic_json
+        atomic_json(data / 'library.json', replacement)
         for path in obsolete - retained:
             try:
                 path.unlink(missing_ok=True)
             except OSError:
                 pass
         return replacement
-    except OSError:
-        temporary.unlink(missing_ok=True)
+    except (OSError, TypeError, ValueError):
         for path, original in backups.items():
             if original is None:
                 path.unlink(missing_ok=True)
