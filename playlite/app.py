@@ -1249,8 +1249,8 @@ class LibraryWindow(QMainWindow):
             editor = AddGameEditor(game['Executable'], self.data, self, game=game)
             while run_dialog(editor) == QDialog.DialogCode.Accepted:
                 try:
-                    self.games = save_game(self.data, self.games, editor.result_game)
-                except OSError as error:
+                    self.games = editor.persist(lambda game: save_game(self.data, self.games, game))
+                except Exception as error:
                     editor.error.setText(f'Could not save the Playlite entry: {error}')
                     continue
                 self.focus_added_game(editor.result_game['Id'])
@@ -1554,8 +1554,8 @@ class LibraryWindow(QMainWindow):
             return
         while run_dialog(dialog) == QDialog.DialogCode.Accepted:
             try:
-                self.games = save_game(self.data, self.games, dialog.result_game)
-            except OSError as error:
+                self.games = dialog.persist(lambda game: save_game(self.data, self.games, game))
+            except Exception as error:
                 dialog.error.setText(f'Could not save the Playlite entry: {error}')
                 continue
             self.focus_added_game(dialog.result_game['Id'])
@@ -1697,7 +1697,7 @@ class LibraryWindow(QMainWindow):
             editor = state['editor']
             try:
                 save = lambda: save_game(self.data, self.games, editor.result_game)
-                self.games = editor.play_actions.save_with_removals(save) if hasattr(editor, 'play_actions') else save()
+                self.games = editor.play_actions.save_with_removals(save, editor.result_game) if hasattr(editor, 'play_actions') else save()
             except (OSError, ValueError) as error:
                 editor.error.setText(f'Could not save game: {error}')
                 return

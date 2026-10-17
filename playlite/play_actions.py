@@ -176,10 +176,11 @@ class ContributedActionSettings(QWidget):
 
 
 class ActionCard(QFrame):
-    def __init__(self, action, editor):
+    def __init__(self, action, editor, pending_installation=None):
         super().__init__(editor)
         self.editor = editor
         self.action = copy.deepcopy(action)
+        self.pending_installation = pending_installation
         self.setObjectName('playActionCard')
         set_style(self, '''
             QFrame#playActionCard { background: #1d1e20; border: 1px solid #404144; border-radius: 8px; }
@@ -212,6 +213,9 @@ class ActionCard(QFrame):
         if selected:
             self.integration.setCurrentIndex(self.integration.findData(selected))
         self.game_id = QLineEdit(str(action.get('GameId') or ''))
+        if pending_installation is not None:
+            self.game_id.setReadOnly(True)
+            self.game_id.setPlaceholderText('Assigned on save')
         for field in (self.name,self.integration,self.game_id):field.setFixedHeight(40)
         form.addRow('Name',self.name)
         identity_row = QWidget()
@@ -277,13 +281,18 @@ class ActionCard(QFrame):
         self.game_id.setVisible(not manual)
         self.game_id_label.setVisible(not manual)
         provider = next((p for p in self.editor.providers if p.id == self.integration.currentData()), None)
-        settings = provider.create_action_editor(action, self) if provider else LaunchSettings(action, self)
-        selected = dict(action, Integration=self.integration.currentData())
+        selected = dict(action, Integration=self.integration.currentData(), GameId=self.game_id.text().strip())
+        settings = provider.create_action_editor(selected, self) if provider else LaunchSettings(selected, self)
         contributions = [widget for plugin in self.editor.action_plugins
                          if (widget := plugin.create_action_settings(selected, self)) is not None]
         return ContributedActionSettings(settings, contributions, self) if contributions else settings
 
     def change_integration(self):
+        if self.pending_installation is not None:
+            self.pending_installation = None
+            self.game_id.setReadOnly(False)
+            self.game_id.setPlaceholderText('')
+            self.game_id.clear()
         try:
             self.action.update(self.settings.collect())
         except ValueError:
@@ -305,7 +314,7 @@ class ActionCard(QFrame):
         if not action['Name'] or not action['Integration']:
             raise ValueError('Each play action needs a name and an integration.')
         provider = next((p for p in self.editor.providers if p.id == action['Integration']), None)
-        if provider:
+        if provider and self.pending_installation is None:
             provider.validate_action(action)
         return action
 
@@ -356,10 +365,11 @@ class PlayActionsEditor(QWidget):
         folder=getattr(parent,'fields',{}).get('InstallDirectory')
         if folder is not None:seed['InstallDirectory']=folder.text().strip()
         dialog=ActionSetupDialog(seed,data,self.providers,method,self)
-        if run_dialog(dialog)==QDialog.DialogCode.Accepted:self.add(dialog.result_action)
+        if run_dialog(dialog)==QDialog.DialogCode.Accepted:
+            self.add(dialog.result_action, pending_installation=dialog.pending_installation)
 
-    def add(self, action=None):
-        card = ActionCard(action or {}, self)
+    def add(self, action=None, pending_installation=None):
+        card = ActionCard(action or {}, self, pending_installation)
         self.cards.append(card)
         if card.default.isChecked():self.set_default(card)
         self.card_layout.addWidget(card)
@@ -411,22 +421,48 @@ class PlayActionsEditor(QWidget):
             card.up.setEnabled(index > 0)
             card.down.setEnabled(index < len(self.cards) - 1)
 
-    def save_with_removals(self, save):
-        remaining = {(card.integration.currentData(), card.game_id.text().strip()) for card in self.cards}
+    def save_with_removals(self, save, game=None):
+        from contextlib import ExitStack
+        original_actions = copy.deepcopy(game['PlayActions']) if game is not None else None
+        committed = []
         backups = []
         removed = set()
-        try:
-            for provider, action in self.pending_removals:
-                key = (provider.id, action['GameId'])
-                if key in remaining or key in removed:
-                    continue
-                backups.append((provider, provider.delete_entry(dict(self.game, PlayActions=[action]))))
-                removed.add(key)
-            result = save()
-        except Exception:
-            for provider, backup in reversed(backups):
-                provider.restore_deleted_entry(backup)
-            raise
+        with ExitStack() as registrations:
+            try:
+                if game is not None:
+                    for index, card in enumerate(self.cards):
+                        if card.pending_installation is not None:
+                            action = registrations.enter_context(card.pending_installation.commit_action(game['PlayActions'][index], self.providers))
+                            game['PlayActions'][index] = action
+                            committed.append((card, action))
+                remaining = ({(action['Integration'], action.get('GameId', '')) for action in game['PlayActions']}
+                             if game is not None else
+                             {(card.integration.currentData(), card.game_id.text().strip()) for card in self.cards})
+                for provider, action in self.pending_removals:
+                    key = (provider.id, action['GameId'])
+                    if key in remaining or key in removed:
+                        continue
+                    backups.append((provider, provider.delete_entry(dict(self.game, PlayActions=[action]))))
+                    removed.add(key)
+                result = save()
+            except Exception:
+                problems = []
+                for provider, backup in reversed(backups):
+                    try:
+                        provider.restore_deleted_entry(backup)
+                    except Exception as error:
+                        problems.append(str(error))
+                if game is not None:
+                    game['PlayActions'] = original_actions
+                if problems:
+                    raise ValueError('Could not restore all launcher entries: ' + '; '.join(problems))
+                raise
+        for card, action in committed:
+            card.game_id.setText(action['GameId'])
+            card.game_id.setReadOnly(False)
+            card.game_id.setPlaceholderText('')
+            card.action.update(action)
+            card.pending_installation = None
         self.pending_removals.clear()
         return result
 

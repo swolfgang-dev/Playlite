@@ -65,6 +65,7 @@ def main(argv=None):
     parser.add_argument('repositories', nargs='*', help='Directory names; defaults to core and all sibling plugins.')
     parser.add_argument('--pattern', default='test*.py')
     parser.add_argument('--match', help='Run only tests matching this unittest name pattern.')
+    parser.add_argument('--verbose', action='store_true', help='Include test names in failure and timeout diagnostics.')
     parser.add_argument('--scale', choices=('1', '1.5', '2'), default='1')
     parser.add_argument('--core-only', action='store_true', help='Do not provide plugin fixtures.')
     args = parser.parse_args(argv)
@@ -82,7 +83,8 @@ def main(argv=None):
                 copy_plugin_fixtures(Path(environment['XDG_DATA_HOME']) / 'playlite/plugins')
             print(f'Checking {name} at scale {args.scale}', flush=True)
             try:
-                command = [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', args.pattern, '-q']
+                command = [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', args.pattern,
+                           '-v' if args.verbose else '-q']
                 if args.match:
                     command.extend(['-k', args.match])
                 result = subprocess.run(command, cwd=repositories[name], env=environment,
@@ -95,9 +97,12 @@ def main(argv=None):
                 else:
                     print('\n'.join(line for line in output.splitlines()
                                     if line.startswith(('Ran ', 'OK'))), flush=True)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as error:
                 failures.append(name)
                 print('Suite exceeded 180 seconds.', flush=True)
+                for partial in (error.stdout, error.stderr):
+                    if partial:
+                        print((partial.decode(errors='replace') if isinstance(partial, bytes) else partial)[-24000:], flush=True)
     print('Failed: ' + ', '.join(failures) if failures else 'All selected suites passed.')
     return bool(failures)
 

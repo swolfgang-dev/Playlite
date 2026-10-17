@@ -1,6 +1,8 @@
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
+import copy
 from pathlib import Path
 from unittest.mock import patch,Mock
 from PyQt6.QtWidgets import QApplication,QDialog,QWidget,QLineEdit
@@ -26,7 +28,73 @@ class ImportMethod(InstallationPlugin):
         return game
 
 
+class DeferredMethod(ImportMethod):
+    deferred_integration = 'Example'
+    def __init__(self, calls):
+        self.calls = calls
+    def collect(self, widget, game):
+        game = super().collect(widget, game)
+        game['ExampleId'] = ''
+        return game
+    @contextmanager
+    def commit_transaction(self, widget, game):
+        self.calls.append('register')
+        game['ExampleId'] = '84'
+        try:
+            yield game
+        except Exception:
+            self.calls.append('rollback')
+            raise
+
+
 class ActionSetupTests(unittest.TestCase):
+    def test_external_registration_waits_for_library_save_and_rolls_back_for_retry(self):
+        calls = []
+        method = DeferredMethod(calls)
+        self.provider.installation_methods = lambda: [method]
+        dialog = ActionSetupDialog(self.game, self.data, [self.provider], method.id)
+        dialog.save()
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        self.assertEqual(calls, [])
+        editor = PlayActionsEditor(self.game, [self.provider])
+        card = editor.add(dialog.result_action, dialog.pending_installation)
+        updated = dict(self.game, PlayActions=editor.collect())
+        save = Mock(side_effect=OSError('library failed'))
+        with self.assertRaisesRegex(OSError, 'library failed'):
+            editor.save_with_removals(save, updated)
+        self.assertEqual(calls, ['register', 'rollback'])
+        self.assertEqual(updated['PlayActions'][-1]['GameId'], '')
+        self.assertIsNotNone(card.pending_installation)
+        saved = editor.save_with_removals(lambda: copy.deepcopy(updated), updated)
+        self.assertEqual(saved['PlayActions'][-1]['GameId'], '84')
+        self.assertEqual(card.game_id.text(), '84')
+        self.assertIsNone(card.pending_installation)
+        self.assertEqual(calls, ['register', 'rollback', 'register'])
+        editor.close()
+        dialog.close()
+
+    def test_add_game_persistence_can_retry_without_committing_a_draft(self):
+        from playlite.add_game import AddGameEditor
+        calls = []
+        method = DeferredMethod(calls)
+        self.provider.installation_methods = lambda: [method]
+        dialog = AddGameEditor(None, self.data, installation_method=method.id)
+        dialog.fields['Name'].setText('Example')
+        dialog.save()
+        draft = copy.deepcopy(dialog.result_game)
+        self.assertEqual(calls, [])
+        with self.assertRaisesRegex(OSError, 'library failed'):
+            dialog.persist(Mock(side_effect=OSError('library failed')))
+        self.assertEqual(calls, ['register', 'rollback'])
+        self.assertEqual(dialog.result_game, draft)
+        self.assertIsNotNone(dialog.pending_installation)
+        saved = dialog.persist(copy.deepcopy)
+        self.assertEqual(saved['PlayActions'][0]['GameId'], '84')
+        self.assertEqual(dialog.result_game, saved)
+        self.assertIsNone(dialog.pending_installation)
+        self.assertEqual(calls, ['register', 'rollback', 'register'])
+        dialog.close()
+
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
     def setUp(self):

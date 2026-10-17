@@ -40,10 +40,10 @@ def main(argv=None):
             validate = getattr(args.plugin, 'validate_cli_library', None)
             if validate:
                 validate(game, games)
-            if hasattr(args.plugin, 'cli_commit'):
-                game = args.plugin.cli_commit(args, game, plugins)
             from .editor import save_game
-            save_game(args.data, games, game)
+            with args.plugin.cli_commit_transaction(args, game, plugins) as committed:
+                save_game(args.data, games, committed)
+                game = committed
         finally:
             lock.unlock()
         print(json.dumps(game, indent=2))

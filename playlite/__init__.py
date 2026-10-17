@@ -1,3 +1,3 @@
 """Playlite native game library."""
 
-__version__ = '0.2.87'
+__version__ = '0.2.88'

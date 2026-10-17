@@ -44,8 +44,14 @@ class ActionSetupDialog(AddGameEditor):
                 if provider is None:raise ValueError('Select a launch method to create a play action.')
                 game['GameProvider']=provider.id
                 game[provider.action_id_field]=self.manual_game_id.text().strip()
-            # Collection must validate before a plugin creates an external entry.
-            game=self.installation_plugin.commit(self.installation_widget,game)
+            self.pending_installation = None
+            integration = self.installation_plugin.deferred_integration
+            if integration:
+                from .installation_commit import PendingInstallation
+                game['GameProvider'] = integration
+                self.pending_installation = PendingInstallation(self.installation_plugin, self.installation_widget, game)
+            else:
+                game=self.installation_plugin.commit(self.installation_widget,game)
             actions=actions_for(game,self.action_providers)
             if not actions:raise ValueError('This installation method did not supply a launching integration.')
             action=actions[0]
@@ -54,7 +60,7 @@ class ActionSetupDialog(AddGameEditor):
                 action['Prefix']=''
             action['InstallDirectory']=game.get('InstallDirectory') or ''
             provider=next((p for p in self.action_providers if p.id==action['Integration']),None)
-            if provider:provider.validate_action(action)
+            if provider and self.pending_installation is None:provider.validate_action(action)
             self.result_action=action
         except (ValueError,OSError,sqlite3.Error) as error:
             self.error.setText(str(error));return

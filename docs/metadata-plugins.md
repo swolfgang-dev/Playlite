@@ -2,7 +2,7 @@
 
 All plugins are optional and distributed from their own repositories. Plugins live in
 `~/.local/share/playlite/plugins/<plugin-folder>/` (or under `$XDG_DATA_HOME`).
-They load when a downloader opens. Each folder contains `manifest.json` and
+They load on discovery and reuse their package modules until restart. Each folder contains `manifest.json` and
 `plugin.py`. Plugins run Python code with the app's access to your machine.
 Search and fetch run on worker threads; they must not manipulate Qt widgets.
 Use finite network timeouts. This API does not run plugins in isolated processes.
@@ -20,7 +20,7 @@ Example manifest:
 ```
 
 Keep `id` stable: game associations and review defaults use it as their key.
-It must be unique and cannot be `Current`. The optional provider IDs remain `Steam`
+It must be unique (ignoring case) and cannot be `Current` or `Manual`. The optional provider IDs remain `SteamMetadata`
 and `IGDB`, preserving existing saved IDs and defaults. Supported field names
 are listed in the plugin manifests. Unsupported fields are disabled in the UI.
 
@@ -59,9 +59,11 @@ Optional methods:
   exact result is selected automatically.
 - `query_hint` supplies search placeholder text.
 - `create_settings(parent)` returns a Qt widget for the plugin's page in Settings
-  → Plugins, or `None` if there are no settings. `save_settings(widget)` validates
-  and saves it when the user clicks Save; raise `ValueError` for invalid input.
-  These two hooks run on the UI thread.
+  → Plugins, or `None` if there are no settings. `validate_settings(widget)` checks
+  pending values without writing files or changing runtime state. Playlite validates
+  every section before calling any `save_settings(widget)`. Saving should validate
+  again for direct API callers; raise `ValueError` for invalid input. These hooks
+  run on the UI thread. Filesystem failures during saving must also be reported.
 
 Plugins can own their credential configuration. IGDB keeps its existing Twitch
 credentials and application settings screen; Steam requires no credentials.
@@ -121,12 +123,25 @@ files. Manual is a built-in installation method, not a discovered plugin, select
 Game editor. It stores `InstallationMethod`, `InstallDirectory`, `Executable`,
 and `LaunchArguments`; blank installation details are supported.
 
+Methods that create external launcher entries set `deferred_integration` to the
+target integration ID. Their `commit_transaction(widget, game)` returns a context
+manager yielding the registered game. Registration runs when the parent library
+entry is saved, including actions added to an existing editor. If saving fails,
+the context must restore its own changes while preserving unrelated external edits.
+The editor retains the pending request for retry; canceling an editor creates no
+external entry. `AddGameEditor.persist(save)` runs this transaction around a
+callback accepting the committed game. Use it instead of saving `result_game`
+directly. This contract is available in Playlite 0.2.88.
+
 ### Command line
 
 Run `playlite-cli` after installation, or `python3 -m playlite.cli` from the
 repository. Installation plugins expose `cli_name`, `configure_cli(parser)`,
 `cli_game(args, plugins)`, and optionally `cli_commit(args, game, plugins)`.
 Validation must happen in `cli_game`; only `cli_commit` may change external state.
+Methods with external registration implement `cli_commit_transaction(args, game,
+plugins)` to provide the same rollback contract around a CLI library save. The
+default implementation delegates to the legacy `cli_commit` hook when present.
 
 Examples:
 
@@ -197,6 +212,8 @@ Return `None` for targets that do not apply. Playlite calls
 `save_settings_contribution(target, widget)` on the contributing plugin when
 settings are saved. The contributor owns persistence; construction must not
 write settings. No contribution appears if either plugin is absent.
+`validate_settings_contribution(target, widget)` participates in the same
+validation pass as each plugin's own section.
 
 SteamAutoCrack contributes an independent run-after-add default to each
 installation method. Its legacy shared default is used until a method-specific
@@ -223,7 +240,7 @@ The Hide button appears only while expanded.
 Image Studio is an optional general plugin (`ImageStudio`) and is disabled by default.
 When enabled, its `augment_editor` hook adds the crop/frame tool to the Images
 page in both Edit and Add game windows. The tool and its dialog live entirely
-inside `playlite/plugins/icon_studio`.
+inside the `playlite-plugin-image-studio` repository.
 
 ### Theme plugins
 
@@ -359,7 +376,10 @@ The optional Ludusavi Save Backup plugin uses these hooks to back up host Steam/
 
 Use `playlite.tasks.Task(function)` for shared Qt background work. Connect
 `task.signals.succeeded` and `task.signals.failed` to GUI-thread slots and start
-the task through `QThreadPool`. `task.progress(message)` emits progress while
+the task through `QThreadPool`. For completion closures that touch widgets,
+`task.bind(owner, succeeded=callback, failed=callback)` ties delivery to a QObject
+owner and disconnects when that owner is destroyed (Playlite 0.2.88).
+`task.progress(message)` emits progress while
 the Qt signal owner is alive. The legacy `playlite.metadata_dialog.Task` import
 remains available to API v1 plugins. Tasks do not interrupt their functions;
 the operation owns cancellation, finite timeouts and resource cleanup.
@@ -380,10 +400,16 @@ contexts in reverse order. `playlite.action_settings.update_action_files` shares
 file rollback between MangoHud and Ultimate Mapper, preserving newer external
 edits and restoring other files even if one conflicts. Each plugin still owns
 validation and the atomic update of its launcher fields.
+Update callbacks passed to `update_action_files` return the exact bytes they
+wrote, or `None` if unchanged. Rollback must not reread a file and adopt another
+application's intervening edit as its own write.
 
 Use `playlite.storage.atomic_json(path, data)` for JSON replacement. It preserves
 existing permissions, creates private new files, synchronizes the staged file,
 and removes its unique temporary file on failure. This is an atomic replacement,
 not a read/modify/write lock; library changes also need `library_lock(data)`.
+`atomic_bytes(path, content)` provides the same replacement contract for binary
+or pre-encoded text data in Playlite 0.2.88. Nested locks for the same library
+reuse the outer transaction's process lock.
 Declare `minimum_playlite_version` for new APIs. Both discovery and installation
 check it before importing plugin code or replacing an installed plugin.

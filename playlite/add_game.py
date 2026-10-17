@@ -67,6 +67,7 @@ class AddGameEditor(MetadataEditor):
         self.installation_widgets = {self.installation_plugin.id: self.installation_widget}
         self.installation_method.currentIndexChanged.connect(self.change_installation_method)
         self.generic_plugins = [plugin for plugin in plugins.values() if isinstance(plugin, GenericPlugin)]
+        self.pending_installation = None
         for plugin in self.generic_plugins:
             plugin.augment_add_editor(self)
         from PyQt6.QtWidgets import QTabWidget
@@ -105,6 +106,7 @@ class AddGameEditor(MetadataEditor):
 
     def save(self):
         try:
+            self.pending_installation = None
             game = self.collect()
             if self.installation_plugin is not None:
                 game = self.installation_plugin.collect(self.installation_widget, game)
@@ -113,21 +115,39 @@ class AddGameEditor(MetadataEditor):
             for plugin in self.generic_plugins:
                 plugin.prepare_add(self, game, context)
             if self.installation_plugin is not None:
-                game = self.installation_plugin.commit(self.installation_widget, game)
-            from .play_actions import actions_for
+                integration = self.installation_plugin.deferred_integration
+                if integration:
+                    from .installation_commit import PendingInstallation
+                    game['GameProvider'] = integration
+                    self.pending_installation = PendingInstallation(self.installation_plugin, self.installation_widget, game)
+                else:
+                    game = self.installation_plugin.commit(self.installation_widget, game)
             from .providers import GameProvider, discover_plugins
             providers = [plugin for plugin in discover_plugins().values() if isinstance(plugin, GameProvider)]
-            actions = actions_for(game, providers)
-            if actions:
-                game['PlayActions'] = actions
-                from .plugin_fields import legacy_action_fields
-                for key in legacy_action_fields(providers):
-                    game.pop(key, None)
+            from .installation_commit import set_play_actions
+            set_play_actions(game, providers)
             self.result_game = game
         except (ValueError, OSError, sqlite3.Error) as error:
             self.error.setText(str(error))
             return
         self.accept()
+
+    def persist(self, save):
+        """Save a collected entry, including its pending external registration."""
+        pending = self.pending_installation
+        if pending is None:
+            return save(self.result_game)
+        from .providers import GameProvider, discover_plugins
+        from .installation_commit import set_play_actions
+        providers = [plugin for plugin in discover_plugins().values() if isinstance(plugin, GameProvider)]
+        if not any(provider.id == pending.method.deferred_integration for provider in providers):
+            raise ValueError('The launching integration is no longer available.')
+        with pending.commit() as game:
+            set_play_actions(game, providers)
+            saved = save(game)
+        self.result_game = game
+        self.pending_installation = None
+        return saved
 
 
 

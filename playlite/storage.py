@@ -12,8 +12,13 @@ def atomic_json(path, data, *, mode=None, sort_keys=False):
     Existing permissions are retained unless the caller specifies a mode. New
     files are private by default, including while they are being written.
     """
+    content = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=sort_keys).encode('utf-8')
+    atomic_bytes(path, content, mode=mode)
+
+
+def atomic_bytes(path, content, *, mode=None):
+    """Atomically replace bytes, retaining existing permissions by default."""
     path = Path(path)
-    content = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=sort_keys)
     if mode is None:
         try:
             mode = stat.S_IMODE(path.stat().st_mode)
@@ -22,7 +27,7 @@ def atomic_json(path, data, *, mode=None, sort_keys=False):
     descriptor, name = tempfile.mkstemp(prefix='.' + path.name + '-', suffix='.tmp', dir=path.parent)
     temporary = Path(name)
     try:
-        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+        with os.fdopen(descriptor, 'wb') as stream:
             stream.write(content)
             stream.flush()
             os.fchmod(stream.fileno(), mode)

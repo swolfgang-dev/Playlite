@@ -84,6 +84,7 @@ class GameProvider(Plugin):
 class InstallationPlugin(Plugin):
     """An add method supplies controls and validates a proposed library entry."""
     description = ''
+    deferred_integration = ''
     def create_editor(self, editor, game):
         raise NotImplementedError
 
@@ -93,6 +94,16 @@ class InstallationPlugin(Plugin):
     def commit(self, widget, game):
         """Perform explicitly requested external changes after all validation."""
         return game
+
+    def commit_transaction(self, widget, game):
+        """Override to roll external registration back if library saving fails."""
+        from contextlib import nullcontext
+        return nullcontext(self.commit(widget, game))
+
+    def cli_commit_transaction(self, args, game, plugins):
+        from contextlib import nullcontext
+        commit = getattr(self, 'cli_commit', None)
+        return nullcontext(commit(args, game, plugins) if commit else game)
 
 
 class IntegrationPlugin(GameProvider):

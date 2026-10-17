@@ -128,7 +128,8 @@ class GameBatchTests(unittest.TestCase):
             self.window.view.setCurrentIndex(self.window.view.findData(mode))
             self.window.favorites_filter.setChecked(True)
             game = dict(Id='added-' + mode, Name='Added game', IsInstalled=True)
-            editor = SimpleNamespace(result_game=game, download_caches=[], generic_plugins=[], error=QLabel())
+            editor = SimpleNamespace(result_game=game, download_caches=[], generic_plugins=[], error=QLabel(),
+                                     persist=lambda save: save(game))
             with patch('playlite.add_game.AddGameEditor', return_value=editor), patch('playlite.app.run_dialog', return_value=QDialog.DialogCode.Accepted):
                 self.window.add_manual_game()
             self.assertEqual(self.window.current['Id'], game['Id'])
