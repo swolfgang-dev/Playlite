@@ -7,6 +7,28 @@ from playlite.app import LibraryWindow
 APP=QApplication.instance() or QApplication([])
 
 class SelectionTransitionTests(unittest.TestCase):
+    def test_late_artwork_does_not_touch_a_deleted_detail_widget(self):
+        from PyQt6 import sip
+        from PyQt6.QtGui import QImage
+        from PyQt6.QtWidgets import QWidget
+        window=SimpleNamespace(devicePixelRatioF=lambda:1,content=Mock())
+        hero=QWidget();window.play_hero=hero
+        with patch('playlite.app.QThreadPool.globalInstance') as pool:
+            LibraryWindow.load_detail_artwork(window,'late.png','',hero,Mock(),Mock(),Mock())
+            task=pool.return_value.start.call_args.args[0]
+            sip.delete(hero)
+            task.signals.succeeded.emit((QImage(),QImage()))
+        self.assertEqual(window.detail_art_tasks,[])
+
+    def test_custom_library_owns_its_download_queue(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory, patch('playlite.providers.discover_plugins',return_value={}):
+            data=Path(directory)
+            window=LibraryWindow(data)
+            self.assertEqual(window.download_queue.storage,data/'downloads.json')
+            window.close()
+
     def test_selection_builds_immediately_during_animation(self):
         item=Mock();item.data.return_value={'Id':'one'}
         animation=Mock();animation.state.return_value=QAbstractAnimation.State.Running

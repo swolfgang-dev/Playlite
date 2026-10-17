@@ -70,7 +70,7 @@ class SelectedRowTests(unittest.TestCase):
             image = QImage(200, 80, QImage.Format.Format_ARGB32)
             image.fill(Qt.GlobalColor.transparent)
             painter = QPainter(image)
-            with patch('playlite.app.selection_border') as border:
+            with patch('playlite.library_list.selection_border') as border:
                 delegate.paint(painter, option, view.model().index(0, 0))
                 border.assert_called_once()
             painter.end()
@@ -87,7 +87,7 @@ class SelectedRowTests(unittest.TestCase):
             option.state = QStyle.StateFlag.State_Selected
             image = QImage(200, 80, QImage.Format.Format_ARGB32)
             painter = QPainter(image)
-            with patch('playlite.app.selection_border') as border:
+            with patch('playlite.library_list.selection_border') as border:
                 view.itemDelegate().paint(painter, option, view.model().index(0, 0))
                 border.assert_not_called()
             painter.end()

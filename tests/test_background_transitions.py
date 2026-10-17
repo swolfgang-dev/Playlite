@@ -35,7 +35,7 @@ class BackgroundTransitionTests(unittest.TestCase):
         page.background_fade.stop();page.close()
 
     def test_resize_reuses_full_frame_and_loading_keeps_existing_artwork(self):
-        with TemporaryDirectory() as directory,patch('playlite.app.QThreadPool') as pool:
+        with TemporaryDirectory() as directory,patch('playlite.game_view.QThreadPool') as pool:
             path=Path(directory)/'art.png';Image.new('RGB',(160,160),'blue').save(path)
             page=ArtworkPage();page.resize(160,160);page.background=pixmap('red');original=page.background.cacheKey()
             page.set_background(str(path))
