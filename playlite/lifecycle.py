@@ -221,7 +221,7 @@ class TrayLifecycle(QObject):
             if not self.window.close():
                 self.quitting = False
                 return
-        from PyQt6.QtCore import QProcess
+        from PyQt6.QtCore import QProcess, QThreadPool
         def pending(dialog):
             check = getattr(dialog, 'shutdown_pending', None)
             if callable(check):
@@ -229,7 +229,7 @@ class TrayLifecycle(QObject):
             process = getattr(dialog, 'process', None)
             return (dialog.property('playliteBackgroundJob') and isinstance(process, QProcess)
                     and process.state() != QProcess.ProcessState.NotRunning)
-        jobs = [dialog for dialog in self.window.findChildren(QDialog) if pending(dialog)]
+        jobs = [job for job in self.window.findChildren(QObject) if pending(job)]
         for dialog in jobs:
             request = getattr(dialog, 'request_shutdown', None)
             if callable(request):
@@ -239,11 +239,12 @@ class TrayLifecycle(QObject):
         for dialog in self.app.topLevelWidgets():
             if isinstance(dialog, QDialog) and dialog not in jobs:
                 dialog.reject()
-        if jobs:
+        pool = QThreadPool.globalInstance()
+        if jobs or pool.activeThreadCount():
             self.quit_timer = QTimer(self)
             def completed():
                 from PyQt6 import sip
-                if all(sip.isdeleted(job) or not pending(job) for job in jobs):
+                if not pool.activeThreadCount() and all(sip.isdeleted(job) or not pending(job) for job in jobs):
                     self.quit_timer.stop()
                     self.app.quit()
             self.quit_timer.timeout.connect(completed)

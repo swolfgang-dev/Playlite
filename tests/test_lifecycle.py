@@ -15,14 +15,14 @@ APP = QApplication.instance() or QApplication([])
 class LifecycleTests(unittest.TestCase):
     def test_quit_veto_can_be_retried_and_waits_for_background_completion(self):
         script = '''
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject,QTimer
 from PyQt6.QtWidgets import QApplication,QDialog,QMainWindow
 from playlite.lifecycle import TrayLifecycle
 app=QApplication([])
 class Window(QMainWindow):
     allow=False
     def closeEvent(self,event):event.setAccepted(self.allow)
-class Job(QDialog):
+class Job(QObject):
     busy=True
     requested=False
     recorded=False

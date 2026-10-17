@@ -189,6 +189,13 @@ class DownloadQueue(QObject):
             if self.active is row:row.state='Paused';row.status='Paused when Playlite closed · resume to continue'
         self.save()
 
+    def shutdown_pending(self):
+        return self.active is not None
+
+    def request_shutdown(self):
+        if not self.stopped:
+            self.shutdown()
+
     def confirm_close(self,parent):
         if not any(row.state in ('Queued','Downloading','Paused') for row in self.entries):return True
         dialog=QMessageBox(QMessageBox.Icon.Warning,'Downloads are unfinished',
