@@ -15,6 +15,25 @@ from playlite.editor import MetadataEditor, save_game
 
 
 class MetadataTests(unittest.TestCase):
+    def test_failed_optional_editor_extension_preserves_existing_plugin_data(self):
+        from playlite.providers import GenericPlugin
+        class Broken(GenericPlugin):
+            id = name = 'Broken'
+            def augment_editor(self, editor):
+                raise RuntimeError('panel unavailable')
+            def collect_editor(self, editor, game):
+                raise AssertionError('A failed extension must not collect missing controls')
+        game = {'Id': 'standalone', 'Name': 'Example', 'PluginData': {'keep': True}}
+        before = (self.data / 'library.json').read_bytes()
+        with patch('playlite.providers.discover_plugins', return_value={'Broken': Broken()}), self.assertLogs(level='ERROR'):
+            editor = MetadataEditor(game, self.data)
+        try:
+            self.assertIn('controls are unavailable', editor.error.text())
+            self.assertEqual(editor.collect()['PluginData'], {'keep': True})
+            self.assertEqual((self.data / 'library.json').read_bytes(), before)
+        finally:
+            editor.reject()
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication(['playlite'])

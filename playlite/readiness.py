@@ -34,7 +34,12 @@ def show_readiness(window, games):
 def grouped_actions(plugins, window, games):
     groups={'Installation':[],'Saves':[],'Tools':[]}
     for plugin in plugins:
-        actions=plugin.game_actions(window,games[0]) if len(games)==1 else plugin.batch_game_actions(window,games)
+        try:
+            actions=plugin.game_actions(window,games[0]) if len(games)==1 else plugin.batch_game_actions(window,games)
+        except Exception:
+            import logging
+            logging.exception('Plugin %s failed to provide game actions', plugin.name)
+            continue
         if not actions:continue
         group=getattr(plugin,'action_group','Tools')
         if group not in groups:group='Tools'

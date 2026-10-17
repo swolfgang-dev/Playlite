@@ -367,8 +367,14 @@ class MetadataEditor(QDialog):
         self.finished.connect(self.cleanup_downloads)
         from .providers import discover_plugins, GenericPlugin
         self.editor_plugins = [plugin for plugin in discover_plugins().values() if isinstance(plugin, GenericPlugin)]
-        for plugin in self.editor_plugins:
-            plugin.augment_editor(self)
+        for plugin in list(self.editor_plugins):
+            try:
+                plugin.augment_editor(self)
+            except Exception as error:
+                import logging
+                logging.exception('Plugin %s failed to extend the game editor', plugin.id)
+                self.editor_plugins.remove(plugin)
+                self.error.setText(f'{plugin.name} controls are unavailable: {error}')
 
     def set_game_navigation(self, index, count):
         self.navigation_offset = 0
@@ -623,7 +629,7 @@ class MetadataEditor(QDialog):
     def save(self, navigation_offset=0):
         try:
             self.result_game = self.collect()
-        except (ValueError, OSError) as error:
+        except Exception as error:
             self.error.setText(str(error))
             return
         self.navigation_offset = navigation_offset

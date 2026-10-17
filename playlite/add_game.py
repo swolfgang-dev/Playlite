@@ -1,11 +1,21 @@
 from .lifecycle import choose_file
 """Manual library entries and add-game method selection."""
-import sqlite3
 import uuid
 from pathlib import Path
 from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
 from .editor import MetadataEditor
 ROOT = Path.home() / 'Games'
+
+
+def notify_game_added(window, editor):
+    """Run independent follow-up hooks after the library entry is committed."""
+    import logging
+    for plugin in editor.generic_plugins:
+        try:
+            plugin.after_game_added(window, editor.result_game, editor)
+        except Exception as error:
+            logging.exception('Plugin %s failed after adding a game', plugin.id)
+            window.statusBar().showMessage(f'Game added; {plugin.name} needs attention: {error}', 15000)
 
 
 class AddGameMethods(QDialog):
@@ -48,7 +58,7 @@ class AddGameEditor(MetadataEditor):
         selected = Path(executable).expanduser().resolve(strict=True) if executable else None
         if selected is not None and not selected.is_file():
             raise ValueError('Select a game executable.')
-        from .providers import discover_plugins, GenericPlugin, installation_methods
+        from .providers import discover_plugins, installation_methods
         plugins = discover_plugins()
         self.installation_plugins = installation_methods(plugins)
         if installation_method is None:
@@ -66,10 +76,17 @@ class AddGameEditor(MetadataEditor):
         self.setWindowTitle(f'Add Game — {self.installation_plugin.name}')
         self.installation_widgets = {self.installation_plugin.id: self.installation_widget}
         self.installation_method.currentIndexChanged.connect(self.change_installation_method)
-        self.generic_plugins = [plugin for plugin in plugins.values() if isinstance(plugin, GenericPlugin)]
+        self.generic_plugins = list(self.editor_plugins)
         self.pending_installation = None
-        for plugin in self.generic_plugins:
-            plugin.augment_add_editor(self)
+        for plugin in list(self.generic_plugins):
+            try:
+                plugin.augment_add_editor(self)
+            except Exception as error:
+                import logging
+                logging.exception('Plugin %s failed to extend the add-game editor', plugin.id)
+                self.generic_plugins.remove(plugin)
+                self.editor_plugins.remove(plugin)
+                self.error.setText(f'{plugin.name} controls are unavailable: {error}')
         from PyQt6.QtWidgets import QTabWidget
         self.findChild(QTabWidget).setCurrentIndex(0)
 
@@ -127,7 +144,7 @@ class AddGameEditor(MetadataEditor):
             from .installation_commit import set_play_actions
             set_play_actions(game, providers)
             self.result_game = game
-        except (ValueError, OSError, sqlite3.Error) as error:
+        except Exception as error:
             self.error.setText(str(error))
             return
         self.accept()

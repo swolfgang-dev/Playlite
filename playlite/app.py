@@ -885,7 +885,12 @@ class LibraryWindow(QMainWindow):
         installation_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         installation_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for plugin in self.generic_plugins:
-            plugin.augment_game_view(self, game, heading, installation_form)
+            try:
+                plugin.augment_game_view(self, game, heading, installation_form)
+            except Exception as error:
+                import logging
+                logging.exception('Plugin %s failed to extend the game view', plugin.id)
+                self.statusBar().showMessage(f'{plugin.name}: {error}', 15000)
         if game.get('InstallDirectory'):
             from .ui_style import PathButton
             folder = PathButton(game['InstallDirectory'])
@@ -1255,8 +1260,8 @@ class LibraryWindow(QMainWindow):
                     editor.error.setText(f'Could not save the Playlite entry: {error}')
                     continue
                 self.focus_added_game(editor.result_game['Id'])
-                for plugin in editor.generic_plugins:
-                    plugin.after_game_added(self, editor.result_game, editor)
+                from .add_game import notify_game_added
+                notify_game_added(self, editor)
                 break
             for cache in editor.download_caches:
                 cache.cleanup()
@@ -1564,8 +1569,8 @@ class LibraryWindow(QMainWindow):
             self.focus_added_game(dialog.result_game['Id'])
             for cache in dialog.download_caches:
                 cache.cleanup()
-            for plugin in dialog.generic_plugins:
-                plugin.after_game_added(self, dialog.result_game, dialog)
+            from .add_game import notify_game_added
+            notify_game_added(self, dialog)
             break
 
     def selected_games(self):
@@ -1701,7 +1706,7 @@ class LibraryWindow(QMainWindow):
             try:
                 save = lambda: save_game(self.data, self.games, editor.result_game)
                 self.games = editor.play_actions.save_with_removals(save, editor.result_game) if hasattr(editor, 'play_actions') else save()
-            except (OSError, ValueError) as error:
+            except Exception as error:
                 editor.error.setText(f'Could not save game: {error}')
                 return
             for cache in editor.download_caches:
