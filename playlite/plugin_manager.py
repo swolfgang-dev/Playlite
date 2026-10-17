@@ -188,6 +188,8 @@ def install_archive(archive, directory=None, repository=''):
                 except (PackageNotFoundError, ValueError):
                     pending.append(requirement)
             if pending:
+                if sys.prefix == sys.base_prefix:
+                    raise ValueError('Plugin dependencies require a private virtual environment.')
                 runtime = Path(sys.prefix)
                 before = file_inventory(runtime) if (runtime / RECEIPT).is_file() else None
                 owned = {name for name, expected in receipt(runtime).items() if unchanged(runtime, name, expected)} if before is not None else set()
@@ -195,8 +197,12 @@ def install_archive(archive, directory=None, repository=''):
                     subprocess.run([sys.executable, '-m', 'pip', 'install', *pending], check=True, timeout=300)
                 finally:
                     if before is not None: record_added_files(runtime, before, owned)
-        existing = next((Path(item['manifest_path']).parent for item in installed_plugins(directory)
-                         if item['id'] == identity or (repository and item.get('repository', '').casefold() == repository.casefold())), None)
+        matches = {Path(item['manifest_path']).parent for item in installed_plugins(directory)
+                   if item['id'].casefold() == identity.casefold() or
+                   (repository and item.get('repository', '').casefold() == repository.casefold())}
+        if len(matches) > 1:
+            raise ValueError('Multiple installed plugins match this ID or repository. Resolve the duplicate installations first.')
+        existing = next(iter(matches), None)
         if existing and (existing.is_symlink() or existing.resolve().parent != directory.resolve()):
             raise ValueError('Plugin directory is outside the installed plugin folder.')
         if repository:
@@ -219,32 +225,58 @@ def install_archive(archive, directory=None, repository=''):
         atomic_json(manifest_path, manifest)
         carried = carry_external(existing, stage) if existing and not cache_only else []
         record_tree(stage, carried, destination)
+        # Stage cleanup registration as part of the same installation. Retain
+        # both previous trees until defaults and both replacements succeed.
+        cleanup = directory.parent / 'plugin-cleanup' / identity
+        if cleanup.is_symlink() or cleanup.parent.is_symlink():
+            raise ValueError('Plugin cleanup registration cannot be a symlink.')
+        generated = {'manifest.json', hook, RECEIPT} - {None}
+        for name in generated:
+            if (cleanup / name).is_symlink():
+                raise ValueError('Plugin cleanup files cannot be symlinks.')
+        cleanup_stage = Path(temporary) / 'cleanup'
+        if cleanup.exists():
+            shutil.copytree(cleanup, cleanup_stage, symlinks=True)
+        else:
+            cleanup_stage.mkdir()
+        external = file_inventory(cleanup_stage) - generated
+        if hook:
+            (cleanup_stage / hook).write_bytes((stage / hook).read_bytes())
+        atomic_json(cleanup_stage / 'manifest.json', manifest)
+        record_tree(cleanup_stage, excluded=external, installation_root=cleanup)
+        cleanup.parent.mkdir(parents=True, exist_ok=True)
         backup = directory / ('.previous-' + uuid.uuid4().hex)
-        if existing:
-            existing.rename(backup)
+        cleanup_backup = cleanup.parent / ('.previous-' + uuid.uuid4().hex)
+        installed = registered = False
+        from .image_filters import install_defaults
         try:
-            stage.rename(destination)
-        except Exception:
-            if backup.exists():
-                backup.rename(existing)
+            with install_defaults(manifest, directory.parent):
+                if existing:
+                    existing.rename(backup)
+                stage.rename(destination)
+                installed = True
+                if cleanup.exists():
+                    cleanup.rename(cleanup_backup)
+                cleanup_stage.rename(cleanup)
+                registered = True
+        except BaseException:
+            problems = []
+            for current, previous, original, replaced in (
+                    (cleanup, cleanup_backup, cleanup, registered),
+                    (destination, backup, existing, installed)):
+                try:
+                    if replaced:
+                        shutil.rmtree(current)
+                    if previous.exists():
+                        previous.rename(original)
+                except OSError as error:
+                    problems.append(f'{previous}: {error}')
+            if problems:
+                raise OSError('Could not restore the previous installation. Backups retained: ' + '; '.join(problems))
             raise
-        if backup.exists():
-            shutil.rmtree(backup)
-    # Keep declarations and cleanup available after individual plugin removal.
-    cleanup = directory.parent / 'plugin-cleanup' / identity
-    if cleanup.is_symlink() or cleanup.parent.is_symlink():
-        raise ValueError('Plugin cleanup registration cannot be a symlink.')
-    cleanup.mkdir(parents=True, exist_ok=True)
-    generated = {'manifest.json', hook} - {None}
-    external = file_inventory(cleanup) - generated - {RECEIPT}
-    if hook:
-        if (cleanup / hook).is_symlink():
-            raise ValueError('Plugin cleanup script cannot be a symlink.')
-        (cleanup / hook).write_bytes((destination / hook).read_bytes())
-    atomic_json(cleanup / 'manifest.json', manifest)
-    record_tree(cleanup, excluded=external)
-    from .image_filters import apply_install_defaults
-    apply_install_defaults(manifest, directory.parent)
+        for previous in (backup, cleanup_backup):
+            if previous.exists():
+                shutil.rmtree(previous)
     return manifest
 
 
@@ -371,13 +403,18 @@ def install_github(repository, version='latest', directory=None, *, _stack=(), p
             (Path(temporary) / name).write_bytes(data)
         import hashlib
         archive = Path(temporary) / 'plugin.zip'
-        expected = next(line.split()[0] for line in (Path(temporary) / 'SHA256SUMS').read_text().splitlines()
-                        if line.split()[-1].lstrip('*') == 'plugin.zip')
+        hashes = [parts[0] for line in (Path(temporary) / 'SHA256SUMS').read_text().splitlines()
+                  if len(parts := line.split()) == 2 and parts[1].lstrip('*') == 'plugin.zip']
+        if len(hashes) != 1 or not re.fullmatch(r'[a-fA-F0-9]{64}', hashes[0]):
+            raise ValueError('Plugin download checksum is missing or invalid.')
+        expected = hashes[0].lower()
         if hashlib.sha256(archive.read_bytes()).hexdigest() != expected:
             raise ValueError('Plugin download checksum does not match.')
         from .plugin_dependencies import missing_dependencies
         with ZipFile(archive) as bundle:
             manifest=json.loads(bundle.read('manifest.json'))
+        from .plugin_manifest import validate_manifest
+        validate_manifest(manifest)
         for dependency in missing_dependencies(manifest,installed_plugins(directory)):
             if progress:progress('Installing required plugin '+dependency['id']+' >= '+dependency['minimum_version']+'…')
             install_github(dependency['repository'],directory=directory,_stack=stack,progress=progress)

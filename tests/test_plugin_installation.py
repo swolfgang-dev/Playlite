@@ -16,13 +16,42 @@ APP = QApplication.instance() or QApplication([])
 
 
 class PluginInstallationTests(unittest.TestCase):
-    def archive(self, root, enabled=True, version='1.0.0'):
+    def archive(self, root, enabled=True, version='1.0.0', **extra):
         path = root / 'plugin.zip'
         manifest = dict(id='Example', name='Example plugin', type='generic', version=version, api_version=1, enabled=enabled)
+        manifest.update(extra)
         with ZipFile(path, 'w') as archive:
             archive.writestr('manifest.json', json.dumps(manifest))
             archive.writestr('plugin.py', 'from playlite.providers import GenericPlugin\nclass Plugin(GenericPlugin):\n    pass\n')
         return path
+
+    def test_registration_failure_restores_plugin_cleanup_and_new_defaults(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            plugins = root / 'plugins'
+            install_archive(self.archive(root), plugins)
+            cleanup = root / 'plugin-cleanup/Example'
+            (cleanup / 'user-notes').write_text('keep this')
+            def inventory(path):
+                return {str(item.relative_to(path)): item.read_bytes()
+                        for item in path.rglob('*') if item.is_file()}
+            previous = inventory(plugins)
+            previous_cleanup = inventory(cleanup)
+            update = self.archive(root, version='2', image_defaults={'Icon': {'shape': ['square']}})
+            rename = Path.rename
+            def fail_registration(path, destination):
+                if path.name == 'cleanup' and destination == cleanup:
+                    raise OSError('registration failed')
+                return rename(path, destination)
+            with patch.object(Path, 'rename', fail_registration):
+                with self.assertRaisesRegex(OSError, 'registration failed'):
+                    install_archive(update, plugins)
+            self.assertEqual(inventory(plugins), previous)
+            self.assertEqual(inventory(cleanup), previous_cleanup)
+            settings = QSettings(str(root / 'ui.ini'), QSettings.Format.IniFormat)
+            self.assertFalse(settings.contains('images/defaultProvider/Icon'))
+            self.assertFalse(settings.contains('images/defaultFilters/Icon/shape/selected'))
+            self.assertFalse(list((root / 'plugin-cleanup').glob('.previous-*')))
 
     def test_manual_is_built_in_and_application_opens_without_plugins(self):
         with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):

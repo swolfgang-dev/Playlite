@@ -29,6 +29,14 @@ def validate_manifest(manifest):
     validate_declarations(manifest.get('game_fields', []))
     if not isinstance(manifest.get('image_defaults', {}), dict):
         raise ValueError('Plugin image_defaults must be an object.')
+    for declaration in manifest.get('image_defaults', {}).values():
+        if not isinstance(declaration, dict) or any(not isinstance(values, list) for values in declaration.values()):
+            raise ValueError('Plugin image defaults must contain filter lists.')
+    hook = manifest.get('uninstall_hook')
+    if hook is not None and (not isinstance(hook, str) or not re.fullmatch(r'[A-Za-z0-9_-]+\.py', hook)):
+        raise ValueError('Plugin cleanup must be a standalone Python file at its root.')
+    from .plugin_settings import settings_targets
+    settings_targets(manifest)
     requirements = manifest.get('requirements', [])
     if not isinstance(requirements, list) or not all(
             isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_.-]+(?:>=[0-9.]+)?', value)

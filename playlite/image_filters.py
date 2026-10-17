@@ -1,4 +1,5 @@
 """Shared checkbox filters and migration of saved image search defaults."""
+from contextlib import contextmanager
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QCheckBox, QPushButton, QMenu, QWidgetAction
 from .theme import set_style
@@ -110,21 +111,43 @@ def declared_defaults(image_type, plugins=None):
 
 def apply_install_defaults(manifest, data):
     """Seed plugin-declared defaults without replacing saved user preferences."""
+    with install_defaults(manifest, data):
+        pass
+
+
+@contextmanager
+def install_defaults(manifest, data):
+    """Roll back newly seeded preferences if plugin installation fails."""
     from PyQt6.QtCore import QSettings
     settings = QSettings(str(data / 'ui.ini'), QSettings.Format.IniFormat)
+    additions = {}
     for key, declaration in manifest.get('image_defaults', {}).items():
         if key not in dict(OPTIONS['artwork']).values():
             continue
         path = f'images/defaultProvider/{key}'
         if not settings.contains(path):
-            settings.setValue(path, manifest['id'])
+            additions[path] = manifest['id']
         for name, values in declaration.items():
             if name not in OPTIONS or not isinstance(values, list):
                 continue
             path = f'images/defaultFilters/{key}/{name}'
             if not settings.contains(path) and not settings.contains(path + '/selected'):
-                settings.setValue(path + '/selected', [value for _, value in OPTIONS[name] if value in values])
-    settings.sync()
+                additions[path + '/selected'] = [value for _, value in OPTIONS[name] if value in values]
+    try:
+        for key, value in additions.items():
+            settings.setValue(key, value)
+        if additions:
+            settings.sync()
+            if settings.status() != QSettings.Status.NoError:
+                raise OSError('Could not save plugin image defaults.')
+        yield
+    except BaseException:
+        for key, value in additions.items():
+            if settings.value(key) == value:
+                settings.remove(key)
+        if additions:
+            settings.sync()
+        raise
 
 
 def defaults(settings, image_type, plugins=None):

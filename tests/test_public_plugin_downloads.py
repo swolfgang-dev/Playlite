@@ -10,9 +10,9 @@ from playlite import plugin_manager as manager
 class PublicDownloadTests(unittest.TestCase):
     def test_public_assets_do_not_use_api_and_keep_checksum_verification(self):
         stream=io.BytesIO()
-        with ZipFile(stream,'w') as bundle:bundle.writestr('manifest.json',json.dumps(dict(id='Example',name='Example',version='1')))
+        with ZipFile(stream,'w') as bundle:bundle.writestr('manifest.json',json.dumps(dict(id='Example',name='Example',version='1',api_version=1)))
         archive=stream.getvalue()
-        hashes = (hashlib.sha256(archive).hexdigest()+'  plugin.zip\n').encode()
+        hashes = ('\n'+hashlib.sha256(archive).hexdigest()+'  plugin.zip\n\n').encode()
         response = MagicMock()
         response.__enter__.return_value.read.side_effect=[archive,hashes]
         with patch.object(manager,'github_token',return_value=''), patch.object(manager,'github_request') as api, patch('urllib.request.urlopen',return_value=response) as download, patch.object(manager,'install_archive',return_value={'id':'Example'}):
@@ -25,6 +25,17 @@ class PublicDownloadTests(unittest.TestCase):
         with patch.object(manager,'github_token',return_value=''), patch('urllib.request.urlopen',return_value=response), patch.object(manager,'install_archive') as install:
             with self.assertRaisesRegex(ValueError,'checksum'):manager.install_github('owner/example')
             install.assert_not_called()
+
+    def test_missing_or_duplicate_checksums_report_a_validation_error(self):
+        for hashes in (b'\n', b'other file.zip\n', (('a'*64+' plugin.zip\n')*2).encode()):
+            response = MagicMock()
+            response.__enter__.return_value.read.side_effect = [b'archive', hashes]
+            with self.subTest(hashes=hashes), patch.object(manager, 'github_token', return_value=''), \
+                    patch('urllib.request.urlopen', return_value=response), \
+                    patch.object(manager, 'install_archive') as install:
+                with self.assertRaisesRegex(ValueError, 'checksum'):
+                    manager.install_github('owner/example')
+                install.assert_not_called()
 
     def test_rate_limited_list_falls_back_to_public_release(self):
         response=MagicMock();response.__enter__.return_value.geturl.return_value='https://github.com/owner/example/releases/tag/v1'
