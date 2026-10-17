@@ -23,6 +23,19 @@ def wait(predicate):
 
 
 class AutomationTests(unittest.TestCase):
+    def test_success_queued_during_shutdown_cannot_launch_a_game(self):
+        self.game['Automation']['before_launch'] = 'printf ready'
+        launch = Mock()
+        pool = Mock()
+        with patch('playlite.automation.QThreadPool.globalInstance', return_value=pool), \
+                patch('playlite.automation.execute_command', return_value={'state': 'Complete', 'details': 'Already finished'}):
+            self.controller.run(self.game, self.action, 'before_launch', completed=launch)
+            self.controller.cancel_all()
+            pool.start.call_args.args[0].run()
+        launch.assert_not_called()
+        self.controller.run(self.game, self.action, 'before_launch', completed=launch)
+        launch.assert_not_called()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'Folder with spaces'; self.root.mkdir()

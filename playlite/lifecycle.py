@@ -187,7 +187,8 @@ class TrayLifecycle(QObject):
             settings = getattr(self.window, 'settings', None)
             close_to_tray = settings.value('app/closeToTray', True, type=bool) if settings else True
             if not close_to_tray or not QSystemTrayIcon.isSystemTrayAvailable():
-                self.quit()
+                # Finish this Close event before issuing the real shutdown.
+                QTimer.singleShot(0, self.quit)
             else:
                 self.hidden_dialogs = [widget for widget in self.app.topLevelWidgets()
                                        if isinstance(widget, QDialog) and widget.isVisible()]
@@ -216,18 +217,33 @@ class TrayLifecycle(QObject):
         if self.quitting:
             return
         self.quitting = True
+        if not getattr(self.window, 'shutdown_accepted', False):
+            if not self.window.close():
+                self.quitting = False
+                return
         from PyQt6.QtCore import QProcess
-        jobs = [dialog for dialog in self.window.findChildren(QDialog)
-                if dialog.property('playliteBackgroundJob') and dialog.process.state() != QProcess.ProcessState.NotRunning]
+        def pending(dialog):
+            check = getattr(dialog, 'shutdown_pending', None)
+            if callable(check):
+                return check()
+            process = getattr(dialog, 'process', None)
+            return (dialog.property('playliteBackgroundJob') and isinstance(process, QProcess)
+                    and process.state() != QProcess.ProcessState.NotRunning)
+        jobs = [dialog for dialog in self.window.findChildren(QDialog) if pending(dialog)]
         for dialog in jobs:
-            dialog.cancel_or_close()
+            request = getattr(dialog, 'request_shutdown', None)
+            if callable(request):
+                request()
+            else:
+                dialog.cancel_or_close()
         for dialog in self.app.topLevelWidgets():
             if isinstance(dialog, QDialog) and dialog not in jobs:
                 dialog.reject()
         if jobs:
             self.quit_timer = QTimer(self)
             def completed():
-                if all(job.process.state() == QProcess.ProcessState.NotRunning for job in jobs):
+                from PyQt6 import sip
+                if all(sip.isdeleted(job) or not pending(job) for job in jobs):
                     self.quit_timer.stop()
                     self.app.quit()
             self.quit_timer.timeout.connect(completed)

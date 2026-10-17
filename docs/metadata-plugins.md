@@ -102,16 +102,16 @@ operations to a worker; plugin tools already do so. Lutris launching uses native
 Lutris. SteamAutoCrack runs its Windows CLI through Wine inside the private
 Steam Downloader VM; its runtime and setup belong to that plugin.
 
-Playlite Archiver preserves relative paths below its configured source root and
-supports multiple archive folders. Transfers copy into a temporary folder,
+Playlite Archiver stores each game under its folder name in a selected archive
+folder and supports batch transfers and multiple archive folders. Transfers copy into a temporary folder,
 verify SHA-256 contents and source stability, commit the destination and library
 record, then remove the source. Lutris entries and Wine prefixes stay unchanged.
-It rejects collisions, nested paths, symlinks and special files, and supports
-cancellation before commit. One transfer runs at a time. Keep games stopped
+It preserves symlinks within game folders without following them, rejects symlinked
+source roots, collisions, nested paths and special files, and supports
+cancellation before commit. One batch runs at a time. Keep games stopped
 during transfers. After a crash or failed cleanup, retain any `.partial-*` or
 `.moving-*` folders until both locations have been checked. The native port
-currently operates on one game at a time and does not migrate old Playnite
-archive records.
+does not migrate old Playnite archive records.
 
 ### Installation methods
 

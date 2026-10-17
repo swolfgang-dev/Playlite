@@ -1467,6 +1467,8 @@ class LibraryWindow(QMainWindow):
         if not self.download_queue.confirm_close(self):
             event.ignore();return
         self.download_queue.shutdown()
+        self.automation.cancel_all()
+        self.shutdown_accepted = True
         if hasattr(self, 'selection_settings_timer'):
             self.selection_settings_timer.stop()
         self.game_detection.stop()

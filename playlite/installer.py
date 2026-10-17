@@ -15,6 +15,7 @@ class InstallerDialog(QDialog):
         self.setWindowTitle('Get started — Playlite')
         self.resize(720, 560)
         self.busy = False
+        self.closing = False
         self.tasks = set()
         layout = QVBoxLayout(self)
         note = QLabel('Choose your preferences, then set up optional plugins. You can change these preferences and manage plugins in Settings later.')
@@ -135,7 +136,8 @@ class InstallerDialog(QDialog):
             self.plugins.setEnabled(True)
         def complete(result):
             finish()
-            done(result)
+            if not self.closing:
+                done(result)
         def failed(error):
             finish()
             self.log.appendPlainText(str(error))
@@ -178,6 +180,13 @@ class InstallerDialog(QDialog):
     def closeEvent(self, event):
         if self.busy: event.ignore()
         else: super().closeEvent(event)
+
+    def shutdown_pending(self):
+        return self.busy
+
+    def request_shutdown(self):
+        self.closing = True
+        self.log.appendPlainText('Finishing the current plugin operation before closing Playlite.')
 
     def reject(self):
         if not self.busy: super().reject()

@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 import uuid
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 from PyQt6.QtCore import QLockFile, QTimer
@@ -11,6 +13,42 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_quit_veto_can_be_retried_and_waits_for_background_completion(self):
+        script = '''
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication,QDialog,QMainWindow
+from playlite.lifecycle import TrayLifecycle
+app=QApplication([])
+class Window(QMainWindow):
+    allow=False
+    def closeEvent(self,event):event.setAccepted(self.allow)
+class Job(QDialog):
+    busy=True
+    requested=False
+    recorded=False
+    def shutdown_pending(self):return self.busy
+    def request_shutdown(self):
+        self.requested=True
+        QTimer.singleShot(30,self.complete)
+    def complete(self):
+        self.recorded=True
+        self.busy=False
+window=Window();lifecycle=TrayLifecycle(window,app);window.show()
+job=Job(window)
+def retry():
+    assert not lifecycle.quitting, 'Cancelled shutdown must allow retry'
+    assert not job.requested, 'A veto must leave background work running'
+    window.allow=True
+    lifecycle.quit()
+QTimer.singleShot(0,lifecycle.quit)
+QTimer.singleShot(10,retry)
+QTimer.singleShot(1000,lambda:app.exit(7))
+assert app.exec()==0, 'Shutdown did not finish'
+assert job.requested and job.recorded, 'Quit exited before completion was recorded'
+'''
+        result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_dialog_can_finish_synchronously_when_shown(self):
         class ImmediateDialog(QDialog):
             def showEvent(self, event):

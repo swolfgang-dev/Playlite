@@ -107,11 +107,14 @@ class Automation(QObject):
     def __init__(self, window):
         super().__init__(window)
         self.window = window; self.pending = {}; self.tasks = {}; self.sessions = {}; self.after_launch_jobs = set(); self.waiting_exits = {}
+        self.closing = False
 
     def busy(self, identity):
         return self.pending.get(identity)
 
     def run(self, game, action, phase, completed=None, continue_on_error=False):
+        if self.closing:
+            return
         settings = settings_for(game)
         command = settings[phase]
         if not settings['enabled'] or not command.strip():
@@ -136,9 +139,8 @@ class Automation(QObject):
                 self.window.game_status_changed(game['Id'], self.window.game_detection.status(game['Id']))
             if result['state'] != 'Complete': self.window.statusBar().showMessage(game['Name'] + ': ' + title + ' failed or was cancelled. See Background tasks.', 15000)
             QTimer.singleShot(0, lambda: self.tasks.pop(identity, None))
-            if completed and (result['state'] == 'Complete' or continue_on_error): completed()
-        task.signals.succeeded.connect(finish)
-        task.signals.failed.connect(lambda error: finish({'state': 'Failed', 'details': error}))
+            if not self.closing and completed and (result['state'] == 'Complete' or continue_on_error): completed()
+        task.bind(self, finish, lambda error: finish({'state': 'Failed', 'details': error}))
         QThreadPool.globalInstance().start(task)
 
     def launched(self, game, action):
@@ -165,4 +167,5 @@ class Automation(QObject):
         self.window.game_status_changed(identity, self.window.game_detection.status(identity))
 
     def cancel_all(self):
+        self.closing = True
         for _, event in self.tasks.values(): event.set()
