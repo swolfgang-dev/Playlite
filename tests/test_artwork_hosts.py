@@ -8,6 +8,19 @@ from playlite.metadata import MetadataError, download_artwork
 
 
 class ArtworkHostTests(unittest.TestCase):
+    def test_game_id_cannot_redirect_artwork_outside_its_folder(self):
+        from playlite.artwork import artwork_directory
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for identity in ('../other', '/tmp/other', '.', '..', 'a/b', 'a\\b', '', None):
+                with self.subTest(identity=identity), self.assertRaises(ValueError):
+                    artwork_directory(root, identity)
+            self.assertEqual(artwork_directory(root, '日本語 game'), root / 'artwork/日本語 game')
+            (root / 'artwork').mkdir()
+            (root / 'artwork/link').symlink_to(root)
+            with self.assertRaises(ValueError):
+                artwork_directory(root, 'link')
+
     def test_steamgriddb_cdns_download_readable_artwork(self):
         buffer = io.BytesIO()
         Image.new('RGB', (16, 16)).save(buffer, format='PNG')

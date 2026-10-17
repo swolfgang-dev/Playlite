@@ -27,6 +27,7 @@ class ListField(QWidget):
         edit.clicked.connect(self.edit_values)
         layout.addWidget(edit)
         add = QPushButton('+')
+        self.add_button = add
         add.setObjectName('compact')
         add.setFixedSize(30, 40)
         add.setToolTip(f'Add {title.lower()}')
@@ -70,7 +71,7 @@ class CompletionField(ListField):
         self.input.setReadOnly(True)
         self.input.setPlaceholderText('Select completion status')
         self.input.setToolTip('Choose completion statuses from the checklist.')
-        self.findChildren(QPushButton)[1].hide()
+        self.add_button.hide()
 
     def edit_values(self):
         selected = self.toPlainText().splitlines()
@@ -82,6 +83,7 @@ class CompletionField(ListField):
             menu.addAction(action)
             action.toggled.connect(lambda checked, value=value: self.toggle_value(value, checked))
         menu.exec(self.mapToGlobal(self.rect().bottomLeft()))
+        menu.deleteLater()
 
     def toggle_value(self, value, checked):
         selected = self.toPlainText().splitlines()

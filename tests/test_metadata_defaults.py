@@ -13,6 +13,15 @@ APP = QApplication.instance() or QApplication([])
 
 
 class MetadataDefaultsTests(unittest.TestCase):
+    def test_empty_provider_state_can_open_and_close(self):
+        with patch('playlite.providers.discover_providers', return_value={}):
+            dialog = MetadataDownloader({'Name': 'Example'})
+        dialog.show()
+        APP.processEvents()
+        self.assertIn('No metadata providers', dialog.status.text())
+        dialog.reject()
+        self.assertFalse(Path(dialog.cache.name).exists())
+
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

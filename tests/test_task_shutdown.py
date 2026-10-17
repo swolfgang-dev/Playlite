@@ -3,11 +3,25 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import unittest
 from PyQt6 import sip
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QObject
 from playlite.tasks import Task
 APP=QApplication.instance() or QApplication([])
 
 
 class TaskShutdownTests(unittest.TestCase):
+    def test_callbacks_live_with_their_owner_and_disconnect_when_it_is_deleted(self):
+        import gc
+        values = []
+        owner = QObject()
+        task = Task(lambda: 'first').bind(owner, values.append)
+        gc.collect()
+        task.run()
+        self.assertEqual(values, ['first'])
+        task = Task(lambda: 'late').bind(owner, values.append)
+        sip.delete(owner)
+        task.run()
+        self.assertEqual(values, ['first'])
+
     def test_legacy_import_is_the_shared_worker(self):
         from playlite.metadata_dialog import Task as LegacyTask
         self.assertIs(LegacyTask, Task)

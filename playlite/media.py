@@ -16,6 +16,8 @@ class MediaCard(QFrame):
     def __init__(self, title, value, editor, preview_height):
         super().__init__()
         self.editor = editor
+        self.request_generation = 0
+        self.editor.finished.connect(self.cancel_pending)
         self.title = title
         self.setObjectName('mediaCard')
         set_style(self, 'QFrame#mediaCard { background: #1d1e20; border-radius: 12px; }')
@@ -57,6 +59,7 @@ class MediaCard(QFrame):
         self.update_preview()
 
     def update_preview(self):
+        self.request_generation += 1
         pixmap = QPixmap(self.path.text())
         self.source_pixmap = pixmap
         self.preview.clear()
@@ -66,6 +69,9 @@ class MediaCard(QFrame):
             self.dimensions.setText(f'{pixmap.width()}×{pixmap.height()}px')
             self.scale_preview()
         self.preview.setToolTip(self.path.text())
+
+    def cancel_pending(self, *_):
+        self.request_generation += 1
 
     def scale_preview(self):
         if not self.source_pixmap.isNull():
@@ -101,6 +107,8 @@ class MediaCard(QFrame):
         cache = TemporaryDirectory(prefix='playlite-image-')
         self.editor.download_caches.append(cache)
         target = Path(cache.name) / 'image.png'
+        self.request_generation += 1
+        generation = self.request_generation
         def fetch():
             with urllib.request.urlopen(url.strip(), timeout=20) as response:
                 content = response.read(20 * 1024 * 1024 + 1)
@@ -111,8 +119,14 @@ class MediaCard(QFrame):
                 raise ValueError('The URL did not return a readable image.')
             return str(target)
         self.task = Task(fetch)
-        self.task.signals.succeeded.connect(self.path.setText)
-        self.task.signals.failed.connect(lambda error: self.editor.error.setText('Could not download image. Check the URL and try again.'))
+        def complete(path):
+            if self.request_generation == generation:
+                self.path.setText(path)
+                self.editor.error.clear()
+        def failed(error):
+            if self.request_generation == generation:
+                self.editor.error.setText('Could not download image. Check the URL and try again.')
+        self.task.bind(self, complete, failed)
         self.editor.error.setText('Downloading image…')
         QThreadPool.globalInstance().start(self.task)
 

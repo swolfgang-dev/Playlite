@@ -196,6 +196,19 @@ class MetadataDownloader(QDialog):
         self.provider_ids = list(self.providers)
         self.table_providers = dict(self.providers)
         self.provider_columns = list(enumerate(self.table_providers, 1))
+        if not self.provider_ids:
+            self.provider = ''
+            self.setWindowTitle('Download metadata')
+            layout = QVBoxLayout(self)
+            self.status = QLabel('No metadata providers are available. Install and enable a metadata plugin in Settings → Plugins.')
+            self.status.setWordWrap(True)
+            layout.addWidget(self.status)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            buttons.rejected.connect(self.reject)
+            layout.addWidget(buttons)
+            self.finished.connect(lambda: setattr(self, 'closed', True))
+            self.finished.connect(self.cache.cleanup)
+            return
         self.provider = self.provider_ids[0]
         self.setWindowTitle('Download metadata')
         self.resize(1000, 700)
@@ -380,6 +393,10 @@ class MetadataDownloader(QDialog):
             self.review_defaults = json.loads(self.settings.value(self.defaults_key, '{}')) if self.settings else {}
         except (ValueError, TypeError):
             self.review_defaults = {}
+        if not isinstance(self.review_defaults, dict):
+            self.review_defaults = {}
+        self.review_defaults = {key: value for key, value in self.review_defaults.items()
+                                if isinstance(value, dict)}
         if 'checked' in self.review_defaults.get('Links', {}):
             self.review_defaults['Links'].pop('checked')
             if self.settings is not None:
@@ -667,8 +684,7 @@ class MetadataDownloader(QDialog):
         self.busy(True, message)
         task = Task(function)
         self.task = task
-        task.signals.succeeded.connect(completed)
-        task.signals.failed.connect(self.failed)
+        task.bind(self, completed, self.failed)
         QThreadPool.globalInstance().start(task)
 
     def failed(self, message):
@@ -1013,7 +1029,8 @@ class MetadataDownloader(QDialog):
         self.set_step(2)
         if self.results.currentItem():
             self.results.currentItem().setText(f'{payload["name"]}  ·  {payload["id"]}')
-        self.heading.setText(f'{payload["name"]} · {payload.get('provider', self.provider)} game {payload["id"]}. Select fields to apply to the editor; Save commits them to your library.')
+        provider = payload.get('provider', self.provider)
+        self.heading.setText(f'{payload["name"]} · {provider} game {payload["id"]}. Select fields to apply to the editor; Save commits them to your library.')
         self.preview.setRowCount(0)
         self.auto_fields = {}
         self.choices = {}

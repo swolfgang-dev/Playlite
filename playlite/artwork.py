@@ -5,9 +5,21 @@ from pathlib import Path
 NAMES = {'Icon': 'icon', 'CoverImage': 'cover-art', 'HeaderImage': 'header', 'BackgroundImage': 'background'}
 
 
+def artwork_directory(data, identity):
+    """Keep an entry's artwork within its own directory, including legacy IDs."""
+    if (not isinstance(identity, str) or not identity or identity in ('.', '..')
+            or any(character in identity for character in ('/', '\\', '\0'))):
+        raise ValueError('Game ID must be a nonempty filename component.')
+    root = Path(data) / 'artwork'
+    directory = root / identity
+    if directory.is_symlink() or directory.resolve().parent != root.resolve():
+        raise ValueError('Game artwork directory is outside the artwork folder.')
+    return directory
+
+
 def repair_artwork(game, data):
     result = copy.deepcopy(game)
-    directory = data / 'artwork' / result['Id']
+    directory = artwork_directory(data, result['Id'])
     if 'HeaderImage' not in result and result.get('BackgroundImage'):
         old = Path(result['BackgroundImage'])
         source = old if old.is_absolute() else data / old

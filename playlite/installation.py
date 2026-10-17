@@ -1,6 +1,25 @@
 """Installation folder size calculation shared by the library and editor."""
 import os
+import copy
+import json
 from pathlib import Path
+
+
+def record_installation_size(data, games, directory, size):
+    """Merge a scan into the latest library without restoring removed entries."""
+    from .library_storage import library_lock
+    from .storage import atomic_json
+    with library_lock(data):
+        path = Path(data) / 'library.json'
+        latest = json.loads(path.read_text()) if path.exists() else copy.deepcopy(games)
+        changed = False
+        for game in latest:
+            if game.get('InstallDirectory') == directory:
+                game['InstallSize'] = size
+                changed = True
+        if changed:
+            atomic_json(path, latest)
+        return latest
 
 
 def installation_size(directory):

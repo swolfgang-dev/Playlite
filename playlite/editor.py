@@ -436,8 +436,7 @@ class MetadataEditor(QDialog):
         def failed(error):
             self.recalculate_button.setEnabled(True)
             self.error.setText('Could not calculate installation size. Check the folder and permissions.')
-        self.size_task.signals.succeeded.connect(complete)
-        self.size_task.signals.failed.connect(failed)
+        self.size_task.bind(self, complete, failed)
         QThreadPool.globalInstance().start(self.size_task)
 
     def cleanup_downloads(self):
@@ -624,7 +623,7 @@ class MetadataEditor(QDialog):
     def save(self, navigation_offset=0):
         try:
             self.result_game = self.collect()
-        except ValueError as error:
+        except (ValueError, OSError) as error:
             self.error.setText(str(error))
             return
         self.navigation_offset = navigation_offset
@@ -636,6 +635,8 @@ class MetadataEditor(QDialog):
 
 
 def save_game(data, games, updated):
+    from .artwork import artwork_directory
+    artwork_directory(data, updated.get('Id'))
     from .library_storage import library_lock
     with library_lock(data):
         return _save_game(data, games, updated)

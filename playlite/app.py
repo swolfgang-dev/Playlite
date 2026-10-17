@@ -7,6 +7,7 @@ from .lifecycle import run_dialog
 import argparse
 import html
 import json
+import logging
 import copy
 import os
 import shutil
@@ -143,7 +144,7 @@ class LibraryWindow(QMainWindow):
         }
         self.thumbnail_cache = {}
         self.installation_sizes = {}
-        self.size_tasks = []
+        self.size_tasks = {}
         self.stop_tasks = {}
         from .automation import Automation
         self.automation = Automation(self)
@@ -1016,61 +1017,42 @@ class LibraryWindow(QMainWindow):
                 set_style(panel, f'QFrame#card {{ background: rgba(29, 30, 32, {alpha}); border-radius: 16px; }}')
 
     def show_installation_size(self, game):
+        from .installation import installation_size, format_size, record_installation_size
+        from .tasks import Task
         directory = game['InstallDirectory']
         size = game.get('InstallSize')
         if size is None:
             size = self.installation_sizes.get(directory)
-        def display(value):
-            amount = float(value)
-            for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
-                if amount < 1000 or unit == 'TB':
-                    return f'{amount:.2f} {unit}' if unit != 'B' else f'{int(amount)} B'
-                amount /= 1000
-        if isinstance(size, (int, float)) and size > 0:
-            self.installation_size_label.setText(display(size))
+        if isinstance(size, (int, float)) and size >= 0:
+            self.installation_size_label.setText(format_size(size))
             return
         if not Path(directory).is_dir():
             self.installation_size_label.setText('Size unavailable')
             return
-        from .tasks import Task
-        from .installation import installation_size
+        if directory in self.size_tasks:
+            return
         task = Task(lambda: installation_size(directory))
-        self.size_tasks.append(task)
+        self.size_tasks[directory] = task
         def complete(value):
+            self.size_tasks.pop(directory, None)
             self.installation_sizes[directory] = value
-            # A size scan can finish after an archive or play-history update.
-            from .library_storage import library_lock
-            from .storage import atomic_json
-            with library_lock(self.data):
-                path = self.data / 'library.json'
-                if path.exists():
-                    self.games = json.loads(path.read_text())
-            latest = next((entry for entry in self.games if entry['Id'] == game['Id'] and entry.get('InstallDirectory') == directory), None)
-            if latest is not None:
-                try:
-                    with library_lock(self.data):
-                        self.games = json.loads(path.read_text()) if path.exists() else self.games
-                        saved = next((entry for entry in self.games if entry['Id'] == game['Id']
-                                      and entry.get('InstallDirectory') == directory), None)
-                        if saved is not None:
-                            saved['InstallSize'] = value
-                            atomic_json(path, self.games)
-                    if self.current and self.current['Id'] == game['Id']:
-                        self.current = next((entry for entry in self.games if entry['Id'] == game['Id']), None)
-                except OSError:
-                    latest['InstallSize'] = value
+            try:
+                self.games = record_installation_size(self.data, self.games, directory, value)
+            except (OSError, ValueError):
+                logging.exception('Could not save installation size for %s', directory)
+            if self.current:
+                self.current = next((entry for entry in self.games if entry['Id'] == self.current['Id']), None)
             for editor in self.findChildren(MetadataEditor):
-                if editor.isVisible() and editor.game['Id'] == game['Id'] and not editor.fields['InstallSize'].text().strip():
+                if (editor.isVisible() and editor.fields['InstallDirectory'].text().strip() == directory
+                        and not editor.fields['InstallSize'].text().strip()):
                     editor.fields['InstallSize'].setText(str(value))
-            if self.current and self.current['Id'] == game['Id']:
-                self.installation_size_label.setText(display(value))
-            self.size_tasks.remove(task)
+            if self.current and self.current.get('InstallDirectory') == directory:
+                self.installation_size_label.setText(format_size(value))
         def failed(error):
-            if self.current and self.current['Id'] == game['Id']:
+            self.size_tasks.pop(directory, None)
+            if self.current and self.current.get('InstallDirectory') == directory:
                 self.installation_size_label.setText('Size unavailable')
-            self.size_tasks.remove(task)
-        task.signals.succeeded.connect(complete)
-        task.signals.failed.connect(failed)
+        task.bind(self, complete, failed)
         QThreadPool.globalInstance().start(task)
 
     def has_play_actions(self, game):

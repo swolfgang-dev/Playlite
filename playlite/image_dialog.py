@@ -3,6 +3,7 @@ from .theme import colour
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from math import gcd
+from PyQt6 import sip
 
 from PyQt6.QtCore import Qt, QThreadPool, QSize, QSettings, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap, QColor, QPen
@@ -357,6 +358,9 @@ class ImageDownloader(QDialog):
         self.task = Task(function)
         def done(value, error=False):
             self.busy = False
+            if sip.isdeleted(self):
+                self.cache.cleanup()
+                return
             if self.closed:
                 if self.result() != QDialog.DialogCode.Accepted:
                     self.cache.cleanup()
@@ -474,7 +478,7 @@ class ImageDownloader(QDialog):
                 state['remaining'] = list(candidates.values())
                 state['prepared'] = True
             downloaded = set()
-            while state['remaining'] and not self.closed:
+            while state['remaining'] and not self.closed and not sip.isdeleted(self):
                 priority = self.download_priority
                 if self.preempt_downloads and priority and priority[0] != identity:
                     self.preempt_downloads = False
