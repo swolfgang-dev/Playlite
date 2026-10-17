@@ -631,6 +631,18 @@ def save_game(data, games, updated):
 
 
 def _save_game(data, games, updated):
+    """Commit integration settings with the library save, rolling back on failure."""
+    from contextlib import ExitStack
+    from .providers import discover_plugins, GameProvider, GenericPlugin
+    with ExitStack() as pending:
+        for provider in discover_plugins().values():
+            save_settings = getattr(provider, 'save_action_settings', None)
+            if isinstance(provider, (GameProvider, GenericPlugin)) and callable(save_settings):
+                pending.enter_context(save_settings(updated))
+        return _persist_game(data, games, updated)
+
+
+def _persist_game(data, games, updated):
     """Copy new artwork and atomically persist an edited game without mutating the input."""
     import json
     result = repair_artwork(updated, data)

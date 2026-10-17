@@ -14,6 +14,42 @@ APP = QApplication.instance() or QApplication([])
 
 
 class LayoutWorkflowTests(unittest.TestCase):
+    def test_scrolling_body_reparents_direct_and_nested_controls(self):
+        dialog = QDialog();root = QVBoxLayout(dialog)
+        explanation = QLabel('Installer instructions');root.addWidget(explanation)
+        nested = QHBoxLayout();browse = QPushButton('Browse');nested.addWidget(browse);root.addLayout(nested)
+        footer = QHBoxLayout();close = QPushButton('Close');footer.addWidget(close);root.addLayout(footer)
+        scroll = scroll_dialog_body(dialog, footer)
+        dialog.resize(700, 450);dialog.show();APP.processEvents()
+        self.assertIs(explanation.parentWidget(), scroll.widget())
+        self.assertIs(browse.parentWidget(), scroll.widget())
+        self.assertIs(close.parentWidget(), dialog)
+        self.assertTrue(scroll.widget().isAncestorOf(explanation))
+        self.assertTrue(scroll.widget().isAncestorOf(browse))
+        dialog.close()
+
+    def test_content_fitting_keeps_default_window_below_full_screen_height(self):
+        from unittest.mock import Mock
+        from PyQt6.QtCore import QMargins, QRect
+        from playlite.app import LibraryWindow
+        window = Mock()
+        window.default_window_height = 1140
+        window.height.return_value = 1100
+        window.width.return_value = 1200
+        window.game_scroll.viewport.return_value.height.return_value = 1000
+        window.content.width.return_value = 1000
+        window.content.findChildren.return_value = []
+        window.details.totalHeightForWidth.return_value = 4000
+        window.page.layout.return_value.contentsMargins.return_value = QMargins(24, 24, 0, 24)
+        window.games = [{}]
+        window.frameGeometry.return_value.height.return_value = 1100
+        window.screen.return_value.availableGeometry.return_value = QRect(0, 0, 3840, 2160)
+        LibraryWindow.fit_content_height(window, False)
+        window.resize.assert_called_with(1200, 1140)
+        window.screen.return_value.availableGeometry.return_value = QRect(0, 0, 1280, 800)
+        LibraryWindow.fit_content_height(window, False)
+        window.resize.assert_called_with(1200, 720)
+
     def test_play_chooser_has_room_for_labels_before_showing(self):
         from playlite.add_game import AddGameMethods
         from playlite.ui_layout import install

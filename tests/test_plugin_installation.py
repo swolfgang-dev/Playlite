@@ -26,7 +26,7 @@ class PluginInstallationTests(unittest.TestCase):
 
     def test_manual_is_built_in_and_application_opens_without_plugins(self):
         with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
-            self.assertEqual(discover_plugins(), {})
+            self.assertEqual(set(discover_plugins()), {'Manual'})
             self.assertEqual(set(installation_methods({})), {'Manual'})
             dialog = AddGameEditor(None, Path(directory))
             self.assertEqual(dialog.installation_method.currentData(), 'Manual')
@@ -44,8 +44,8 @@ class PluginInstallationTests(unittest.TestCase):
             result = install_archive(self.archive(root, version='2.0.0'), plugins, 'owner/repo')
             self.assertFalse(result['enabled'])
             self.assertEqual(result['version'], '2.0.0')
-            self.assertEqual(discover_plugins(plugins), {})
-            self.assertEqual(set(discover_plugins(plugins, include_disabled=True)), {'Example'})
+            self.assertEqual(set(discover_plugins(plugins)), {'Manual'})
+            self.assertEqual(set(discover_plugins(plugins, include_disabled=True)), {'Manual', 'Example'})
             self.assertEqual(installed_plugins(plugins)[0]['repository'], 'owner/repo')
 
     def test_unsafe_archive_does_not_replace_installed_plugin(self):

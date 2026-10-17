@@ -3,7 +3,8 @@ import copy
 from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
-    QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog, QLabel, QCheckBox, QDialogButtonBox, QToolButton)
+    QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog, QLabel, QCheckBox, QDialogButtonBox, QToolButton,
+    QLayout, QSizePolicy)
 from .theme import set_style
 
 
@@ -43,7 +44,7 @@ def action_game(game, action, provider):
 
 class LaunchSettings(QWidget):
     """Default integration launch fields; integrations can supply their own editor."""
-    def __init__(self, action, parent=None, directory_defaults=None):
+    def __init__(self, action, parent=None, directory_defaults=None, hide_prefix=False):
         super().__init__(parent)
         self.setObjectName('actionLaunchSettings')
         from .lifecycle import choose_file, choose_directory
@@ -54,10 +55,14 @@ class LaunchSettings(QWidget):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.fields = {}
+        self.hide_prefix = hide_prefix
         advanced_rows = {}
+        self.advanced_rows = []
+        self.advanced_form = form
         directory_defaults = directory_defaults or {}
         for key, title in [('Executable', 'Executable'), ('Prefix', 'Wine prefix'),
                            ('Arguments', 'Arguments'), ('InstallDirectory', 'Folder override')]:
+            if hide_prefix and key == 'Prefix':continue
             field = QLineEdit(str(action.get(key) or ''))
             field.setFixedHeight(40)
             self.fields[key] = field
@@ -66,10 +71,12 @@ class LaunchSettings(QWidget):
             if key == 'InstallDirectory':
                 field.setPlaceholderText('Use the shared installation folder')
             if key == 'Arguments':
-                advanced_rows[key] = form.rowCount()
+                advanced_rows[key] = field
                 form.addRow(title, field)
                 continue
             row_widget = QWidget()
+            row_widget.setObjectName('launchPathRow')
+            set_style(row_widget, 'QWidget#launchPathRow { background: transparent; border: none; }')
             row_widget.setMinimumHeight(40)
             row = QHBoxLayout(row_widget)
             row.setContentsMargins(0, 0, 0, 0)
@@ -86,10 +93,11 @@ class LaunchSettings(QWidget):
                     field.setText(value)
             browse.clicked.connect(select)
             row.addWidget(browse)
-            if key == 'InstallDirectory': advanced_rows[key] = form.rowCount()
+            if key == 'InstallDirectory': advanced_rows[key] = row_widget
             form.addRow(title, row_widget)
 
         advanced = QToolButton()
+        self.advanced_button = advanced
         advanced.setText('Advanced launch settings')
         advanced.setFixedHeight(32)
         set_style(advanced, 'QToolButton { background: transparent; border: 0; padding: 4px 0; text-align: left; } QToolButton:hover, QToolButton:focus { color: #2196f3; }')
@@ -100,15 +108,70 @@ class LaunchSettings(QWidget):
             advanced.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
             for key in ('Arguments','InstallDirectory'):
                 form.setRowVisible(advanced_rows[key], visible)
+            for widget in self.advanced_rows:
+                form.setRowVisible(widget, visible)
         advanced.toggled.connect(expanded)
         visible=any(self.fields[key].text() for key in ('Arguments','InstallDirectory'))
         advanced.setChecked(visible);expanded(visible)
 
+    def add_advanced_widget(self, widget):
+        self.advanced_form.addRow(widget)
+        self.advanced_rows.append(widget)
+        self.advanced_form.setRowVisible(widget, self.advanced_button.isChecked())
+
     def collect(self):
         result = {key: field.text().strip() for key, field in self.fields.items()}
+        if self.hide_prefix:result['Prefix'] = ''
         for key in ('Executable', 'Prefix', 'InstallDirectory'):
             if result[key] and not Path(result[key]).is_absolute():
                 raise ValueError(f'{key} must be an absolute Linux path.')
+        return result
+
+
+class ContributedActionSettings(QWidget):
+    """Combine integration controls with optional plugin controls."""
+    def __init__(self, settings, contributions, parent=None):
+        super().__init__(parent)
+        self.setObjectName('actionSettingsContributions')
+        set_style(self, 'QWidget#actionSettingsContributions { background: transparent; border: none; }')
+        self.settings = settings
+        self.contributions = contributions
+        self.fields = getattr(settings, 'fields', {})
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        layout.addWidget(settings)
+        if hasattr(settings, 'add_advanced_widget'):
+            for widget in contributions:
+                if (getattr(widget, 'action_settings_position', '') == 'primary'
+                        and isinstance(settings.layout(), QFormLayout)):
+                    settings.layout().insertRow(0, widget)
+                else:
+                    settings.add_advanced_widget(widget)
+        else:
+            button = QToolButton(self)
+            button.setText('Advanced launch settings')
+            button.setCheckable(True)
+            button.setFixedHeight(32)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            layout.addWidget(button)
+            for widget in contributions:layout.addWidget(widget)
+            def expanded(visible):
+                button.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
+                for widget in contributions:widget.setVisible(visible)
+            button.toggled.connect(expanded)
+            expanded(False)
+
+    def minimumSizeHint(self):
+        size = super().minimumSizeHint()
+        height = self.layout().totalHeightForWidth(max(1, self.width()))
+        if height >= 0:size.setHeight(max(size.height(), height))
+        return size
+
+    def collect(self):
+        result = self.settings.collect()
+        for widget in self.contributions:result.update(widget.collect())
         return result
 
 
@@ -151,11 +214,19 @@ class ActionCard(QFrame):
         self.game_id = QLineEdit(str(action.get('GameId') or ''))
         for field in (self.name,self.integration,self.game_id):field.setFixedHeight(40)
         form.addRow('Name',self.name)
-        identity=QHBoxLayout();identity.setSpacing(8)
+        identity_row = QWidget()
+        identity_row.setObjectName('actionIdentityRow')
+        set_style(identity_row, 'QWidget#actionIdentityRow { background: transparent; border: none; }')
+        identity_row.setFixedHeight(40)
+        identity=QHBoxLayout(identity_row)
+        identity.setContentsMargins(0, 0, 0, 0)
+        identity.setSpacing(8)
         identity.addWidget(self.integration,3)
-        identity.addWidget(QLabel('Game ID'))
+        self.game_id_label = QLabel('Game ID')
+        set_style(self.game_id_label, 'QLabel { background: transparent; border: none; }')
+        identity.addWidget(self.game_id_label)
         identity.addWidget(self.game_id,1)
-        form.addRow('Integration',identity)
+        form.addRow('Integration',identity_row)
         columns.addWidget(left, 0, 0, 1, 2, Qt.AlignmentFlag.AlignTop)
         self.controls = QVBoxLayout()
         self.controls.setContentsMargins(0, 0, 0, 0)
@@ -167,6 +238,12 @@ class ActionCard(QFrame):
         self.align_form_labels()
         self.integration.currentIndexChanged.connect(self.change_integration)
         buttons = QHBoxLayout()
+        self.default = QCheckBox('Default play action')
+        set_style(self.default, 'QCheckBox { background: transparent; border: none; }')
+        self.default.setToolTip('Launch this action directly with Play or a double-click. Right-click Play to choose another action.')
+        self.default.setChecked(action.get('Default') is True)
+        self.default.toggled.connect(lambda checked: editor.set_default(self) if checked else None)
+        buttons.addWidget(self.default)
         buttons.addStretch()
         self.up = QPushButton('▲')
         self.up.setToolTip('Move action up')
@@ -196,8 +273,15 @@ class ActionCard(QFrame):
         for form in forms:form.setHorizontalSpacing(16)
 
     def create_settings(self, action):
+        manual = self.integration.currentData() == 'Manual'
+        self.game_id.setVisible(not manual)
+        self.game_id_label.setVisible(not manual)
         provider = next((p for p in self.editor.providers if p.id == self.integration.currentData()), None)
-        return provider.create_action_editor(action, self) if provider else LaunchSettings(action, self)
+        settings = provider.create_action_editor(action, self) if provider else LaunchSettings(action, self)
+        selected = dict(action, Integration=self.integration.currentData())
+        contributions = [widget for plugin in self.editor.action_plugins
+                         if (widget := plugin.create_action_settings(selected, self)) is not None]
+        return ContributedActionSettings(settings, contributions, self) if contributions else settings
 
     def change_integration(self):
         try:
@@ -215,6 +299,9 @@ class ActionCard(QFrame):
         action.update(self.settings.collect())
         action.update(Name=self.name.text().strip(), Integration=self.integration.currentData(),
                       GameId=self.game_id.text().strip())
+        if self.default.isChecked() or 'Default' in action:
+            action['Default'] = self.default.isChecked()
+        if action['Integration'] == 'Manual':action['GameId'] = ''
         if not action['Name'] or not action['Integration']:
             raise ValueError('Each play action needs a name and an integration.')
         provider = next((p for p in self.editor.providers if p.id == action['Integration']), None)
@@ -239,7 +326,10 @@ class PlayActionsEditor(QWidget):
         self.add_button=add
         menu=QMenu(add)
         from .providers import discover_plugins,installation_methods
-        self.installation_methods=installation_methods(discover_plugins())
+        from .providers import GenericPlugin
+        plugins=discover_plugins()
+        self.action_plugins=[plugin for plugin in plugins.values() if isinstance(plugin, GenericPlugin)]
+        self.installation_methods=installation_methods(plugins)
         for method in self.installation_methods.values():
             item=menu.addAction(method.name)
             item.triggered.connect(lambda checked=False,method=method:self.setup_action(method.id))
@@ -271,6 +361,7 @@ class PlayActionsEditor(QWidget):
     def add(self, action=None):
         card = ActionCard(action or {}, self)
         self.cards.append(card)
+        if card.default.isChecked():self.set_default(card)
         self.card_layout.addWidget(card)
         self.update_buttons()
         return card
@@ -310,6 +401,10 @@ class PlayActionsEditor(QWidget):
             self.card_layout.removeWidget(card)
             self.card_layout.insertWidget(target, card)
             self.update_buttons()
+
+    def set_default(self, selected):
+        for card in self.cards:
+            if card is not selected:card.default.setChecked(False)
 
     def update_buttons(self):
         for index, card in enumerate(self.cards):

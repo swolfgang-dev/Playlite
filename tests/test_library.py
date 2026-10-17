@@ -182,6 +182,55 @@ class LibraryControlsTests(unittest.TestCase):
                 self.assertIn(value, texts)
             window.close()
 
+    def test_description_and_links_fill_spare_height_and_shrink_again(self):
+        from unittest.mock import patch
+        from playlite.rich_description import FullDescription
+        with TemporaryDirectory() as directory, patch('playlite.providers.discover_plugins', return_value={}):
+            data = Path(directory)
+            game = dict(Id='example', Name='Example', FullDescription='<p>' + 'Description ' * 500 + '</p>',
+                        Links=[dict(Name=f'Link {i}', Url='https://example.com') for i in range(20)])
+            (data / 'library.json').write_text(json.dumps([game]))
+            window = LibraryWindow(data)
+            window.fit_default_height = False
+            window.show()
+            heights = []
+            preferred_heights = []
+            for height in (1400, 1800, 900, 1400):
+                window.resize(1100, height)
+                for _ in range(20):self.app.processEvents()
+                row = window.content.description_links_row
+                viewer = row.description.findChild(FullDescription)
+                self.assertEqual(row.height(), row.description.height())
+                self.assertEqual(row.height(), row.links.height())
+                heights.append(viewer.height())
+                preferred_heights.append(window.details.totalHeightForWidth(window.content.width()))
+            self.assertEqual(heights[1] - heights[0], 400)
+            self.assertLess(heights[2], heights[0])
+            self.assertEqual(heights[3], heights[0])
+            # Growing into spare space must never raise the natural page height
+            # used for scroll ranges and initial window sizing.
+            self.assertEqual(len(set(preferred_heights)), 1)
+            window.close()
+
+    def test_links_without_full_description_use_full_width_horizontal_flow(self):
+        from unittest.mock import patch
+        with TemporaryDirectory() as directory, patch('playlite.providers.discover_plugins', return_value={}):
+            data = Path(directory)
+            game = dict(Id='example', Name='Example', Description='Short description only',
+                        Links=[dict(Name=f'Link {i}', Url='https://example.com') for i in range(8)])
+            (data / 'library.json').write_text(json.dumps([game]))
+            window = LibraryWindow(data);window.fit_default_height = False;window.show()
+            for width in (1600, 800, 1600):
+                window.resize(width, 1000)
+                for _ in range(20):self.app.processEvents()
+                row = window.content.description_links_row
+                self.assertIsNone(row.description)
+                self.assertFalse(row.link_scroll.flow.vertical)
+                self.assertEqual(row.links.width(), row.width())
+                self.assertEqual(row.links.x(), 0)
+                self.assertEqual(row.height(), row.links.height())
+            window.close()
+
     def test_links_panel_matches_description_height_and_fits_content_below(self):
         from PyQt6.QtCore import Qt
         from PyQt6.QtGui import QPixmap

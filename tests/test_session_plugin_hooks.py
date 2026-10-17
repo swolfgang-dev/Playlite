@@ -52,6 +52,20 @@ class SessionHookTests(unittest.TestCase):
         window = SimpleNamespace(current=game, games=[game], game_detection=detection,
             game_providers=[provider], generic_plugins=[plugin], launched_actions={})
         LibraryWindow.play_game(window)
+        plugin.before_action_launch.assert_called_once_with(window, game, provider.launch_action.call_args.args[1])
         plugin.after_launch.assert_called_once()
         self.assertEqual(plugin.after_launch.call_args.args[2]['GameId'], '42')
         self.assertEqual(window.launched_actions['one']['GameId'], '42')
+
+    def test_cancelled_action_preflight_prevents_launch(self):
+        action = {'Name': 'Example', 'Integration': 'Example', 'GameId': '42'}
+        game = dict(self.game, PlayActions=[action])
+        plugin = Mock(); plugin.before_launch.return_value = True
+        plugin.before_action_launch.return_value = False
+        provider = self.provider; provider.launch_action = Mock()
+        detection = Mock(); detection.status.return_value = 'Stopped'
+        window = SimpleNamespace(current=game, games=[game], game_detection=detection,
+            game_providers=[provider], generic_plugins=[plugin], launched_actions={})
+        LibraryWindow.play_game(window)
+        provider.launch_action.assert_not_called()
+        plugin.after_launch.assert_not_called()

@@ -57,6 +57,7 @@ class FullDescription(QTextBrowser):
         self.expanded_height = 480
         self.collapsed_height = 180
         self.content_height = 0
+        self.fill_available = False
         self.setObjectName('description')
         self.setFrameShape(QFrame.Shape.NoFrame)
         set_style(self, 'QTextBrowser { border: 0; background: transparent; }')
@@ -86,13 +87,21 @@ class FullDescription(QTextBrowser):
         self.content_height = natural_height
         limit = self.expanded_height if self.expanded else self.collapsed_height
         height = min(natural_height, limit) if self.scrollable else natural_height
-        if not self.animating and self.height() != height:
-            self.setFixedHeight(height)
-            changed = True
+        if not self.animating:
+            if self.fill_available:
+                changed |= self.minimumHeight() != height or self.maximumHeight() != 16777215
+                self.setMinimumHeight(height)
+                self.setMaximumHeight(16777215)
+            elif self.height() != height:
+                self.setFixedHeight(height)
+                changed = True
         if changed:
             self.contentResized.emit()
 
     def sizeHint(self):
+        if self.fill_available:
+            limit = self.expanded_height if self.expanded else self.collapsed_height
+            return QSize(super().sizeHint().width(), min(self.content_height, limit))
         return QSize(super().sizeHint().width(), self.height())
 
     def mousePressEvent(self, event):

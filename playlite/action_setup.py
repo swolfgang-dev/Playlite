@@ -25,6 +25,7 @@ class ActionSetupDialog(AddGameEditor):
         self.installation_form.addRow('Integration',self.manual_integration)
         self.installation_form.addRow('Game ID',self.manual_game_id)
         self.installation_method.currentIndexChanged.connect(self.update_manual_fields)
+        self.manual_integration.currentIndexChanged.connect(self.update_manual_fields)
         self.update_manual_fields()
         self.setWindowTitle('Add play action — '+self.installation_plugin.name)
         self.installation_method.currentIndexChanged.connect(lambda:self.setWindowTitle('Add play action — '+self.installation_plugin.name))
@@ -32,7 +33,7 @@ class ActionSetupDialog(AddGameEditor):
     def update_manual_fields(self):
         manual=self.installation_plugin.id=='Manual'
         self.installation_form.setRowVisible(self.manual_integration,manual)
-        self.installation_form.setRowVisible(self.manual_game_id,manual)
+        self.installation_form.setRowVisible(self.manual_game_id,manual and self.manual_integration.currentData() != 'Manual')
 
     def save(self):
         try:
@@ -40,7 +41,7 @@ class ActionSetupDialog(AddGameEditor):
             game=self.installation_plugin.collect(self.installation_widget,game)
             if self.installation_plugin.id=='Manual':
                 provider=next((p for p in self.action_providers if p.id==self.manual_integration.currentData()),None)
-                if provider is None:raise ValueError('Install a launching integration to create a play action.')
+                if provider is None:raise ValueError('Select a launch method to create a play action.')
                 game['GameProvider']=provider.id
                 game[provider.action_id_field]=self.manual_game_id.text().strip()
             # Collection must validate before a plugin creates an external entry.
@@ -48,6 +49,9 @@ class ActionSetupDialog(AddGameEditor):
             actions=actions_for(game,self.action_providers)
             if not actions:raise ValueError('This installation method did not supply a launching integration.')
             action=actions[0]
+            if action['Integration']=='Manual':
+                action['GameId']=''
+                action['Prefix']=''
             action['InstallDirectory']=game.get('InstallDirectory') or ''
             provider=next((p for p in self.action_providers if p.id==action['Integration']),None)
             if provider:provider.validate_action(action)

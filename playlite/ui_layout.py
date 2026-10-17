@@ -99,6 +99,12 @@ def scroll_dialog_body(dialog, footer):
         item = root.takeAt(0)
         if item.layout() is footer:
             retained = item
+        elif item.widget() is not None:
+            content.addWidget(item.widget(), 0, item.alignment())
+        elif item.layout() is not None:
+            child_layout = item.layout()
+            child_layout.setParent(None)
+            content.addLayout(child_layout)
         else:
             content.addItem(item)
     scroll = QScrollArea()

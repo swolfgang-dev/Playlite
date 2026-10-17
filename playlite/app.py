@@ -671,12 +671,35 @@ class ResponsiveContent(QWidget):
         self.cover_animation.start()
 
 
+class DescriptionLinksLayout(QHBoxLayout):
+    """Keep stretched geometry out of the page's natural height calculation."""
+    def description(self):
+        row = self.parentWidget()
+        return row.description if getattr(row, 'wide', False) else None
+
+    def sizeHint(self):
+        size = super().sizeHint()
+        description = self.description()
+        if description is not None:size.setHeight(description.sizeHint().height())
+        return size
+
+    def minimumSize(self):
+        size = super().minimumSize()
+        description = self.description()
+        if description is not None:size.setHeight(description.minimumSizeHint().height())
+        return size
+
+    def heightForWidth(self, width):
+        description = self.description()
+        return description.sizeHint().height() if description is not None else super().heightForWidth(width)
+
+
 class DescriptionLinksRow(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName('descriptionLinksRow')
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.columns = QHBoxLayout(self)
+        self.columns = DescriptionLinksLayout(self)
         self.columns.setContentsMargins(0, 0, 0, 0)
         self.columns.setSpacing(24)
         self.links = None
@@ -686,6 +709,8 @@ class DescriptionLinksRow(QWidget):
         self.wide = None
 
     def set_columns(self, wide):
+        if self.links is not None and self.description is None:
+            wide = False
         if self.wide == wide:
             return
         self.wide = wide
@@ -708,7 +733,9 @@ class DescriptionLinksRow(QWidget):
         if self.wide and self.description is not None:
             self.link_scroll.setMinimumHeight(0)
             self.link_scroll.setMaximumHeight(16777215)
-            self.links.setFixedHeight(self.description.height())
+            self.links.setMinimumHeight(0)
+            self.links.setMaximumHeight(16777215)
+            self.links.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         else:
             height = max(1, self.link_scroll.flow.heightForWidth(max(1, self.link_scroll.viewport().width())))
             self.link_scroll.setFixedHeight(height)
@@ -1201,7 +1228,8 @@ class LibraryWindow(QMainWindow):
         screen = QApplication.primaryScreen()
         default_width = screen.availableGeometry().width() // 2 if screen else 1540
         self.fit_default_height = True
-        size = QSize(default_width, 1140)
+        self.default_window_height = 1140
+        size = QSize(default_width, self.default_window_height)
         self.resize(size)
         self.last_normal_size = QSize(size)
         # Reserve status space before layout, even without a temporary message.
@@ -1741,6 +1769,7 @@ class LibraryWindow(QMainWindow):
         QThreadPool.globalInstance().start(task)
 
     def build_game_view(self, item):
+        self.details.setAlignment(Qt.AlignmentFlag.AlignTop)
         while self.details.count():
             child = self.details.takeAt(0)
             if child.widget():
@@ -1773,6 +1802,9 @@ class LibraryWindow(QMainWindow):
         play.setObjectName('play')
         play.setEnabled(self.has_play_actions(game))
         play.clicked.connect(self.play_game)
+        play.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        play.customContextMenuRequested.connect(lambda _position: self.play_game(choose_action=True))
+        play.setToolTip('Play the default action. Right-click to choose a play action.')
         hero = Hero(play, self.edit_game, self.delete_game, lambda: self.plugin_game_actions(game),
                     (lambda: open_folder(game['InstallDirectory'])) if game.get('InstallDirectory') else None)
         self.play_hero = hero
@@ -1846,14 +1878,16 @@ class LibraryWindow(QMainWindow):
         if full_description:
             from .rich_description import CollapsibleDescription
             full_card, full_layout = card()
+            full_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             full_layout.addWidget(label('Description', 'section'))
             description_panel = CollapsibleDescription(full_description)
-            full_layout.addWidget(description_panel)
+            description_panel.description.fill_available = True
+            description_panel.description.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            description_panel.description.setMaximumHeight(16777215)
+            full_layout.addWidget(description_panel, 1)
             description_row.description = full_card
             full_card.installEventFilter(description_row)
-            description_columns.addWidget(full_card, 1, Qt.AlignmentFlag.AlignTop)
-        else:
-            description_columns.addStretch(1)
+            description_columns.addWidget(full_card, 1)
         if game.get('Links'):
             links, link_layout = card()
             links.setProperty('linksPanel', True)
@@ -1883,9 +1917,12 @@ class LibraryWindow(QMainWindow):
             description_row.link_scroll = link_scroll
             link_scroll.fit_rows()
             link_layout.addWidget(link_scroll)
-            description_columns.addWidget(links, 0, Qt.AlignmentFlag.AlignTop)
+            description_columns.addWidget(links, 0)
         if game.get('FullDescription') or game.get('Links'):
-            self.details.addWidget(description_row)
+            if description_row.description is not None:
+                description_row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+                self.details.setAlignment(Qt.AlignmentFlag(0))
+            self.details.addWidget(description_row, 1 if description_row.description is not None else 0)
             self.content.description_links_row = description_row
             self.content.update_cover()
         else:
@@ -2107,14 +2144,14 @@ class LibraryWindow(QMainWindow):
                 self.current['Id'] not in self.stop_tasks):
             self.play_game()
 
-    def play_game(self):
+    def play_game(self, checked=False, *, choose_action=False):
         if self.current is None:
             return
         automation = getattr(self, 'automation', None)
         if automation is not None and automation.busy(self.current['Id']):
             return
         if self.game_detection.status(self.current['Id']) == 'Running':
-            self.stop_game()
+            if not choose_action:self.stop_game()
             return
         if self.game_detection.status(self.current['Id']) == 'Launching':
             return
@@ -2124,8 +2161,9 @@ class LibraryWindow(QMainWindow):
             actions = actions_for(game, self.game_providers)
             if not actions:
                 raise ValueError('Add a play action on the Installation page.')
-            action = actions[0]
-            if len(actions) > 1:
+            default = next((item for item in actions if item.get('Default') is True), None)
+            action = default or actions[0]
+            if choose_action or (len(actions) > 1 and default is None):
                 from .add_game import AddGameMethods
                 choices = [(item['Name'], item) for item in actions]
                 picker = AddGameMethods(choices, self)
@@ -2144,6 +2182,9 @@ class LibraryWindow(QMainWindow):
                 raise ValueError('Installation needs attention:\n' + '\n'.join(health['issues']) + '\nReview the Installation page before launching.')
             for plugin in self.generic_plugins:
                 if not plugin.before_launch(self, game):
+                    return
+                before_action = getattr(plugin, 'before_action_launch', None)
+                if callable(before_action) and not before_action(self, game, action):
                     return
             game = copy.deepcopy(next(entry for entry in self.games if entry['Id'] == game['Id']))
             automation_action = copy.deepcopy(action)
@@ -2481,10 +2522,11 @@ class LibraryWindow(QMainWindow):
         required = height + margins.top() + margins.bottom() + overhead
         if not self.games:
             required = self.empty_library_height()
+        required = min(required, self.default_window_height)
         screen = self.screen()
         if screen:
             decoration = max(0, self.frameGeometry().height() - self.height())
-            required = min(required, screen.availableGeometry().height() - decoration)
+            required = min(required, round(screen.availableGeometry().height() * 0.9) - decoration)
         self.resize(self.width(), required)
         if settle:
             QTimer.singleShot(0, lambda: self.fit_content_height(False))

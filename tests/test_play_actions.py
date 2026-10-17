@@ -17,6 +17,74 @@ APP = QApplication.instance() or QApplication([])
 
 
 class PlayActionTests(unittest.TestCase):
+    def test_advanced_survives_plugin_rows_inserted_above_launch_fields(self):
+        from PyQt6.QtWidgets import QCheckBox
+        from playlite.play_actions import LaunchSettings, ContributedActionSettings
+        for primary_first in (True, False):
+            settings = LaunchSettings(dict(Executable='/usr/bin/true', Arguments='--example'))
+            primary = QCheckBox('Primary plugin option')
+            primary.action_settings_position = 'primary'
+            extra = QCheckBox('Advanced plugin option')
+            contributions = [primary, extra] if primary_first else [extra, primary]
+            wrapper = ContributedActionSettings(settings, contributions)
+            wrapper.resize(700, 400);wrapper.show()
+            for expanded in (True, False, True, False, True):
+                settings.advanced_button.setChecked(expanded)
+                APP.processEvents()
+                form = settings.advanced_form
+                self.assertTrue(form.isRowVisible(settings.advanced_button))
+                self.assertTrue(form.isRowVisible(primary))
+                self.assertTrue(form.isRowVisible(settings.fields['Executable'].parentWidget()))
+                self.assertTrue(form.isRowVisible(settings.fields['Prefix'].parentWidget()))
+                self.assertEqual(form.isRowVisible(settings.fields['Arguments']), expanded)
+                self.assertEqual(form.isRowVisible(settings.fields['InstallDirectory'].parentWidget()), expanded)
+                self.assertEqual(form.isRowVisible(extra), expanded)
+            wrapper.close()
+
+    def test_default_toggle_is_exclusive_and_survives_reordering(self):
+        actions = [dict(Name=name, Integration='LutrisIntegration', GameId=identity)
+                   for name, identity in [('First','42'), ('Second','84')]]
+        editor = PlayActionsEditor(dict(PlayActions=actions), [self.provider])
+        first, second = editor.cards
+        first.default.setChecked(True)
+        second.default.setChecked(True)
+        self.assertFalse(first.default.isChecked())
+        self.assertTrue(second.default.isChecked())
+        editor.move(second, -1)
+        saved = editor.collect()
+        self.assertTrue(saved[0]['Default'])
+        self.assertFalse(saved[1].get('Default', False))
+        restored = PlayActionsEditor(dict(PlayActions=saved), [self.provider])
+        self.assertTrue(restored.cards[0].default.isChecked())
+        restored.close();editor.close()
+
+    def test_default_launch_double_click_and_right_click_selector(self):
+        from PyQt6.QtCore import QPoint
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            game = dict(self.game, PlayActions=[dict(Name='First', Integration='LutrisIntegration', GameId='42'),
+                        dict(Name='Default', Integration='LutrisIntegration', GameId='84', Default=True)])
+            (data/'library.json').write_text(json.dumps([game]))
+            window = LibraryWindow(data);window.current = game
+            provider = next(p for p in window.game_providers if p.id=='LutrisIntegration')
+            with patch('playlite.app.run_dialog') as picker, patch.object(provider, 'launch') as launch:
+                window.play_game()
+                self.assertEqual(launch.call_args.args[0]['LutrisId'], '84')
+                picker.assert_not_called()
+                window.game_detection.states.clear()
+                window.list.itemDoubleClicked.emit(window.list.currentItem())
+                self.assertEqual(launch.call_args.args[0]['LutrisId'], '84')
+                self.assertEqual(launch.call_count, 2)
+                picker.assert_not_called()
+            window.game_detection.states.clear()
+            def choose(dialog):
+                dialog.choose(game['PlayActions'][0]);return QDialog.DialogCode.Accepted
+            with patch('playlite.app.run_dialog', side_effect=choose) as picker, patch.object(provider, 'launch') as launch:
+                window.play_button.customContextMenuRequested.emit(QPoint(1,1))
+                picker.assert_called_once()
+                self.assertEqual(launch.call_args.args[0]['LutrisId'], '42')
+            window.close()
+
     def setUp(self):
         self.provider = discover_plugins()['LutrisIntegration']
         self.game = dict(Id='a', Name='Example', GameProvider='LutrisIntegration', LutrisId=42)

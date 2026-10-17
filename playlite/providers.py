@@ -144,6 +144,10 @@ class ImageProvider(Plugin):
 
 
 class GenericPlugin(Plugin):
+    def create_action_settings(self, action, parent=None):
+        """Optional Advanced launch widget; collect() returns plugin-owned action fields."""
+        return None
+
     def batch_game_actions(self, window, games):
         """Actions applying to a snapshot of the selected library entries."""
         return []
@@ -244,7 +248,8 @@ class MetadataProvider(Plugin):
 def discover_plugins(directory=None, *, include_disabled=False):
     roots = [Path(directory) if directory is not None else
              Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite/plugins']
-    providers = {}
+    from .manual_launch import ManualLaunch
+    providers = {'Manual': ManualLaunch()}
     for root in roots:
         for manifest_path in sorted(root.glob('*/manifest.json')):
             try:
