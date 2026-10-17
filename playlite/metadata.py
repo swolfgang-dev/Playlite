@@ -97,23 +97,31 @@ def download_artwork(url, target):
         from zipfile import ZipFile, BadZipFile
         try:
             if content.startswith(b'PK\x03\x04'):
-                choices = []
+                image = None
+                expanded = 0
                 with ZipFile(BytesIO(content)) as archive:
+                    if len(archive.infolist()) > 256:
+                        raise ValueError('Too many images in icon archive')
                     for entry in archive.infolist():
                         if entry.file_size > 20 * 1024 * 1024 or entry.is_dir():
                             continue
+                        expanded += entry.file_size
+                        if expanded > 40 * 1024 * 1024:
+                            raise ValueError('Icon archive is too large when expanded')
                         try:
-                            image = Image.open(BytesIO(archive.read(entry)))
-                            if image.width * image.height <= 40_000_000:
-                                image.load()
-                                choices.append(image.copy())
+                            with Image.open(BytesIO(archive.read(entry))) as candidate:
+                                pixels = candidate.width * candidate.height
+                                if pixels <= 40_000_000 and (image is None or pixels > image.width * image.height):
+                                    candidate.load()
+                                    image = candidate.copy()
                         except (UnidentifiedImageError, OSError, ValueError):
                             continue
-                if not choices:
+                if image is None:
                     raise ValueError('No images in icon archive')
-                image = max(choices, key=lambda item: item.width * item.height)
             else:
                 image = Image.open(BytesIO(content))
+                if image.width * image.height > 40_000_000:
+                    raise ValueError('Client icon dimensions are too large')
             output = BytesIO()
             image.convert('RGBA').save(output, format='PNG')
             content = output.getvalue()

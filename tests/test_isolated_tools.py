@@ -1,9 +1,11 @@
 import importlib.util
 import os
+import runpy
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from zipfile import ZipFile
 
 from playlite.desktop import host_environment
 
@@ -13,6 +15,24 @@ spec.loader.exec_module(checks)
 
 
 class IsolatedProfileTests(unittest.TestCase):
+    def test_plugin_release_excludes_untracked_files_and_symlinks(self):
+        builder = Path(__file__).resolve().parents[2] / 'playlite-plugin-steam-metadata/tools/build_release.py'
+        if not builder.exists():
+            self.skipTest('Sibling plugin source is unavailable')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'tools').mkdir()
+            script = root / 'tools/build_release.py'
+            script.write_bytes(builder.read_bytes())
+            (root / 'manifest.json').write_text('{}')
+            (root / 'plugin.py').write_text('pass\n')
+            (root / 'credentials.json').write_text('private')
+            (root / 'linked.py').symlink_to(root / 'credentials.json')
+            with patch('subprocess.check_output', return_value=b'manifest.json\0plugin.py\0linked.py\0'):
+                runpy.run_path(str(script))
+            with ZipFile(root / 'dist/plugin.zip') as archive:
+                self.assertEqual(set(archive.namelist()), {'manifest.json', 'plugin.py'})
+
     def test_host_restore_helpers_cannot_fall_back_to_real_home(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
