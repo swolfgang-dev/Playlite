@@ -51,6 +51,8 @@ def installed_plugins(directory=None):
     for path in sorted((directory or plugin_directory()).glob('*/manifest.json')):
         try:
             manifest = json.loads(path.read_text())
+            if not isinstance(manifest, dict) or not isinstance(manifest.get('id'), str) or not manifest['id']:
+                continue
             result.append(dict(manifest, manifest_path=str(path)))
         except (OSError, ValueError):
             continue
@@ -156,22 +158,15 @@ def install_archive(archive, directory=None, repository=''):
         if not manifest_path.is_file() or not (stage / 'plugin.py').is_file():
             raise ValueError('Plugin release must contain manifest.json and plugin.py at its root.')
         manifest = json.loads(manifest_path.read_text())
+        from .plugin_manifest import validate_manifest
+        validate_manifest(manifest)
         identity = manifest.get('id', '')
-        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', identity) or identity in ('Manual', 'Current'):
-            raise ValueError('Invalid or reserved plugin ID.')
-        if manifest.get('api_version') != 1:
-            raise ValueError('Unsupported plugin API version.')
-        if manifest.get('type', 'metadata') not in ('metadata', 'game', 'generic', 'installation', 'integration', 'image', 'theme'):
-            raise ValueError('Unsupported plugin type.')
-        if not isinstance(manifest.get('name'), str) or not isinstance(manifest.get('version'), str):
-            raise ValueError('Plugin name and version are required.')
         hook = manifest.get('uninstall_hook')
         if hook:
             hook_path = PurePosixPath(hook)
             if hook_path.is_absolute() or len(hook_path.parts) != 1 or hook_path.suffix != '.py' or not (stage / hook).is_file():
                 raise ValueError('Plugin cleanup must be a standalone file at its root.')
-        from .plugin_dependencies import missing_dependencies, check_core_version
-        check_core_version(manifest)
+        from .plugin_dependencies import missing_dependencies
         missing = missing_dependencies(manifest, installed_plugins(directory))
         if missing:
             raise ValueError('Required plugins must be installed first: ' + ', '.join(item['id']+' >= '+item['minimum_version'] for item in missing))

@@ -26,7 +26,9 @@ def dependencies(manifest):
     for entry in entries:
         if not isinstance(entry,dict):raise ValueError('Invalid plugin dependency declaration.')
         identity=entry.get('id','');repository=entry.get('repository','');minimum=entry.get('minimum_version','')
-        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',identity) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repository):
+        if (not isinstance(identity,str) or not isinstance(repository,str)
+                or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',identity)
+                or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repository)):
             raise ValueError('Plugin dependencies need an ID and GitHub repository.')
         version_key(minimum)
         if identity==manifest.get('id') or identity in seen:raise ValueError('Duplicate or self-referencing plugin dependency.')

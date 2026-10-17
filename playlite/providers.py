@@ -1,9 +1,7 @@
 """Metadata plugin discovery and the API shared by built-in and user providers."""
-import importlib.util
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 
 
@@ -264,42 +262,28 @@ def discover_plugins(directory=None, *, include_disabled=False):
     from .manual_launch import ManualLaunch
     providers = {'Manual': ManualLaunch()}
     for root in roots:
+        from .plugin_manager import installed_plugins
+        installed = installed_plugins(root)
         for manifest_path in sorted(root.glob('*/manifest.json')):
             try:
                 manifest = json.loads(manifest_path.read_text())
+                from .plugin_manifest import validate_manifest
+                validate_manifest(manifest)
                 if manifest.get('enabled', True) is False and not include_disabled:
                     continue
                 plugin_id = manifest['id']
-                if not isinstance(plugin_id, str) or not plugin_id or plugin_id in ('Current', 'Manual') or plugin_id in providers:
+                if plugin_id.casefold() in {key.casefold() for key in providers}:
                     raise ValueError('Plugin ID must be unique and cannot be Current.')
-                if manifest.get('api_version') != 1:
-                    raise ValueError('Unsupported metadata plugin API version.')
-                from .plugin_dependencies import missing_dependencies, check_core_version
-                check_core_version(manifest)
-                from .plugin_manager import installed_plugins
-                if missing_dependencies(manifest, installed_plugins(root)):
+                from .plugin_dependencies import missing_dependencies
+                if missing_dependencies(manifest, installed):
                     raise ValueError('Required plugin dependencies are missing or outdated.')
                 plugin_type = manifest.get('type', 'metadata')
                 base = {'metadata': MetadataProvider, 'game': GameProvider, 'generic': GenericPlugin,
                         'installation': InstallationPlugin, 'integration': IntegrationPlugin,
                         'image': ImageProvider, 'theme': ThemePlugin}.get(plugin_type)
-                if base is None:
-                    raise ValueError('Unknown plugin type.')
                 fields = manifest.get('fields', [])
-                if not isinstance(fields, list) or not all(isinstance(field, str) for field in fields):
-                    raise ValueError('fields must be a list of metadata field names.')
-                import re
-                import types
-                if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', plugin_id):
-                    raise ValueError('Plugin ID must contain only letters, digits, and underscores.')
-                namespace = sys.modules.setdefault('playlite_plugins', types.ModuleType('playlite_plugins'))
-                namespace.__path__ = []
-                module_name = 'playlite_plugins.' + plugin_id.lower()
-                spec = importlib.util.spec_from_file_location(module_name, manifest_path.parent / 'plugin.py',
-                                                           submodule_search_locations=[str(manifest_path.parent)])
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)
+                from .plugin_modules import load_module
+                module = load_module(plugin_id, manifest_path.parent)
                 provider = (module.Provider if plugin_type == 'metadata' else module.Plugin)()
                 if not isinstance(provider, base):
                     raise ValueError(f'Plugin must inherit {base.__name__}.')
