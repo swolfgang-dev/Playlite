@@ -62,3 +62,11 @@ class AtomicJsonTests(unittest.TestCase):
             other.write_text('another operation')
             atomic_json(path, [1])
             self.assertEqual(other.read_text(), 'another operation')
+
+
+class ProfileDirectoryTests(unittest.TestCase):
+    def test_active_view_and_settings_determine_custom_profile(self):
+        from types import SimpleNamespace
+        from playlite.storage import data_directory
+        view = SimpleNamespace(parentWidget=lambda: SimpleNamespace(data=Path('/tmp/custom-library')))
+        self.assertEqual(data_directory(view), Path('/tmp/custom-library'))

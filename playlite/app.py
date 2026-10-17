@@ -203,8 +203,11 @@ class LibraryWindow(QMainWindow):
         from .readiness import show_readiness
         self.logo_menu.addAction('Check library readiness…').triggered.connect(lambda: show_readiness(self,self.games))
         for plugin in self.generic_plugins:
-            for action_label, callback in getattr(plugin, 'main_menu_actions', lambda window: [])(self):
-                self.logo_menu.addAction(action_label).triggered.connect(callback)
+            try:
+                for action_label, callback in getattr(plugin, 'main_menu_actions', lambda window: [])(self):
+                    self.logo_menu.addAction(action_label).triggered.connect(callback)
+            except Exception:
+                logging.exception('Could not create main-menu actions for %s', plugin.id)
         self.logo_menu.addSeparator()
         self.logo_menu.addAction('Settings…').triggered.connect(self.open_settings)
         self.logo.setMenu(self.logo_menu)

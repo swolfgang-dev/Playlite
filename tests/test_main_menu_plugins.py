@@ -25,3 +25,15 @@ class MainMenuTests(unittest.TestCase):
             self.assertEqual(plugin.calls,[window])
             window.game_detection.stop()
             window.close()
+
+    def test_broken_plugin_menu_does_not_block_other_plugins_or_window(self):
+        broken = MenuPlugin()
+        broken.main_menu_actions = lambda window: (_ for _ in ()).throw(ValueError('broken menu'))
+        working = MenuPlugin()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('playlite.providers.discover_plugins', return_value={'Broken': broken, 'Working': working}), \
+             self.assertLogs(level='ERROR'):
+            window = LibraryWindow(Path(directory))
+            self.assertTrue(any(action.text() == 'Steam Depot Downloader…' for action in window.logo_menu.actions()))
+            window.game_detection.stop()
+            window.close()

@@ -36,3 +36,14 @@ def atomic_bytes(path, content, *, mode=None):
     finally:
         temporary.unlink(missing_ok=True)
 
+
+
+def data_directory(context=None):
+    """Resolve an active view's library before falling back to the XDG profile."""
+    while context is not None:
+        value = getattr(context, 'data', None)
+        if isinstance(value, (str, Path)):
+            return Path(value)
+        parent = getattr(context, 'parentWidget', None)
+        context = parent() if callable(parent) else None
+    return Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite'

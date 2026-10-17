@@ -24,6 +24,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings, parent=None, metadata=False, clear_progress=None):
         super().__init__(parent)
         self.settings = settings
+        self.data = Path(settings.fileName()).parent
         self.clear_progress = clear_progress
         self.link_names = load_names(settings)
         self.setWindowTitle('Playlite Settings')
