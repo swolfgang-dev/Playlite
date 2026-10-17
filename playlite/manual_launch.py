@@ -4,6 +4,7 @@ from pathlib import Path
 import shlex
 import subprocess
 
+from .desktop import host_environment
 from .providers import GameProvider
 from . import __version__
 
@@ -37,4 +38,4 @@ class ManualLaunch(GameProvider):
         executable = action['Executable']
         return subprocess.Popen([executable, *shlex.split(action.get('Arguments') or '')],
                                 cwd=action.get('InstallDirectory') or str(Path(executable).parent),
-                                start_new_session=True)
+                                start_new_session=True, env=host_environment())

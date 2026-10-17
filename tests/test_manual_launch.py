@@ -1,7 +1,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import QApplication, QScrollArea, QWidget, QFormLayout, QToolButton
@@ -41,7 +41,7 @@ class ManualLaunchTests(unittest.TestCase):
         provider = ManualLaunch()
         with patch('playlite.manual_launch.subprocess.Popen') as launch:
             provider.launch({'Executable': '/usr/bin/printf', 'LaunchArguments': '"hello world" "$(false)"', 'InstallDirectory': '/tmp'})
-        launch.assert_called_once_with(['/usr/bin/printf', 'hello world', '$(false)'], cwd='/tmp', start_new_session=True)
+        launch.assert_called_once_with(['/usr/bin/printf', 'hello world', '$(false)'], cwd='/tmp', start_new_session=True, env=ANY)
 
     def test_missing_and_nonexecutable_paths_rejected(self):
         provider = ManualLaunch()
@@ -75,3 +75,11 @@ class ManualLaunchTests(unittest.TestCase):
             self.assertEqual(dialog.result_action['Executable'], '/usr/bin/true')
             self.assertEqual(dialog.result_action['GameId'], '')
             dialog.close()
+
+    def test_repository_profile_launch_uses_host_environment(self):
+        import os
+        with patch.dict(os.environ, {'PLAYLITE_PROFILE': 'repo', 'HOME': '/isolated',
+                                     'PLAYLITE_HOST_HOME': '/host-home'}), \
+             patch('playlite.manual_launch.subprocess.Popen') as launch:
+            ManualLaunch().launch({'Executable': '/usr/bin/true'})
+        self.assertEqual(launch.call_args.kwargs['env']['HOME'], '/host-home')

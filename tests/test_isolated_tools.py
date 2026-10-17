@@ -16,6 +16,20 @@ spec.loader.exec_module(checks)
 
 
 class IsolatedProfileTests(unittest.TestCase):
+    def test_fixture_copy_rejects_escape_through_a_symlinked_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout = root / 'playlite-plugin-example'; checkout.mkdir()
+            (checkout / 'manifest.json').write_text('{}')
+            outside = root / 'outside'; outside.mkdir()
+            (outside / 'plugin.py').write_text('raise RuntimeError("external code")')
+            (checkout / 'code').symlink_to(outside, target_is_directory=True)
+            with patch.object(checks, 'CORE', root / 'core'), \
+                    patch('subprocess.check_output', return_value=b'code/plugin.py\0'):
+                with self.assertRaisesRegex(ValueError, 'must not contain symlinks'):
+                    checks.copy_plugin_fixtures(root / 'fixtures')
+            self.assertFalse((root / 'fixtures').exists())
+
     def test_fixture_installation_refuses_a_normal_desktop_profile(self):
         script = Path(__file__).resolve().parents[2] / 'playlite-plugin-image-studio/tools/prepare_test_plugins.py'
         if not script.exists():

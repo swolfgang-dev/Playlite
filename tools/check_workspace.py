@@ -52,7 +52,7 @@ def copy_plugin_fixtures(destination):
             if path.parts[0] in ('.github', 'tests'):
                 continue
             source = checkout / path
-            if source.is_symlink():
+            if source.is_symlink() or not source.resolve().is_relative_to(checkout.resolve()):
                 raise ValueError(f'Test fixtures must not contain symlinks: {source}')
             if source.is_file():
                 target = destination / checkout.name / path
