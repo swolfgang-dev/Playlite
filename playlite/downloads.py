@@ -3,11 +3,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import uuid
 import json
+import logging
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QEvent, QVariantAnimation, QEasingCurve, Qt, QSize, QPoint
 from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import QFrame, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QProgressBar, QMessageBox, QGraphicsOpacityEffect
 from .theme import set_style, colour
 from .desktop import open_folder
+from .storage import atomic_json
 
 
 @dataclass
@@ -52,9 +54,12 @@ class DownloadQueue(QObject):
 
     def save(self):
         if not self.storage:return
-        self.storage.parent.mkdir(parents=True,exist_ok=True)
         data=[{key:getattr(row,key) for key in ('name','destination','id','state','status','progress','metadata')} for row in self.entries]
-        temporary=self.storage.with_suffix('.tmp');temporary.write_text(json.dumps(data));temporary.chmod(0o600);temporary.replace(self.storage)
+        try:
+            self.storage.parent.mkdir(parents=True,exist_ok=True)
+            atomic_json(self.storage,data,mode=0o600)
+        except OSError:
+            logging.exception('Could not save download queue')
 
     def ordered(self):
         rank={'Downloading':0,'Queued':1,'Failed':2,'Paused':3,'Cancelled':4,'Complete':5}

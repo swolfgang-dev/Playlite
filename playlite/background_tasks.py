@@ -8,6 +8,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QLabel,
     QPlainTextEdit, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QHeaderView)
 from .lifecycle import run_dialog
+from .storage import atomic_json
 
 ACTIVE = {'Queued', 'Running', 'Waiting', 'Downloading', 'Uploading'}
 
@@ -44,16 +45,13 @@ class BackgroundTasks(QObject):
     def _save(self):
         try:
             self.storage.parent.mkdir(parents=True, exist_ok=True)
-            temp = self.storage.with_suffix('.tmp')
             # Keep active work plus the latest 200 completed tasks.
             rows = sorted(self.records.values(), key=lambda r: r['updated'], reverse=True)
             finished = [r for r in rows if r['state'] not in ACTIVE][:200]
             retained = [r for r in rows if r['state'] in ACTIVE] + finished
             self.records = {r['id']: r for r in retained}
             self.callbacks = {key: value for key, value in self.callbacks.items() if key in self.records}
-            temp.write_text(json.dumps(retained, indent=2))
-            temp.chmod(0o600)
-            temp.replace(self.storage)
+            atomic_json(self.storage, retained, mode=0o600)
         except OSError:
             logging.exception('Could not save background task history')
 

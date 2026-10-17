@@ -164,9 +164,8 @@ def _record_playtime(data, games, identity, seconds, count, stamp):
     game['PlayCount'] = max(0, int(game.get('PlayCount') or 0)) + count
     game['LastActivity'] = stamp
     data.mkdir(parents=True, exist_ok=True)
-    temporary = data / 'library.playtime.tmp'
-    temporary.write_text(json.dumps(latest, indent=2, ensure_ascii=False))
-    temporary.replace(path)
+    from .storage import atomic_json
+    atomic_json(path, latest)
     return latest
 
 
