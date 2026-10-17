@@ -9,15 +9,15 @@ def update_action_files(changes, update):
 
     The caller holds the library lock. External launchers do not share that
     lock, so rollback checks the bytes we wrote and preserves newer edits.
-    Each update callback must replace its file atomically or leave it intact.
+    Each callback must replace its file atomically or leave it intact, and
+    return the exact bytes it wrote (None when no change was necessary).
     """
     originals = {}
     try:
         for path, value in changes.items():
             original = path.read_bytes()
-            update(path, value)
-            written = path.read_bytes()
-            if written != original:
+            written = update(path, value)
+            if written is not None and written != original:
                 originals[path] = (original, written)
         yield
     except BaseException:
