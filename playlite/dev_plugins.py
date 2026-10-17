@@ -43,13 +43,9 @@ def prepare_dependencies(destination):
             raise ValueError('Repo dependencies require a virtual environment. Use run-dev.sh.')
         from importlib.util import find_spec
         if find_spec('pip') is None:
-            # Some distro Pythons omit ensurepip; bootstrap only this private venv.
-            import urllib.request
-            with tempfile.TemporaryDirectory(prefix='playlite-pip-') as temporary:
-                script = Path(temporary) / 'get-pip.py'
-                with urllib.request.urlopen('https://bootstrap.pypa.io/get-pip.py', timeout=60) as response:
-                    script.write_bytes(response.read())
-                subprocess.run([sys.executable, str(script)], check=True)
+            if find_spec('ensurepip') is None:
+                raise ValueError('The repo virtual environment has no pip. Create it with a Python installation that provides venv and ensurepip, then retry.')
+            subprocess.run([sys.executable, '-m', 'ensurepip'], check=True)
         subprocess.run([sys.executable, '-m', 'pip', 'install', *sorted(pending)], check=True)
 
 
@@ -66,9 +62,13 @@ def sync_plugins(source, destination):
             if path.suffix == '.md' and path.parts[0] != 'tools':
                 continue
             original = checkout / path
+            if original.is_symlink() or not original.resolve().is_relative_to(checkout.resolve()):
+                raise ValueError('Development plugin files must stay within their checkout.')
             if not original.is_file():
                 continue
             output = target / path
+            if target.is_symlink() or not output.resolve().is_relative_to(target.resolve()):
+                raise ValueError('Development plugin destination is outside its profile.')
             content = original.read_bytes()
             if name == 'manifest.json':
                 manifest = json.loads(content)
@@ -82,8 +82,11 @@ def sync_plugins(source, destination):
             with tempfile.NamedTemporaryFile(dir=output.parent, delete=False) as temporary:
                 temporary.write(content)
                 staged = Path(temporary.name)
-            staged.chmod(original.stat().st_mode & 0o777)
-            staged.replace(output)
+            try:
+                staged.chmod(original.stat().st_mode & 0o777)
+                staged.replace(output)
+            finally:
+                staged.unlink(missing_ok=True)
 
 
 def start():

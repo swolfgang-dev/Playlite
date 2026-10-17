@@ -8,6 +8,47 @@ from playlite.dev_plugins import sync_plugins, prepare_dependencies
 
 
 class DevelopmentPluginTests(unittest.TestCase):
+    def test_sync_rejects_external_links_and_cleans_failed_staging(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout = root / 'source/playlite-plugin-example'
+            checkout.mkdir(parents=True)
+            (checkout / '.git').mkdir()
+            (checkout / 'manifest.json').write_text('{}')
+            target = root / 'plugins/playlite-plugin-example'
+            target.mkdir(parents=True)
+            (target / 'manifest.json').write_text('{}')
+            external = root / 'external'
+            external.mkdir()
+            source = checkout / 'plugin.py'
+            source.symlink_to(external / 'private.py')
+            (external / 'private.py').write_text('private')
+            with patch('playlite.dev_plugins.subprocess.check_output', return_value=b'plugin.py\0'):
+                with self.assertRaisesRegex(ValueError, 'within their checkout'):
+                    sync_plugins(root / 'source', root / 'plugins')
+                source.unlink()
+                source.write_text('new code')
+                (target / 'plugin.py').symlink_to(external / 'private.py')
+                with self.assertRaisesRegex(ValueError, 'outside its profile'):
+                    sync_plugins(root / 'source', root / 'plugins')
+                self.assertEqual((external / 'private.py').read_text(), 'private')
+                (target / 'plugin.py').unlink()
+                with patch.object(Path, 'replace', side_effect=OSError('full disk')):
+                    with self.assertRaises(OSError):
+                        sync_plugins(root / 'source', root / 'plugins')
+            self.assertEqual(list(target.iterdir()), [target / 'manifest.json'])
+
+    def test_missing_pip_never_downloads_a_bootstrap_script(self):
+        from importlib.metadata import PackageNotFoundError
+        with tempfile.TemporaryDirectory() as directory, \
+                patch('importlib.metadata.version', side_effect=PackageNotFoundError), \
+                patch('sys.prefix', '/private-venv'), \
+                patch('importlib.util.find_spec', return_value=None), \
+                patch('playlite.dev_plugins.subprocess.run') as run:
+            with self.assertRaisesRegex(ValueError, 'no pip'):
+                prepare_dependencies(Path(directory))
+            run.assert_not_called()
+
     def test_sync_includes_new_runtime_files_but_excludes_ignored_private_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
