@@ -739,8 +739,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             def failed(error):
                 status.setText(str(error))
                 buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
-            task.signals.succeeded.connect(complete)
-            task.signals.failed.connect(failed)
+            task.bind(dialog, complete, failed)
             QThreadPool.globalInstance().start(task)
         from PyQt6.QtCore import QProcess, QProcessEnvironment
         from .plugin_manager import github_browser_command, github_environment
@@ -826,8 +825,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         def failed(error):
             self.update_status.setText('Update failed: ' + str(error))
             self.check_update_button.setEnabled(True)
-        task.signals.failed.connect(failed)
-        task.signals.succeeded.connect(complete)
+        task.bind(self, complete, failed)
         QThreadPool.globalInstance().start(task)
 
     def check_application_update(self):
@@ -838,7 +836,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.check_update_button.setEnabled(True)
             tag = release['tag_name']
             repo = os.environ.get('PLAYLITE_PROFILE') == 'repo'
-            current = tag.lstrip('v') == self.application_version
+            from .plugin_dependencies import version_key
+            current = version_key(tag) <= version_key(self.application_version)
             message = ' · Update this checkout through Git.' if repo else ' · Already up to date.' if current else ' · Ready to install.'
             self.update_status.setText('Latest release: ' + tag + message)
             self.install_update_button.setEnabled(not repo and not current)
@@ -871,7 +870,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             if not closed:
                 shutil.rmtree(directory)
                 return
-            launch_update(directory, release['tag_name'])
+            launch_update(directory, release['tag_name'], library=getattr(window, 'data', None))
             from PyQt6.QtWidgets import QApplication
             if lifecycle is not None:
                 lifecycle.quit()
@@ -953,8 +952,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.install_selected_button.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()))
             self.plugin_operation_status.appendPlainText(str(error))
             self.refresh_installed_plugins()
-        task.signals.succeeded.connect(complete)
-        task.signals.failed.connect(failed)
+        task.bind(self, complete, failed)
         QThreadPool.globalInstance().start(task)
 
     def update_selected_plugins(self):
@@ -1012,8 +1010,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             log.appendPlainText(str(error))
             self.update_installed_status()
             self.install_selected_button.setEnabled(bool(self.available_plugins.selectionModel().selectedRows()))
-        task.signals.succeeded.connect(complete)
-        task.signals.failed.connect(failed)
+        task.bind(self, complete, failed)
         QThreadPool.globalInstance().start(task)
 
     def installed_plugin_context_menu(self, position):
@@ -1138,8 +1135,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
                 status.setText('Installation failed. Check repository access and authentication. ' + str(error))
                 install.setEnabled(True)
                 repository.setEnabled(True)
-            task.signals.succeeded.connect(complete)
-            task.signals.failed.connect(failed)
+            task.bind(dialog, complete, failed)
             QThreadPool.globalInstance().start(task)
         install.clicked.connect(start)
         dialog.resize(640, dialog.sizeHint().height())
@@ -1218,6 +1214,12 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.error.setText('Wait for the plugin operation to finish before saving settings.')
             return
         try:
+            for plugin_id, plugin in self.plugins.items():
+                if plugin_id in self.plugin_widgets and plugin_id not in self.deleted_plugin_ids:
+                    plugin.validate_settings(self.plugin_widgets[plugin_id])
+            for contributor, target, widget in self.plugin_contributions:
+                if contributor.id not in self.deleted_plugin_ids and target.id not in self.deleted_plugin_ids:
+                    contributor.validate_settings_contribution(target, widget)
             for plugin_id, plugin in self.plugins.items():
                 if plugin_id in self.plugin_widgets and plugin_id not in self.deleted_plugin_ids:
                     plugin.save_settings(self.plugin_widgets[plugin_id])

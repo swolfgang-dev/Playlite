@@ -42,7 +42,7 @@ class UpdateRestartTests(unittest.TestCase):
                     SettingsDialog.install_application_update(dialog)
                 self.assertFalse(window.lifecycle.quitting)
                 if allow_close:
-                    launch.assert_called_once_with(directory, 'v1')
+                    launch.assert_called_once_with(directory, 'v1', library=None)
                     window.lifecycle.quit.assert_called_once()
                     self.assertFalse(window.isVisible())
                 else:
@@ -97,8 +97,27 @@ class UpdaterTests(unittest.TestCase):
     def test_failed_install_does_not_restart_and_cleans_staging(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as folder:
-            directory=Path(folder)/'staged';directory.mkdir()
+            directory=Path(folder)/'playlite-update-staged';directory.mkdir()
+            (directory / '.playlite-update').write_text(str(directory.resolve()))
             with patch.object(updater,'__file__',str(directory/'updater.py')), patch.object(updater.subprocess,'run',return_value=SimpleNamespace(returncode=1)), patch.object(updater.subprocess,'Popen') as launch:
                 with self.assertRaises(RuntimeError):updater.run_update(999999999,'v1')
                 launch.assert_not_called()
             self.assertFalse(directory.exists())
+
+    def test_running_update_module_directly_cannot_remove_source_directory(self):
+        with patch.object(updater.subprocess, 'run') as install, patch('shutil.rmtree') as remove:
+            with self.assertRaisesRegex(ValueError, 'prepared update directory'):
+                updater.run_update(999999999, 'v1')
+        install.assert_not_called()
+        remove.assert_not_called()
+
+    def test_successful_update_reopens_custom_library(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(prefix='playlite-update-') as folder:
+            directory = Path(folder)
+            (directory / '.playlite-update').write_text(str(directory.resolve()))
+            with patch.object(updater, '__file__', str(directory / 'updater.py')), \
+                    patch.object(updater.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                    patch.object(updater.subprocess, 'Popen') as launch:
+                updater.run_update(999999999, 'v1', '/tmp/custom-library')
+            self.assertEqual(launch.call_args.args[0][-2:], ['--data', '/tmp/custom-library'])

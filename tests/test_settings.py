@@ -17,6 +17,22 @@ APP = QApplication.instance() or QApplication([])
 
 
 class SettingsTests(unittest.TestCase):
+    def test_invalid_plugin_preferences_prevent_all_plugin_writes(self):
+        from contextlib import ExitStack
+        with tempfile.TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / 'ui.ini'), QSettings.Format.IniFormat)
+            dialog = SettingsDialog(settings)
+            dialog.plugin_widgets['SteamAutoCrack'].api_key.setText('invalid')
+            with ExitStack() as stack:
+                saves = [stack.enter_context(patch.object(plugin, 'save_settings'))
+                         for plugin in dialog.plugins.values()]
+                dialog.save()
+                for save in saves:
+                    save.assert_not_called()
+            self.assertIn('Steam Web API key', dialog.error.text())
+            self.assertFalse(settings.contains('installation/defaultMethod'))
+            dialog.reject()
+
     def test_general_install_folder_is_saved_and_used_by_add_game(self):
         from PyQt6.QtWidgets import QWidget,QPushButton
         from playlite.manual_installation import ManualInstallation

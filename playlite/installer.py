@@ -139,8 +139,7 @@ class InstallerDialog(QDialog):
         def failed(error):
             finish()
             self.log.appendPlainText(str(error))
-        task.signals.succeeded.connect(complete)
-        task.signals.failed.connect(failed)
+        task.bind(self, complete, failed)
         QThreadPool.globalInstance().start(task)
 
     def load_catalogue(self):

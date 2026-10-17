@@ -53,26 +53,37 @@ def prepare_update(release):
     if hashlib.sha256(script).hexdigest() != hashes.get('install.sh'):
         raise ValueError('Installer checksum mismatch.')
     directory = Path(tempfile.mkdtemp(prefix='playlite-update-'))
-    directory.chmod(0o700)
-    (directory / 'install.sh').write_bytes(script)
-    # Copy the helper before the installer replaces the current runtime.
-    (directory / 'updater.py').write_bytes(Path(__file__).read_bytes())
+    try:
+        directory.chmod(0o700)
+        (directory / '.playlite-update').write_text(str(directory.resolve()))
+        (directory / 'install.sh').write_bytes(script)
+        # Copy the helper before the installer replaces the current runtime.
+        (directory / 'updater.py').write_bytes(Path(__file__).read_bytes())
+    except BaseException:
+        import shutil
+        shutil.rmtree(directory)
+        raise
     return directory
 
 
-def launch_update(directory, tag):
+def launch_update(directory, tag, *, library=None):
     data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite'
     data.mkdir(parents=True, exist_ok=True)
     log = data / 'update.log'
     with log.open('w') as output:
         log.chmod(0o600)
-        subprocess.Popen(['/usr/bin/python3', str(directory / 'updater.py'), str(os.getpid()), tag],
+        arguments = [str(Path(library).resolve())] if library is not None else []
+        subprocess.Popen(['/usr/bin/python3', str(directory / 'updater.py'), str(os.getpid()), tag, *arguments],
                          stdout=output, stderr=output, start_new_session=True)
     return log
 
 
-def run_update(pid, tag):
+def run_update(pid, tag, library=None):
     directory = Path(__file__).parent
+    marker = directory / '.playlite-update'
+    if (not directory.name.startswith('playlite-update-') or marker.is_symlink()
+            or not marker.is_file() or marker.read_text() != str(directory.resolve())):
+        raise ValueError('Run the updater only from a prepared update directory.')
     try:
         deadline = time.monotonic() + 300
         while Path(f'/proc/{pid}').exists():
@@ -83,11 +94,12 @@ def run_update(pid, tag):
         if result.returncode:
             raise RuntimeError('Update failed. The existing installer preserves or restores the previous runtime.')
         binary = Path(os.environ.get('PLAYLITE_BIN_DIR', str(Path.home() / '.local/bin'))) / 'playlite'
-        subprocess.Popen([str(binary)], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        arguments = ['--data', str(library)] if library is not None else []
+        subprocess.Popen([str(binary), *arguments], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     finally:
         import shutil
         shutil.rmtree(directory)
 
 
 if __name__ == '__main__':
-    run_update(int(sys.argv[1]), sys.argv[2])
+    run_update(int(sys.argv[1]), sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)

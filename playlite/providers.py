@@ -21,11 +21,19 @@ class Plugin:
     def save_settings(self, widget):
         pass
 
+    def validate_settings(self, widget):
+        """Validate pending preferences without writing files or changing runtime state."""
+        pass
+
     def create_settings_contribution(self, target, parent=None):
         """Optionally contribute a widget to another installed plugin's section."""
         return None
 
     def save_settings_contribution(self, target, widget):
+        pass
+
+    def validate_settings_contribution(self, target, widget):
+        """Validate a contributed preferences section before any section is saved."""
         pass
 
 
