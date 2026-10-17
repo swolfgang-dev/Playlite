@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from playlite.providers import discover_plugins
 
@@ -46,3 +47,36 @@ class PluginModuleTests(unittest.TestCase):
             with self.assertLogs(level='ERROR'):
                 self.assertNotIn(self.identity, discover_plugins(root))
             self.assertFalse(any(name.startswith('playlite_plugins.reviewfixture') for name in sys.modules))
+
+    def test_lifecycle_receives_validated_manifest_metadata(self):
+        from playlite.plugin_lifecycle import load_plugin
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = self.fixture(root, 'setup')
+            entry = dict(id=self.identity, installation_hooks=True,
+                         manifest_path=str(directory / 'manifest.json'))
+            with patch('playlite.plugin_lifecycle.installed_plugins', return_value=[entry]), \
+                 patch('playlite.plugin_lifecycle.plugin_directory', return_value=root):
+                plugin = load_plugin(self.identity)
+            self.assertEqual(plugin.id, self.identity)
+            self.assertEqual(plugin.name, 'Example')
+            self.assertEqual(plugin.manifest_path, directory / 'manifest.json')
+            for name in list(sys.modules):
+                if name.startswith('playlite_install_hooks.plugin_'):
+                    del sys.modules[name]
+
+    def test_failed_lifecycle_factory_removes_partial_namespace(self):
+        from playlite.plugin_lifecycle import load_plugin
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = self.fixture(root, 'setup')
+            (directory / 'plugin.py').write_text('class Plugin: pass\n')
+            entry = dict(id=self.identity, installation_hooks=True,
+                         manifest_path=str(directory / 'manifest.json'))
+            before = set(sys.modules)
+            with patch('playlite.plugin_lifecycle.installed_plugins', return_value=[entry]), \
+                 patch('playlite.plugin_lifecycle.plugin_directory', return_value=root):
+                with self.assertRaisesRegex(ValueError, 'must inherit GenericPlugin'):
+                    load_plugin(self.identity)
+            self.assertFalse(any(name.startswith('playlite_install_hooks.plugin_')
+                                 for name in set(sys.modules) - before))

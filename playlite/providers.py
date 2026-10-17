@@ -275,6 +275,33 @@ class MetadataProvider(Plugin):
         return f'Game name or {self.name} game ID'
 
 
+def instantiate_plugin(module, manifest, manifest_path):
+    """Apply the same validated plugin contract to startup and lifecycle hooks."""
+    from .plugin_manifest import validate_manifest
+    validate_manifest(manifest)
+    plugin_id = manifest['id']
+    plugin_type = manifest.get('type', 'metadata')
+    base = {'metadata': MetadataProvider, 'game': GameProvider, 'generic': GenericPlugin,
+            'installation': InstallationPlugin, 'integration': IntegrationPlugin,
+            'image': ImageProvider, 'theme': ThemePlugin}.get(plugin_type)
+    fields = manifest.get('fields', [])
+    provider = (module.Provider if plugin_type == 'metadata' else module.Plugin)()
+    if not isinstance(provider, base):
+        raise ValueError(f'Plugin must inherit {base.__name__}.')
+    provider.id = plugin_id
+    provider.name = manifest['name']
+    provider.version = manifest['version']
+    provider.fields = frozenset(fields)
+    provider.type = plugin_type
+    provider.enabled = manifest.get('enabled', True)
+    provider.manifest_path = manifest_path
+    from .plugin_fields import validate_declarations
+    provider.game_fields = validate_declarations(manifest.get('game_fields', []))
+    provider.image_defaults = manifest.get('image_defaults', {})
+    provider.description = manifest.get('description', getattr(provider, 'description', ''))
+    return provider
+
+
 def discover_plugins(directory=None, *, include_disabled=False):
     roots = [Path(directory) if directory is not None else
              Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite/plugins']
@@ -296,27 +323,9 @@ def discover_plugins(directory=None, *, include_disabled=False):
                 from .plugin_dependencies import missing_dependencies
                 if missing_dependencies(manifest, installed):
                     raise ValueError('Required plugin dependencies are missing or outdated.')
-                plugin_type = manifest.get('type', 'metadata')
-                base = {'metadata': MetadataProvider, 'game': GameProvider, 'generic': GenericPlugin,
-                        'installation': InstallationPlugin, 'integration': IntegrationPlugin,
-                        'image': ImageProvider, 'theme': ThemePlugin}.get(plugin_type)
-                fields = manifest.get('fields', [])
                 from .plugin_modules import load_module
                 module = load_module(plugin_id, manifest_path.parent)
-                provider = (module.Provider if plugin_type == 'metadata' else module.Plugin)()
-                if not isinstance(provider, base):
-                    raise ValueError(f'Plugin must inherit {base.__name__}.')
-                provider.id = plugin_id
-                provider.name = manifest['name']
-                provider.version = manifest['version']
-                provider.fields = frozenset(fields)
-                provider.type = plugin_type
-                provider.enabled = manifest.get('enabled', True)
-                provider.manifest_path = manifest_path
-                from .plugin_fields import validate_declarations
-                provider.game_fields = validate_declarations(manifest.get('game_fields', []))
-                provider.image_defaults = manifest.get('image_defaults', {})
-                provider.description = manifest.get('description', getattr(provider, 'description', ''))
+                provider = instantiate_plugin(module, manifest, manifest_path)
                 providers[plugin_id] = provider
             except Exception:
                 logging.exception('Could not load metadata plugin %s', manifest_path)

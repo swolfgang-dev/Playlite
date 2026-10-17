@@ -1,5 +1,6 @@
 """Optional setup/removal interfaces run on the GUI thread."""
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
@@ -13,15 +14,27 @@ def load_plugin(identity):
     root = Path(entry['manifest_path']).parent
     if root.is_symlink() or root.resolve().parent != plugin_directory().resolve():
         raise ValueError('Plugin setup is outside the plugin directory.')
+    from .plugin_manifest import validate_manifest
+    manifest_path = root / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    validate_manifest(manifest)
+    if manifest['id'] != identity:
+        raise ValueError('Plugin setup identity changed.')
     namespace = sys.modules.setdefault('playlite_install_hooks', types.ModuleType('playlite_install_hooks'))
     namespace.__path__ = []
     name = 'playlite_install_hooks.plugin_' + uuid.uuid4().hex
     spec = importlib.util.spec_from_file_location(name, root / 'plugin.py', submodule_search_locations=[str(root)])
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    spec.loader.exec_module(module)
-    factory = getattr(module, 'Plugin', None) or getattr(module, 'Provider', None)
-    return factory() if factory else None
+    try:
+        spec.loader.exec_module(module)
+        from .providers import instantiate_plugin
+        return instantiate_plugin(module, manifest, manifest_path)
+    except BaseException:
+        for key in list(sys.modules):
+            if key == name or key.startswith(name + '.'):
+                del sys.modules[key]
+        raise
 
 
 def installed_setup(manifests, parent, log):
