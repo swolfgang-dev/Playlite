@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import runpy
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,6 +16,16 @@ spec.loader.exec_module(checks)
 
 
 class IsolatedProfileTests(unittest.TestCase):
+    def test_fixture_installation_refuses_a_normal_desktop_profile(self):
+        script = Path(__file__).resolve().parents[2] / 'playlite-plugin-image-studio/tools/prepare_test_plugins.py'
+        if not script.exists():
+            self.skipTest('Sibling plugin source is unavailable')
+        with patch.dict(os.environ, {}, clear=True), patch.object(sys, 'argv', [str(script), '/unused/core']), \
+                patch('subprocess.run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'requires PLAYLITE_PROFILE=test'):
+                runpy.run_path(str(script))
+        run.assert_not_called()
+
     def test_plugin_release_excludes_untracked_files_and_symlinks(self):
         builder = Path(__file__).resolve().parents[2] / 'playlite-plugin-steam-metadata/tools/build_release.py'
         if not builder.exists():

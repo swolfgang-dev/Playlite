@@ -53,7 +53,14 @@ def installed_plugins(directory=None):
             manifest = json.loads(path.read_text())
             if not isinstance(manifest, dict) or not isinstance(manifest.get('id'), str) or not manifest['id']:
                 continue
-            result.append(dict(manifest, manifest_path=str(path)))
+            # Keep damaged/legacy installs visible for repair or removal, while
+            # protecting settings views from invalid display-field types.
+            display = dict(manifest, manifest_path=str(path))
+            for key, fallback in (('name', manifest['id']), ('version', '0'),
+                                  ('type', 'metadata'), ('repository', '')):
+                if not isinstance(display.get(key), str) or not display[key].strip():
+                    display[key] = fallback
+            result.append(display)
         except (OSError, ValueError):
             continue
     return result

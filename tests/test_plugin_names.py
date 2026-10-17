@@ -10,6 +10,19 @@ from playlite.ownership import record_tree
 
 
 class PluginFolderTests(unittest.TestCase):
+    def test_damaged_display_fields_remain_visible_for_removal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            plugins = Path(temporary)
+            folder = plugins / 'example'
+            folder.mkdir()
+            manifest = {'id': 'Example', 'name': [], 'version': {}, 'type': None, 'repository': 12}
+            path = folder / 'manifest.json'
+            path.write_text(json.dumps(manifest))
+            entry = installed_plugins(plugins)[0]
+            self.assertEqual((entry['name'], entry['version'], entry['type'], entry['repository']),
+                             ('Example', '0', 'metadata', ''))
+            self.assertEqual(json.loads(path.read_text()), manifest)
+
     def test_install_uses_current_id_and_folder_preserving_disabled_state(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

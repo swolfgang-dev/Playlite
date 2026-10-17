@@ -397,6 +397,15 @@ class MetadataDownloader(QDialog):
             self.review_defaults = {}
         self.review_defaults = {key: value for key, value in self.review_defaults.items()
                                 if isinstance(value, dict)}
+        for value in self.review_defaults.values():
+            if 'source' in value and not isinstance(value['source'], str):
+                value.pop('source')
+            if 'checked' in value:
+                checked = value['checked']
+                if isinstance(checked, list):
+                    value['checked'] = [item for item in checked if isinstance(item, str)]
+                else:
+                    value.pop('checked')
         if 'checked' in self.review_defaults.get('Links', {}):
             self.review_defaults['Links'].pop('checked')
             if self.settings is not None:

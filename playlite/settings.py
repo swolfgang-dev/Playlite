@@ -1045,7 +1045,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             try:
                 plugin = set_plugin_enabled(identity, enabled)
                 changed = True
-                messages.append(f'{plugin["name"]}: {"Enabled" if enabled else "Disabled"}.')
+                messages.append(f'{plugin.get("name") or identity}: {"Enabled" if enabled else "Disabled"}.')
             except (ValueError, OSError) as error:
                 messages.append(f'{identity}: {error}')
         self.refresh_installed_plugins()

@@ -13,6 +13,24 @@ APP = QApplication.instance() or QApplication([])
 
 
 class MetadataDefaultsTests(unittest.TestCase):
+    def test_malformed_nested_defaults_do_not_break_review(self):
+        from PyQt6.QtCore import QSettings
+        import json
+        settings = QSettings(str(self.settings_path), QSettings.Format.IniFormat)
+        settings.setValue('metadata/reviewDefaults', json.dumps({
+            'Name': {'source': []}, 'Genres': {'checked': [[], 'valid']},
+            'Features': {'checked': None}}))
+        settings.sync()
+        dialog = self.dialog()
+        self.assertEqual(dialog.review_defaults['Name'], {})
+        self.assertEqual(dialog.review_defaults['Genres']['checked'], ['valid'])
+        self.assertEqual(dialog.review_defaults['Features'], {})
+        dialog.selected_fields = ['Name']
+        dialog.provider_payloads = {'First': {'fields': {'Name': 'Downloaded name'}}}
+        dialog.show_combined_preview()
+        dialog.choose_review_defaults()
+        self.assertTrue(dialog.choices['Name']['options']['Current'][0].isChecked())
+
     def test_empty_provider_state_can_open_and_close(self):
         with patch('playlite.providers.discover_providers', return_value={}):
             dialog = MetadataDownloader({'Name': 'Example'})
