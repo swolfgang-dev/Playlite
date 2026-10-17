@@ -8,6 +8,15 @@ from pathlib import Path
 
 
 class Plugin:
+    def save_action_settings(self, game):
+        """Return a context that rolls external action settings back on save failure.
+
+        Called for game and generic plugins under the library transaction lock.
+        Validate before changing files; preserve unrelated launcher settings.
+        """
+        from contextlib import nullcontext
+        return nullcontext()
+
     def create_settings(self, parent=None):
         return None
 
@@ -158,6 +167,10 @@ class GenericPlugin(Plugin):
     def before_launch(self, window, game):
         return True
 
+    def before_action_launch(self, window, game, action):
+        """Validate the chosen action on the UI thread; False cancels launch."""
+        return True
+
     def after_launch(self, window, game, action):
         """Observe a successfully launched action; must not block the UI."""
         pass
@@ -261,7 +274,8 @@ def discover_plugins(directory=None, *, include_disabled=False):
                     raise ValueError('Plugin ID must be unique and cannot be Current.')
                 if manifest.get('api_version') != 1:
                     raise ValueError('Unsupported metadata plugin API version.')
-                from .plugin_dependencies import missing_dependencies
+                from .plugin_dependencies import missing_dependencies, check_core_version
+                check_core_version(manifest)
                 from .plugin_manager import installed_plugins
                 if missing_dependencies(manifest, installed_plugins(root)):
                     raise ValueError('Required plugin dependencies are missing or outdated.')

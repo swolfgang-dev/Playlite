@@ -1,7 +1,7 @@
 """One shared available-plugin snapshot for the running application."""
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import QApplication
-from .metadata_dialog import Task
+from .tasks import Task
 from .plugin_manager import available_plugins
 
 

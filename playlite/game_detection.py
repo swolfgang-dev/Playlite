@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from PyQt6.QtCore import QObject, QTimer, QThreadPool, pyqtSignal
 from .providers import IntegrationPlugin
-from .metadata_dialog import Task
+from .tasks import Task
 
 
 class GameDetection(QObject):

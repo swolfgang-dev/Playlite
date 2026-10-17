@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt, QUrl, QEvent
 from PyQt6.QtGui import QDesktopServices, QImageReader, QPixmap
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QSizePolicy, QWidget, QGridLayout
 from .lifecycle import choose_file, ask_text
-from .metadata_dialog import Task
+from .tasks import Task
 from PyQt6.QtCore import QThreadPool
 
 

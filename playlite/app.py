@@ -201,7 +201,7 @@ class ArtworkPage(QWidget):
         if key is not None and key in self.background_cache:
             self.transition_background(self.background_cache[key])
             return
-        from .metadata_dialog import Task
+        from .tasks import Task
         from .background_art import prepare
         base = colour('#101112')
         task = Task(lambda: prepare(source, blur_radius, base, darkness, target))
@@ -1739,7 +1739,7 @@ class LibraryWindow(QMainWindow):
     def load_detail_artwork(self, header_source, cover_source, hero, cover, row, information):
         ratio=self.devicePixelRatioF()
         from .detail_artwork import load
-        from .metadata_dialog import Task
+        from .tasks import Task
         cache=getattr(self,'detail_art_cache',None)
         if cache is None:cache=self.detail_art_cache={}
         key=(header_source,cover_source,ratio)
@@ -2090,7 +2090,7 @@ class LibraryWindow(QMainWindow):
         if not Path(directory).is_dir():
             self.installation_size_label.setText('Size unavailable')
             return
-        from .metadata_dialog import Task
+        from .tasks import Task
         from .installation import installation_size
         task = Task(lambda: installation_size(directory))
         self.size_tasks.append(task)
@@ -2236,7 +2236,7 @@ class LibraryWindow(QMainWindow):
         dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
         if run_dialog(dialog) != QMessageBox.StandardButton.Yes:
             return
-        from .metadata_dialog import Task
+        from .tasks import Task
         from .providers import IntegrationPlugin
         def stop():
             providers = [provider for provider in self.game_providers

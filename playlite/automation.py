@@ -10,7 +10,7 @@ import time
 from PyQt6.QtCore import QObject, QThreadPool, QTimer
 from PyQt6.QtWidgets import QCheckBox, QLabel, QPlainTextEdit, QSpinBox
 from .theme import set_style
-from .metadata_dialog import Task
+from .tasks import Task
 
 PHASES = [('before_launch', 'Before launch'), ('after_launch', 'After launch'), ('after_exit', 'After exit')]
 

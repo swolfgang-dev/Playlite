@@ -6,7 +6,7 @@ import filecmp
 import json
 from tempfile import TemporaryDirectory
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, Qt, pyqtSignal, QSettings, QEvent
+from PyQt6.QtCore import QThreadPool, Qt, QSettings, QEvent
 from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -119,34 +119,8 @@ class CellTextBrowser(QTextBrowser):
             scroll_parent_table(self, event)
 
 
-class Signals(QObject):
-    succeeded = pyqtSignal(object)
-    failed = pyqtSignal(str)
-    progress = pyqtSignal(str)
-
-
-class Task(QRunnable):
-    def __init__(self, function):
-        super().__init__()
-        self.function = function
-        self.signals = Signals()
-
-    def run(self):
-        from PyQt6 import sip
-        try:
-            value = self.function()
-            signal, payload = self.signals.succeeded, value
-        except Exception as error:
-            if sip.isdeleted(self.signals):
-                return
-            signal, payload = self.signals.failed, str(error)
-        if not sip.isdeleted(self.signals):
-            try:
-                signal.emit(payload)
-            except RuntimeError:
-                # Qt can tear down signal objects while a worker finishes on exit.
-                if not sip.isdeleted(self.signals):
-                    raise
+# Compatibility imports for API v1 plugins. New code uses playlite.tasks.
+from .tasks import Task, Signals
 
 
 LABELS = {'Icon': 'Icon', 'Name': 'Name', 'SortingName': 'Sorting name', 'Description': 'Short description', 'FullDescription': 'Description', 'Developers': 'Developers',

@@ -170,7 +170,8 @@ def install_archive(archive, directory=None, repository=''):
             hook_path = PurePosixPath(hook)
             if hook_path.is_absolute() or len(hook_path.parts) != 1 or hook_path.suffix != '.py' or not (stage / hook).is_file():
                 raise ValueError('Plugin cleanup must be a standalone file at its root.')
-        from .plugin_dependencies import missing_dependencies
+        from .plugin_dependencies import missing_dependencies, check_core_version
+        check_core_version(manifest)
         missing = missing_dependencies(manifest, installed_plugins(directory))
         if missing:
             raise ValueError('Required plugins must be installed first: ' + ', '.join(item['id']+' >= '+item['minimum_version'] for item in missing))

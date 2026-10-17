@@ -2,6 +2,14 @@
 import re
 
 
+def check_core_version(manifest):
+    """Reject incompatible plugins before importing code or changing installs."""
+    from . import __version__
+    minimum = manifest.get('minimum_playlite_version')
+    if minimum is not None and version_key(minimum) > version_key(__version__):
+        raise ValueError(f'This plugin requires Playlite {minimum} or later (running {__version__}).')
+
+
 def version_key(value):
     value=str(value).removeprefix('v')
     if not re.fullmatch(r'\d+(?:\.\d+)*',value):

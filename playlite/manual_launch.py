@@ -5,13 +5,14 @@ import shlex
 import subprocess
 
 from .providers import GameProvider
+from . import __version__
 
 
 class ManualLaunch(GameProvider):
     id = 'Manual'
     name = 'Manual'
     type = 'game'
-    version = '0.2.86'
+    version = __version__
     action_id_field = 'ManualGameId'
 
     def create_action_editor(self, action, parent=None):

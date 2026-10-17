@@ -99,11 +99,8 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         installation.addLayout(prefix_row)
         installation.addWidget(self.hint('Installation plugins can create separate Wine prefixes under this folder. Plugin-specific prefix folders take precedence.'))
         updates = self.card(general, 'Updates')
-        from importlib.metadata import version, PackageNotFoundError
-        try:
-            current_version = version('playlite')
-        except PackageNotFoundError:
-            current_version = 'repo checkout'
+        from . import __version__
+        current_version = __version__
         self.application_version = current_version
         self.update_status = QLabel('Current version: ' + current_version)
         self.update_status.setWordWrap(True)
@@ -728,7 +725,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.rejected.connect(dialog.reject)
         def login():
-            from .metadata_dialog import Task
+            from .tasks import Task
             from PyQt6.QtCore import QThreadPool
             value = token.text()
             token.clear()
@@ -820,7 +817,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         run_dialog(dialog)
 
     def update_task(self, function, complete):
-        from .metadata_dialog import Task
+        from .tasks import Task
         from PyQt6.QtCore import QThreadPool
         self.check_update_button.setEnabled(False)
         self.install_update_button.setEnabled(False)
@@ -898,7 +895,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
 
     def delete_selected_plugins(self):
         from .plugin_manager import delete_plugins
-        from .metadata_dialog import Task
+        from .tasks import Task
         from PyQt6.QtCore import QThreadPool
         if getattr(self, 'deleting_plugins', False) or getattr(self, 'installing_plugins', False):
             return
@@ -984,7 +981,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
 
     def start_plugin_install(self, repositories, log):
         from .plugin_manager import install_plugins
-        from .metadata_dialog import Task
+        from .tasks import Task
         from PyQt6.QtCore import QThreadPool
         if getattr(self, 'installing_plugins', False) or getattr(self, 'deleting_plugins', False) or not repositories:
             return
@@ -1085,7 +1082,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.plugin_operation_status.appendPlainText('Wait for the current plugin operation to finish.')
             return
         from .plugin_manager import install_github
-        from .metadata_dialog import Task
+        from .tasks import Task
         from PyQt6.QtCore import QThreadPool
         dialog = QDialog(self)
         dialog.setWindowTitle('Install plugin from GitHub')

@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 from playlite import plugin_manager as manager
-from playlite.plugin_dependencies import missing_dependencies,version_key
+from playlite.plugin_dependencies import missing_dependencies,version_key,check_core_version
 
 
 def archive(identity, version='1.0', deps=None):
@@ -20,6 +20,33 @@ def archive(identity, version='1.0', deps=None):
 
 class DependencyTests(unittest.TestCase):
     dependency=dict(id='Dependency',repository='owner/dependency',minimum_version='1.1.17')
+
+    def test_core_requirement_is_checked_before_installing_or_loading_code(self):
+        from playlite import __version__
+        from playlite.providers import discover_plugins
+        check_core_version({})
+        check_core_version({'minimum_playlite_version': __version__})
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            plugin = root / 'plugins/example';plugin.mkdir(parents=True)
+            original = dict(id='Example', name='Example', version='1', api_version=1, type='generic')
+            (plugin / 'manifest.json').write_text(json.dumps(original))
+            (plugin / 'plugin.py').write_text('raise RuntimeError("must not import")')
+            incompatible = dict(original, minimum_playlite_version='999.0')
+            path = root / 'future.zip'
+            with ZipFile(path, 'w') as bundle:
+                bundle.writestr('manifest.json', json.dumps(incompatible))
+                bundle.writestr('plugin.py', 'raise RuntimeError("must not import")')
+            with patch.object(manager.subprocess, 'run') as install:
+                with self.assertRaisesRegex(ValueError, 'requires Playlite 999.0'):
+                    manager.install_archive(path, root / 'plugins')
+                install.assert_not_called()
+            self.assertEqual(json.loads((plugin / 'manifest.json').read_text()), original)
+            (plugin / 'manifest.json').write_text(json.dumps(incompatible))
+            with self.assertLogs(level='ERROR') as log:
+                self.assertEqual(set(discover_plugins(root / 'plugins')), {'Manual'})
+            self.assertIn('requires Playlite 999.0', '\n'.join(log.output))
+            self.assertNotIn('RuntimeError: must not import', '\n'.join(log.output))
 
     def test_versions_missing_outdated_and_disabled(self):
         manifest=dict(id='Parent',name='Parent',plugin_dependencies=[self.dependency])

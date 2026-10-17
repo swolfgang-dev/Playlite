@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPush
                             QStyledItemDelegate, QStyle, QWidget)
 from .image_filters import OPTIONS, defaults, FilterChecks, matches_resolution, matches_shape
 from .metadata import download_artwork
-from .metadata_dialog import Task
+from .tasks import Task
 from .providers import discover_providers
 from .lifecycle import run_dialog
 
