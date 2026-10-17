@@ -97,8 +97,8 @@ Generic plugins inherit `GenericPlugin`. Available hooks are:
 
 Game actions and lifecycle hooks run on the UI thread. Plugins must move lengthy
 operations to a worker; plugin tools already do so. Lutris launching uses native
-Lutris. SteamAutoCrack uses a native Python pipeline and locally built Linux
-Steamless unpackers; see [the native plugin documentation](native-steamautocrack.md).
+Lutris. SteamAutoCrack runs its Windows CLI through Wine inside the private
+Steam Downloader VM; its runtime and setup belong to that plugin.
 
 Playlite Archiver preserves relative paths below its configured source root and
 supports multiple archive folders. Transfers copy into a temporary folder,
@@ -357,4 +357,33 @@ The optional Ludusavi Save Backup plugin uses these hooks to back up host Steam/
 
 ### Background task reporting
 
+Use `playlite.tasks.Task(function)` for shared Qt background work. Connect
+`task.signals.succeeded` and `task.signals.failed` to GUI-thread slots and start
+the task through `QThreadPool`. `task.progress(message)` emits progress while
+the Qt signal owner is alive. The legacy `playlite.metadata_dialog.Task` import
+remains available to API v1 plugins. Tasks do not interrupt their functions;
+the operation owns cancellation, finite timeouts and resource cleanup.
+
 `window.background_tasks.update(title=..., kind=..., state=..., summary=..., details=..., retry=callback, cancel=callback)` creates a task and returns its ID. Pass that ID as the first argument to update it. Call this on the Qt GUI thread, using worker signals for progress. States Queued, Running, Waiting, Downloading and Uploading count as active. History is persisted without callbacks; retry/cancel callbacks are session-local. Logs should contain useful diagnostics and avoid credentials. `GenericPlugin.after_game_updated(window, game)` runs after a successful editor save and can schedule nonblocking work.
+
+### Action settings and persistence
+
+`GenericPlugin.before_action_launch(window, game, action)` validates the selected
+action before launch; returning `False` cancels it. Widgets contribute owned
+action fields through `create_action_settings(action, parent)` and `collect()`.
+Opening or collecting a widget must not change launcher files.
+
+Game and generic plugins can implement `save_action_settings(game)` and return a
+context manager. Playlite enters these contexts under the library lock, saves
+the library, then commits by exiting normally. Exceptions roll back entered
+contexts in reverse order. `playlite.action_settings.update_action_files` shares
+file rollback between MangoHud and Ultimate Mapper, preserving newer external
+edits and restoring other files even if one conflicts. Each plugin still owns
+validation and the atomic update of its launcher fields.
+
+Use `playlite.storage.atomic_json(path, data)` for JSON replacement. It preserves
+existing permissions, creates private new files, synchronizes the staged file,
+and removes its unique temporary file on failure. This is an atomic replacement,
+not a read/modify/write lock; library changes also need `library_lock(data)`.
+Declare `minimum_playlite_version` for new APIs. Both discovery and installation
+check it before importing plugin code or replacing an installed plugin.

@@ -126,3 +126,29 @@ Background artwork is prepared at display resolution in a worker, preserving the
 complete image. Resizing uses the same frame; game changes crossfade without a blank
 intermediate background. Appearance → Keep text panels readable over artwork limits
 partial game-panel transparency to 20%; switch it off to use the exact slider value.
+
+## Isolated source review
+
+Use a Python environment containing the project and plugin dependencies. In this
+workspace the existing interpreter is `.dev/venv/bin/python`. From the core repo:
+
+```sh
+.dev/venv/bin/python tools/check_workspace.py
+.dev/venv/bin/python tools/check_workspace.py playlite --pattern test_ui_layout.py --scale 2
+.dev/venv/bin/python tools/run_isolated.py
+```
+
+The tools create disposable profiles under `/tmp`, including independent home,
+configuration, library, cache, state, runtime and plugin directories. Fixtures come
+from Git-tracked source files in sibling plugin repositories; live settings,
+credentials and libraries are never copied. Profiles are removed on exit. No
+dependencies are installed and the legacy development launcher is not invoked.
+External operations in tests use mocks and temporary fixtures. The graphical
+preview starts with an empty library; use fixture directories for manual review.
+Profile separation does not sandbox arbitrary plugin code or external commands.
+
+For an offscreen preview, run
+`.dev/venv/bin/python tools/run_isolated.py --screenshot /tmp/playlite-preview.png`.
+The screenshot remains at the requested path. For a core-only check or preview,
+add `--core-only`. Unix socket tests require an environment that permits local
+socket binding.

@@ -18,10 +18,12 @@ cancelled jobs retain incomplete files in staging; only validated completed outp
 is promoted to the destination. Completed jobs offer **Open folder** and **Add to
 Playlite**. **Clear finished** removes queue history, not downloaded files.
 
-The queue is held in memory for the application session. Closing Playlite cancels
-active and waiting jobs; restart recovery is not implemented. Plugins can enqueue
-jobs through `window.download_queue.enqueue(name, destination, factory)`, where the
+The queue is persisted in the active profile's `downloads.json`. Closing Playlite
+pauses unfinished jobs and retains partial files. On restart, the owning plugin
+reattaches retry factories to its saved entries; entries without an available
+plugin remain paused. Plugins can enqueue jobs through
+`window.download_queue.enqueue(name, destination, factory)`, where the
 factory receives the queue and entry and returns a controller exposing `start()`
 and `cancel()`. Controllers report progress with `update` and completion with
-`finish`. An optional `dispose()` releases completed controllers when history is
-cleared.
+`finish`. An optional `dispose()` releases completed controllers when an entry is
+removed or finished history is cleared. Removing history keeps downloaded files.

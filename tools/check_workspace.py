@@ -20,7 +20,9 @@ def isolated_environment(root, scale='1'):
     # Do not allow inherited interpreter or desktop paths to escape the profile.
     for name in list(environment):
         if name.startswith(('PLAYLITE_', 'PYTHON')) or name in (
-                'DBUS_SESSION_BUS_ADDRESS', 'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY'):
+                'DBUS_SESSION_BUS_ADDRESS', 'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY',
+                'GH_TOKEN', 'GITHUB_TOKEN', 'WINEPREFIX', 'STEAM_COMPAT_DATA_PATH',
+                'STEAM_COMPAT_CLIENT_INSTALL_PATH', 'LD_PRELOAD', 'LD_AUDIT'):
             environment.pop(name)
     environment.update(HOME=str(root / 'home'), PLAYLITE_PROFILE='test',
                        PLAYLITE_HOST_HOME=str(root / 'host'),
@@ -72,7 +74,8 @@ def main(argv=None):
     if unknown:
         parser.error('Unknown repositories: ' + ', '.join(sorted(unknown)))
     failures = []
-    for name in args.repositories or repositories:
+    selected = args.repositories or ([CORE.name] if args.core_only else repositories)
+    for name in selected:
         with tempfile.TemporaryDirectory(prefix='playlite-tests-') as temporary:
             environment = isolated_environment(Path(temporary), args.scale)
             if not args.core_only:
