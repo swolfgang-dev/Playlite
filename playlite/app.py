@@ -437,6 +437,11 @@ class LibraryWindow(QMainWindow):
         self.game_detection.session_finished.connect(self.game_session_finished)
         self.game_detection.changed.connect(self.game_status_changed)
         self.game_detection.start()
+        self.lutris_name_timer = QTimer(self)
+        self.lutris_name_timer.setInterval(3000)
+        self.lutris_name_timer.timeout.connect(self.refresh_lutris_names)
+        self.lutris_name_timer.start()
+        QTimer.singleShot(0, self.refresh_lutris_names)
         for plugin in self.generic_plugins:
             QTimer.singleShot(0, lambda plugin=plugin: self.initialize_generic_plugin(plugin))
 
@@ -533,6 +538,18 @@ class LibraryWindow(QMainWindow):
         self.filter_games(self.search.text())
         self.settings.setValue('library/filters', json.dumps(self.active_filters))
         self.settings.sync()
+
+    def refresh_lutris_names(self):
+        from .lutris_names import refresh_names
+        try:
+            games = refresh_names(self.data, self.games)
+            from .lutris_history import refresh_history
+            games = refresh_history(self.data, games)
+            if games != self.games:
+                self.games = games
+                self.refresh_library()
+        except (OSError, ValueError):
+            logging.exception('Could not refresh linked Lutris names and history')
 
     def set_filters_expanded(self, expanded):
         self.filters_expanded = expanded
@@ -1471,6 +1488,7 @@ class LibraryWindow(QMainWindow):
         self.download_queue.shutdown()
         self.automation.cancel_all()
         self.shutdown_accepted = True
+        self.lutris_name_timer.stop()
         if hasattr(self, 'selection_settings_timer'):
             self.selection_settings_timer.stop()
         self.game_detection.stop()
@@ -1682,11 +1700,13 @@ class LibraryWindow(QMainWindow):
                          else f'Remove {len(games)} selected games from Playlite?')
         message.setWordWrap(True)
         layout.addWidget(message)
-        providers = {game['Id']: next((provider for provider in self.game_providers
-                     if getattr(provider, 'supports_entry_deletion', False) and provider.owns(game)), None)
-                     for game in games}
+        from .lutris_delete import associated_entries
+        providers = {game['Id']: next((provider for provider in getattr(self, 'game_providers', [])
+                     if getattr(provider, 'supports_entry_deletion', False) and provider.owns(game)
+                     and not associated_entries(game)), None) for game in games}
         remove_launcher = QCheckBox('Also delete associated launcher entries')
-        remove_launcher.setEnabled(any(providers.values()))
+        remove_launcher.setEnabled(any(associated_entries(game) for game in games) or any(providers.values()))
+        remove_launcher.setToolTip('Remove linked Lutris entries and their launcher settings. Entries shared by other Playlite games are kept.')
         layout.addWidget(remove_launcher)
         layout.addWidget(QLabel('Game files, archives, and Wine prefixes will be kept.'))
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
@@ -1699,18 +1719,22 @@ class LibraryWindow(QMainWindow):
         from .storage import atomic_json
         backups = []
         try:
+            from contextlib import nullcontext
             from .library_storage import library_lock
+            from .lutris_delete import delete_entries
             with library_lock(self.data):
                 latest = json.loads((self.data / 'library.json').read_text())
                 identities = {game['Id'] for game in games}
+                selected = [entry for entry in latest if entry['Id'] in identities]
                 remaining = [entry for entry in latest if entry['Id'] not in identities]
-                shutil.copy2(self.data / 'library.json', self.data / 'library.json.bak')
-                if remove_launcher.isChecked():
-                    for game in games:
-                        provider = providers[game['Id']]
-                        if provider is not None:
-                            backups.append((provider, provider.delete_entry(game)))
-                atomic_json(self.data / 'library.json', remaining)
+                removal = delete_entries(selected, remaining) if remove_launcher.isChecked() else nullcontext()
+                with removal:
+                    if remove_launcher.isChecked():
+                        for game in selected:
+                            provider = providers.get(game['Id'])
+                            if provider is not None:
+                                backups.append((provider, provider.delete_entry(game)))
+                    atomic_json(self.data / 'library.json', remaining)
         except Exception as error:
             for provider, backup in reversed(backups):
                 provider.restore_deleted_entry(backup)

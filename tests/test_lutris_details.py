@@ -69,6 +69,23 @@ class LutrisDetailsTests(unittest.TestCase):
         self.assertIn('no longer exists', widget.details_error.text())
         self.assertEqual(widget.detail_values, {})
 
+    def test_refresh_updates_action_name_without_replacing_an_unsaved_edit(self):
+        from PyQt6.QtWidgets import QWidget
+        card=QWidget();self.addCleanup(card.close)
+        card.name=QLineEdit('Wine Game',card)
+        card.action={'LutrisName':'Wine Game'}
+        identity=QLineEdit('2',card)
+        widget=LutrisActionSettings({'LutrisDatabase':str(self.database)},identity,card)
+        with closing(sqlite3.connect(self.database)) as db,db:
+            db.execute("UPDATE games SET name='New Lutris name' WHERE id=2")
+        widget.refresh_details()
+        self.assertEqual(card.name.text(),'New Lutris name')
+        card.name.setText('My unsaved action name')
+        with closing(sqlite3.connect(self.database)) as db,db:
+            db.execute("UPDATE games SET name='Another Lutris name' WHERE id=2")
+        widget.refresh_details()
+        self.assertEqual(card.name.text(),'My unsaved action name')
+
     def test_configuration_filename_cannot_escape_games_directory(self):
         with closing(sqlite3.connect(self.database)) as db, db:
             db.execute("UPDATE games SET configpath='../outside' WHERE id=2")

@@ -1,7 +1,7 @@
 """Lutris entry selection and the play-action editor."""
 import copy
 from pathlib import Path
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
     QFormLayout, QLineEdit, QFrame, QGridLayout, QMenu, QDialog, QLabel, QCheckBox, QDialogButtonBox, QToolButton,
     QLayout, QSizePolicy)
@@ -85,6 +85,14 @@ class LutrisActionSettings(QWidget):
         layout.addLayout(actions)
         identity.textChanged.connect(self.refresh_details)
         self.refresh_details()
+        self.name_refresh_timer=QTimer(self)
+        self.name_refresh_timer.setInterval(3000)
+        self.name_refresh_timer.timeout.connect(self.refresh_visible_details)
+        self.name_refresh_timer.start()
+
+    def refresh_visible_details(self):
+        if self.isVisible():
+            self.refresh_details()
 
     def refresh_details(self):
         from .lutris_library import entry_details
@@ -115,6 +123,13 @@ class LutrisActionSettings(QWidget):
                 field.setToolTip(value)
                 self.detail_values[title] = field
                 if title == 'Entry':
+                    card = self.parentWidget()
+                    if card is not None and hasattr(card, 'name'):
+                        baseline = card.action.get('LutrisName')
+                        local = card.name.text()
+                        if local == baseline or baseline is None and local in ('', 'Play', value):
+                            card.name.setText(value)
+                        card.action['LutrisName'] = value
                     suffix = '  ·  #' + self.identity.text() if self.identity.text() else '  ·  created on Save'
                     field.setText(value + suffix)
                 self.details_form.addRow('Lutris entry' if title == 'Entry' else title, field)
@@ -231,6 +246,14 @@ class LaunchSettings(QWidget):
 
 class ContributedActionSettings(QWidget):
     """Combine integration controls with optional plugin controls."""
+    @property
+    def detail_values(self):return self.settings.detail_values
+
+    @property
+    def choose_button(self):return self.settings.choose_button
+
+    def choose_entry(self):return self.settings.choose_entry()
+
     def __init__(self, settings, contributions, parent=None):
         super().__init__(parent)
         self.setObjectName('actionSettingsContributions')

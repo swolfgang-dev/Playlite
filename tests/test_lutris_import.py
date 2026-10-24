@@ -38,7 +38,7 @@ class LutrisImportTests(unittest.TestCase):
         games, identity = import_entry(self.data, [], self.database, 42)
         game = next(game for game in games if game['Id'] == identity)
         self.assertEqual(game['Name'], 'Example')
-        self.assertEqual(game['PlayActions'], [{'Name': 'Play', 'Integration': 'LutrisIntegration', 'GameId': '42', 'LutrisDatabase': str(self.database)}])
+        self.assertEqual(game['PlayActions'], [{'Name': 'Example', 'LutrisName': 'Example', 'Integration': 'LutrisIntegration', 'GameId': '42', 'LutrisDatabase': str(self.database)}])
         self.assertNotIn('Executable', game)
         self.assertNotIn('Prefix', game)
         self.assertEqual(json.loads((self.data / 'library.json').read_text()), games)

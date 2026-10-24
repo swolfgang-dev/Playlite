@@ -185,6 +185,11 @@ def _record_playtime(data, games, identity, seconds, count, stamp):
     game = next((game for game in latest if game['Id'] == identity), None)
     if game is None:
         return latest
+    from .lutris_history import linked_entries
+    from .lutris_library import installations
+    if linked_entries(game, installations()):
+        # Lutris records these sessions itself; never add them a second time.
+        return latest
     game['Playtime'] = max(0, int(game.get('Playtime') or 0)) + seconds
     game['PlayCount'] = max(0, int(game.get('PlayCount') or 0)) + count
     game['LastActivity'] = stamp
@@ -201,7 +206,9 @@ def clear_play_progress(data, games):
     with library_lock(data):
         path = data / 'library.json'
         latest = json.loads(path.read_text()) if path.exists() else copy.deepcopy(games)
-        for game in latest:
-            game.update(Playtime=0, PlayCount=0, LastActivity=None)
-        atomic_json(path, latest)
+        from .lutris_history import reset_history
+        with reset_history(latest):
+            for game in latest:
+                game.update(Playtime=0, PlayCount=0, LastActivity=None)
+            atomic_json(path, latest)
         return latest

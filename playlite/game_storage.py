@@ -23,6 +23,12 @@ def _save_game(data, games, updated, *, id_changes=()):
     from contextlib import ExitStack
     from .providers import discover_plugins, GameProvider, GenericPlugin
     with ExitStack() as pending:
+        import json
+        from .lutris_names import save_name
+        path = data / 'library.json'
+        current = json.loads(path.read_text()) if path.exists() else games
+        previous = next((game for game in current if game['Id'] == updated['Id']), {})
+        updated = pending.enter_context(save_name(updated, previous))
         for provider in discover_plugins().values():
             save_settings = getattr(provider, 'save_action_settings', None)
             if isinstance(provider, (GameProvider, GenericPlugin)) and callable(save_settings):

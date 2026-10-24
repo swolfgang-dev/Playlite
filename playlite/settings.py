@@ -1182,6 +1182,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         warning = QMessageBox(QMessageBox.Icon.Warning, 'Clear play progress',
             'Clear play progress for ALL games, including hidden and filtered games?\n\n'
             'This resets play time and play count to zero and removes last played dates. '
+            'Play time and last played dates are also cleared in linked Lutris entries. '
             'Game saves and completion status are unchanged.\n\n'
             'This takes effect immediately and cannot be undone with Cancel in Settings.',
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel, self)

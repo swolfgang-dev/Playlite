@@ -109,9 +109,11 @@ class GameBatchTests(unittest.TestCase):
     def test_archive_information_is_only_shown_when_editing(self):
         from plugin_test_support import require_plugin
         require_plugin('GameArchiver')
-        from playlite.add_game import AddGameEditor
+        from playlite.lutris_add_dialog import AddExecutableDialog
         from PyQt6.QtWidgets import QLabel, QPushButton
-        added = AddGameEditor(None, self.data, installation_method='Manual')
+        executable=self.data/'downloaded/game.exe'
+        executable.parent.mkdir();executable.write_bytes(b'fixture')
+        added = AddExecutableDialog(executable, self.data)
         self.addCleanup(added.reject)
         self.assertFalse(hasattr(added, 'archived'))
         self.assertFalse(any(label.text() == 'Archive information' for label in added.findChildren(QLabel)))
@@ -180,6 +182,13 @@ class GameBatchTests(unittest.TestCase):
         from plugin_test_support import require_plugin
         require_plugin('GameArchiver')
         game = dict(Id='a', Name='Example', InstallDirectory=str(self.data / 'original'))
+        import sqlite3
+        from contextlib import closing
+        database=self.data/'pga.db'
+        with closing(sqlite3.connect(database)) as db,db:
+            db.execute('CREATE TABLE games(id INTEGER PRIMARY KEY,name)')
+            db.execute("INSERT INTO games VALUES(1,'Example')")
+        game['PlayActions']=[dict(Name='Play',Integration='LutrisIntegration',GameId='1',LutrisDatabase=str(database))]
         editor = MetadataEditor(game, self.data)
         editor.archived.setChecked(True)
         editor.archive_path.setText(str(self.data / 'archive'))
