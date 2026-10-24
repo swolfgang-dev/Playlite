@@ -1,5 +1,4 @@
-from pathlib import Path
-from tempfile import TemporaryDirectory
+"""Health checks resolve Lutris associations without owning runner settings."""
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -8,68 +7,27 @@ from playlite.app import LibraryWindow
 
 
 class HealthTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        self.prefix = self.root / 'prefix'; (self.prefix / 'drive_c').mkdir(parents=True)
-        self.exe = self.root / 'game.exe'; self.exe.write_bytes(b'example')
-        self.provider = SimpleNamespace(id='LutrisIntegration', action_id_field='LutrisId', launch_configuration=lambda _: {'runner': 'wine', 'game': {'prefix': str(self.prefix), 'exe': str(self.exe)}})
-        self.game = {'Id': 'one', 'Name': 'Example'}
-        self.action = {'Integration': 'LutrisIntegration', 'GameId': '42', 'Prefix': str(self.prefix), 'Executable': str(self.exe)}
+    def test_resolves_live_lutris_entry_and_leaves_runner_checks_to_lutris(self):
+        action = dict(Integration='LutrisIntegration', GameId='42', LutrisDatabase='/fixture/pga.db')
+        with patch('playlite.lutris_launch.resolve_action', return_value=(None, {'name': 'Example'})) as resolve:
+            result = check_action({}, action, [])
+        resolve.assert_called_once_with(action)
+        self.assertEqual(result['issues'], [])
+        self.assertIn('Lutris manages', result['checked'][1])
 
-    def test_valid_configuration_is_read_only_and_missing_exe_is_reported(self):
-        self.assertFalse(check_action(self.game, self.action, [self.provider])['issues'])
-        self.assertEqual(self.exe.read_bytes(), b'example')
-        self.exe.unlink()
-        self.assertIn('Executable is missing', '\n'.join(check_action(self.game, self.action, [self.provider])['issues']))
+    def test_missing_entry_is_reported_and_empty_actions_need_attention(self):
+        with patch('playlite.lutris_launch.resolve_action', side_effect=ValueError('Entry no longer exists')):
+            self.assertEqual(check_action({}, {}, [])['issues'], ['Entry no longer exists'])
+        self.assertIn('No play actions', inspect_games([{'Name': 'Example', 'PlayActions': []}], [])[0]['issues'][0])
 
-    def test_missing_managed_prefix_does_not_block_launch(self):
-        (self.prefix / 'drive_c').rmdir(); self.prefix.rmdir()
-        result = check_action(self.game, self.action, [self.provider])
-        self.assertFalse(result['issues'])
-        self.assertIn('will create the prefix', '\n'.join(result['checked']))
-        self.assertFalse(self.prefix.exists())
-        self.assertTrue(check_action(self.game, self.action, [])['issues'])
-
-    def test_steam_can_create_missing_prefix_and_lutris_can_initialize_empty_one(self):
-        (self.prefix / 'drive_c').rmdir()
-        self.assertFalse(check_action(self.game, self.action, [self.provider])['issues'])
-        self.prefix.rmdir()
-        steam = SimpleNamespace(id='SteamIntegration')
-        action = dict(self.action, Integration='SteamIntegration')
-        self.assertFalse(check_action(self.game, action, [steam])['issues'])
-        self.assertFalse(self.prefix.exists())
-
-    def test_invalid_prefix_paths_still_block_launch(self):
-        (self.prefix / 'drive_c').rmdir(); self.prefix.rmdir()
-        self.prefix.write_text('not a prefix directory')
-        self.assertIn('not a directory', '\n'.join(check_action(self.game, self.action, [self.provider])['issues']))
-        provider = SimpleNamespace(id='OtherIntegration')
-        action = dict(self.action, Integration=provider.id, Prefix='relative/prefix')
-        self.assertIn('absolute path', '\n'.join(check_action(self.game, action, [provider])['issues']))
-        action['Prefix'] = str(self.root / 'missing-prefix')
-        self.assertIn('prefix is missing', '\n'.join(check_action(self.game, action, [provider])['issues']))
-
-    def test_vm_and_native_launchers_do_not_require_host_wine_configuration(self):
-        vm = dict(self.action, IsVM=True)
-        self.assertFalse(check_action(self.game, vm, [])['issues'])
-        native = dict(self.action, Prefix='', Executable='/usr/bin/true')
-        self.assertFalse(check_action(self.game, native, [self.provider])['issues'])
-
-    def test_incomplete_download_is_reported(self):
-        action = dict(self.action, InstallDirectory=str(self.root))
-        queue = SimpleNamespace(entries=[SimpleNamespace(destination=str(self.root), state='Paused', name='Example')])
-        self.assertIn('Download is not complete', '\n'.join(check_action(self.game, action, [self.provider], queue)['issues']))
-
-    def test_failed_preflight_does_not_launch_or_fire_plugin_hooks(self):
-        self.exe.unlink()
-        game = dict(self.game, PlayActions=[self.action])
-        provider = SimpleNamespace(**vars(self.provider), launch_action=Mock())
+    def test_failed_preflight_prevents_launcher_and_plugin_hooks(self):
+        game = dict(Id='one', Name='Example', PlayActions=[dict(Integration='LutrisIntegration', GameId='42')])
         detection = Mock(); detection.status.return_value = 'Stopped'
         plugin = Mock()
         window = SimpleNamespace(current=game, games=[game], game_detection=detection,
-            game_providers=[provider], generic_plugins=[plugin], launched_actions={})
-        with patch('playlite.app.show_warning') as warning:
+            game_providers=[], generic_plugins=[plugin], launched_actions={})
+        with patch('playlite.lutris_launch.resolve_action', side_effect=ValueError('Entry no longer exists')), \
+             patch('playlite.lutris_launch.launch_action') as launch, patch('playlite.app.show_warning') as warning:
             LibraryWindow.play_game(window)
-        provider.launch_action.assert_not_called(); plugin.after_launch.assert_not_called()
-        self.assertIn('Executable is missing', warning.call_args.args[2])
+        launch.assert_not_called(); plugin.before_launch.assert_not_called(); plugin.after_launch.assert_not_called()
+        self.assertIn('Entry no longer exists', warning.call_args.args[2])

@@ -1,4 +1,4 @@
-"""Integration-owned launch actions and their installation-page editor."""
+"""Lutris entry selection and the play-action editor."""
 import copy
 from pathlib import Path
 from PyQt6.QtCore import Qt
@@ -14,11 +14,15 @@ def actions_for(game, providers):
         actions = copy.deepcopy(game['PlayActions'] or [])
     else:
         provider = next((provider for provider in providers if provider.owns(game)), None)
-        identity = provider.id if provider else game.get('GameProvider')
+        identity = ('LutrisIntegration' if game.get('LutrisId') and game.get('GameProvider') in (None, 'LutrisIntegration')
+                    else provider.id if provider else game.get('GameProvider'))
         name = f"Play {game.get('Name') or ''}".strip()
         actions = [dict(Name=name, Integration=identity)] if identity else []
     for action in actions:
         provider = next((p for p in providers if p.id == action.get('Integration')), None)
+        if action.get('Integration') == 'LutrisIntegration':
+            action.setdefault('GameId', str(game.get('LutrisId') or ''))
+            continue
         action.setdefault('GameId', str(game.get(provider.action_id_field) or '') if provider else '')
         if not action.get('GameId') and provider:
             action['GameId'] = str(game.get(provider.action_id_field) or '')
@@ -42,6 +46,99 @@ def action_game(game, action, provider):
     return result
 
 
+class LutrisActionSettings(QWidget):
+    def __init__(self, action, identity, parent=None, pending=None):
+        super().__init__(parent)
+        self.pending = pending
+        self.identity = identity
+        self.database = action.get('LutrisDatabase') or ''
+        self.setObjectName('lutrisActionSettings')
+        set_style(self, 'QWidget#lutrisActionSettings, QWidget#lutrisEntryDetails { background: transparent; border: none; }')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self.details = QWidget()
+        self.details.setObjectName('lutrisEntryDetails')
+        self.details_form = QFormLayout(self.details)
+        self.details_form.setContentsMargins(0, 0, 0, 0)
+        self.details_form.setVerticalSpacing(8)
+        self.details_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.details_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        layout.addWidget(self.details)
+        self.details_error = QLabel()
+        self.details_error.setWordWrap(True)
+        layout.addWidget(self.details_error)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        choose = QPushButton('Change entry…')
+        self.choose_button = choose
+        choose.setMinimumHeight(36)
+        choose.clicked.connect(self.choose_entry)
+        choose.setEnabled(pending is None)
+        actions.addWidget(choose)
+        refresh = QPushButton('Refresh')
+        refresh.setMinimumHeight(36)
+        refresh.setToolTip('Reload entry details from Lutris')
+        refresh.clicked.connect(self.refresh_details)
+        actions.addWidget(refresh)
+        actions.addStretch()
+        layout.addLayout(actions)
+        identity.textChanged.connect(self.refresh_details)
+        self.refresh_details()
+
+    def refresh_details(self):
+        from .lutris_library import entry_details
+        from .lutris_launch import resolve_action
+        while self.details_form.rowCount():
+            self.details_form.removeRow(0)
+        self.detail_values = {}
+        self.details_error.clear()
+        self.details_error.hide()
+        if not self.identity.text() and self.pending is None:
+            self.details_error.setText('Choose a Lutris entry to view its details.')
+            self.details_error.show()
+            return
+        try:
+            if self.pending is not None:
+                details = self.pending.details()
+            else:
+                database = self.database
+                if not database:
+                    installation, _ = resolve_action(dict(Integration='LutrisIntegration', GameId=self.identity.text()))
+                    database = installation['database']
+                details = entry_details(database, self.identity.text())
+            for title, value in details:
+                field = QLabel(value)
+                field.setTextFormat(Qt.TextFormat.PlainText)
+                field.setWordWrap(True)
+                field.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                field.setToolTip(value)
+                self.detail_values[title] = field
+                if title == 'Entry':
+                    suffix = '  ·  #' + self.identity.text() if self.identity.text() else '  ·  created on Save'
+                    field.setText(value + suffix)
+                self.details_form.addRow('Lutris entry' if title == 'Entry' else title, field)
+        except (OSError, ValueError) as error:
+            self.details_error.setText(str(error))
+            self.details_error.show()
+        card = self.parentWidget()
+        if card is not None and hasattr(card, 'align_form_labels'):
+            card.align_form_labels()
+
+    def choose_entry(self):
+        from .lutris_import import LutrisImportDialog
+        from .lifecycle import run_dialog
+        dialog = LutrisImportDialog([], self.database, self)
+        if run_dialog(dialog) == QDialog.DialogCode.Accepted and dialog.selected_entry:
+            entry = dialog.selected_entry
+            self.database = entry['database']
+            self.identity.setText(entry['id'])
+            self.refresh_details()
+
+    def collect(self):
+        return {'LutrisDatabase': self.database} if self.database else {}
+
+
 class LaunchSettings(QWidget):
     """Default integration launch fields; integrations can supply their own editor."""
     def __init__(self, action, parent=None, directory_defaults=None, hide_prefix=False):
@@ -49,6 +146,8 @@ class LaunchSettings(QWidget):
         self.setObjectName('actionLaunchSettings')
         from .lifecycle import choose_file, choose_directory
         form = QFormLayout(self)
+        form.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
         form.setContentsMargins(0, 0, 0, 0)
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(12)
@@ -103,7 +202,9 @@ class LaunchSettings(QWidget):
         set_style(advanced, 'QToolButton { background: transparent; border: 0; padding: 4px 0; text-align: left; } QToolButton:hover, QToolButton:focus { color: #2196f3; }')
         advanced.setCheckable(True)
         advanced.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        form.addRow(advanced)
+        # Keep the disclosure above its fields so its position stays stable.
+        advanced_row, _ = form.getWidgetPosition(advanced_rows['Arguments'])
+        form.insertRow(advanced_row, advanced)
         def expanded(visible):
             advanced.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
             for key in ('Arguments','InstallDirectory'):
@@ -156,10 +257,15 @@ class ContributedActionSettings(QWidget):
             button.setFixedHeight(32)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             layout.addWidget(button)
-            for widget in contributions:layout.addWidget(widget)
+            primary = [widget for widget in contributions
+                       if getattr(widget, 'action_settings_position', '') == 'primary']
+            for widget in primary:layout.insertWidget(layout.count() - 1, widget)
+            advanced = [widget for widget in contributions if widget not in primary]
+            button.setVisible(bool(advanced))
+            for widget in advanced:layout.addWidget(widget)
             def expanded(visible):
                 button.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
-                for widget in contributions:widget.setVisible(visible)
+                for widget in advanced:widget.setVisible(visible)
             button.toggled.connect(expanded)
             expanded(False)
 
@@ -188,9 +294,12 @@ class ActionCard(QFrame):
             QFrame#playActionCard QLabel { background: transparent; border: none; }
         ''')
         layout = QVBoxLayout(self)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         columns = QGridLayout()
+        columns.setAlignment(Qt.AlignmentFlag.AlignTop)
         columns.setHorizontalSpacing(16)
         columns.setVerticalSpacing(16)
         columns.setColumnStretch(0, 1)
@@ -205,8 +314,8 @@ class ActionCard(QFrame):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.name = QLineEdit(action.get('Name', 'Play'))
         self.integration = QComboBox()
-        for provider in editor.providers:
-            self.integration.addItem(provider.name, provider.id)
+        self.integration.addItem('Lutris', 'LutrisIntegration')
+        self.integration.hide()
         selected = action.get('Integration')
         if selected and self.integration.findData(selected) < 0:
             self.integration.addItem(f'{selected} (unavailable)', selected)
@@ -218,7 +327,7 @@ class ActionCard(QFrame):
             self.game_id.setPlaceholderText('Assigned on save')
         for field in (self.name,self.integration,self.game_id):field.setFixedHeight(40)
         form.addRow('Name',self.name)
-        identity_row = QWidget()
+        identity_row = QWidget(self)
         identity_row.setObjectName('actionIdentityRow')
         set_style(identity_row, 'QWidget#actionIdentityRow { background: transparent; border: none; }')
         identity_row.setFixedHeight(40)
@@ -230,7 +339,7 @@ class ActionCard(QFrame):
         set_style(self.game_id_label, 'QLabel { background: transparent; border: none; }')
         identity.addWidget(self.game_id_label)
         identity.addWidget(self.game_id,1)
-        form.addRow('Integration',identity_row)
+        identity_row.hide()
         columns.addWidget(left, 0, 0, 1, 2, Qt.AlignmentFlag.AlignTop)
         self.controls = QVBoxLayout()
         self.controls.setContentsMargins(0, 0, 0, 0)
@@ -242,7 +351,7 @@ class ActionCard(QFrame):
         self.align_form_labels()
         self.integration.currentIndexChanged.connect(self.change_integration)
         buttons = QHBoxLayout()
-        self.default = QCheckBox('Default play action')
+        self.default = QCheckBox('Default action')
         set_style(self.default, 'QCheckBox { background: transparent; border: none; }')
         self.default.setToolTip('Launch this action directly with Play or a double-click. Right-click Play to choose another action.')
         self.default.setChecked(action.get('Default') is True)
@@ -277,12 +386,13 @@ class ActionCard(QFrame):
         for form in forms:form.setHorizontalSpacing(16)
 
     def create_settings(self, action):
-        manual = self.integration.currentData() == 'Manual'
-        self.game_id.setVisible(not manual)
-        self.game_id_label.setVisible(not manual)
-        provider = next((p for p in self.editor.providers if p.id == self.integration.currentData()), None)
         selected = dict(action, Integration=self.integration.currentData(), GameId=self.game_id.text().strip())
-        settings = provider.create_action_editor(selected, self) if provider else LaunchSettings(selected, self)
+        if self.integration.currentData() == 'LutrisIntegration':
+            self.game_id.setReadOnly(True)
+            settings = LutrisActionSettings(selected, self.game_id, self, pending=self.pending_installation)
+        else:
+            provider = next((p for p in self.editor.providers if p.id == self.integration.currentData()), None)
+            settings = provider.create_action_editor(selected, self) if provider else LaunchSettings(selected, self)
         contributions = [widget for plugin in self.editor.action_plugins
                          if (widget := plugin.create_action_settings(selected, self)) is not None]
         return ContributedActionSettings(settings, contributions, self) if contributions else settings
@@ -310,7 +420,13 @@ class ActionCard(QFrame):
                       GameId=self.game_id.text().strip())
         if self.default.isChecked() or 'Default' in action:
             action['Default'] = self.default.isChecked()
-        if action['Integration'] == 'Manual':action['GameId'] = ''
+        if action['Integration'] != 'LutrisIntegration':
+            raise ValueError('Each play action must select a Lutris entry.')
+        from .lutris_requirement import validate_lutris_association
+        if self.pending_installation is None:
+            validate_lutris_association({'PlayActions': [action]})
+        for key in ('Executable', 'Prefix', 'Arguments', 'InstallDirectory'):
+            action.pop(key, None)
         if not action['Name'] or not action['Integration']:
             raise ValueError('Each play action needs a name and an integration.')
         provider = next((p for p in self.editor.providers if p.id == action['Integration']), None)
@@ -333,40 +449,76 @@ class PlayActionsEditor(QWidget):
         buttons = QHBoxLayout()
         add = QPushButton('Add action')
         self.add_button=add
-        menu=QMenu(add)
-        from .providers import discover_plugins,installation_methods
-        from .providers import GenericPlugin
-        plugins=discover_plugins()
-        self.action_plugins=[plugin for plugin in plugins.values() if isinstance(plugin, GenericPlugin)]
-        self.installation_methods=installation_methods(plugins)
-        for method in self.installation_methods.values():
-            item=menu.addAction(method.name)
-            item.triggered.connect(lambda checked=False,method=method:self.setup_action(method.id))
+        from .providers import discover_plugins, GenericPlugin
+        self.action_plugins = [plugin for plugin in discover_plugins().values() if isinstance(plugin, GenericPlugin)]
+        self.installation_methods = {}
+        menu = QMenu(add)
+        menu.addAction('Select existing Lutris entry…').triggered.connect(self.choose_action)
+        menu.addAction('Add from executable…').triggered.connect(self.choose_executable)
+        menu.addAction('Add Steam game…').triggered.connect(self.choose_steam)
         add.setMenu(menu)
         buttons.addWidget(add)
         buttons.addStretch()
         layout.addLayout(buttons)
         self.card_layout = QVBoxLayout()
         self.card_layout.setSpacing(14)
+        self.card_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.addLayout(self.card_layout)
         initial_actions = actions_for(game, providers)
         self.had_actions = bool(initial_actions)
         for action in initial_actions:
             self.add(action)
 
-    def setup_action(self,method):
-        from .action_setup import ActionSetupDialog
-        from .lifecycle import run_dialog,show_warning
-        parent=self.game_editor
-        data=getattr(parent,'data',None)
+    def choose_executable(self):
+        from .lutris_add_dialog import choose_executable_entry
+        from .lutris_add import PendingExecutable
+        from .lifecycle import show_warning
+        data = getattr(self.game_editor, 'data', None)
         if data is None:
-            show_warning(self,'Cannot add action','The game editor has no data folder.');return
-        seed=copy.deepcopy(self.game)
-        folder=getattr(parent,'fields',{}).get('InstallDirectory')
-        if folder is not None:seed['InstallDirectory']=folder.text().strip()
-        dialog=ActionSetupDialog(seed,data,self.providers,method,self)
-        if run_dialog(dialog)==QDialog.DialogCode.Accepted:
-            self.add(dialog.result_action, pending_installation=dialog.pending_installation)
+            show_warning(self, 'Cannot add executable', 'The game editor has no data folder.')
+            return
+        database = next((card.action.get('LutrisDatabase') for card in self.cards
+                         if card.action.get('LutrisDatabase')), '')
+        steam_id = (self.game.get('MetadataIds') or {}).get('SteamMetadata') or self.game.get('SteamAppId') or ''
+        for field in getattr(self.game_editor, 'fields', {}).values():
+            if field.property('metadata_provider') == 'SteamMetadata':
+                steam_id = field.text().strip()
+                break
+        try:
+            plan = choose_executable_entry(self, data, database, steam_id=str(steam_id))
+        except (OSError, ValueError) as error:
+            show_warning(self, 'Cannot add executable', str(error))
+            return
+        if plan is not None:
+            self.add(dict(Name=plan.name, Integration='LutrisIntegration', GameId='',
+                          LutrisDatabase=str(plan.database)), pending_installation=PendingExecutable(plan))
+
+    def choose_steam(self):
+        from .lutris_steam_dialog import AddSteamDialog
+        from .lutris_steam import PendingSteam
+        from .lifecycle import run_dialog, show_warning
+        database = next((card.action.get('LutrisDatabase') for card in self.cards
+                         if card.action.get('LutrisDatabase')), '')
+        try:
+            dialog = AddSteamDialog(database, self)
+        except (OSError, ValueError) as error:
+            show_warning(self, 'Cannot add Steam game', str(error))
+            return
+        if run_dialog(dialog) == QDialog.DialogCode.Accepted and dialog.result_plan is not None:
+            plan = dialog.result_plan
+            self.add(dict(Name=plan.name, Integration='LutrisIntegration', GameId='',
+                          LutrisDatabase=str(plan.database)), pending_installation=PendingSteam(plan))
+
+    def choose_action(self):
+        from .lutris_import import LutrisImportDialog
+        from .lifecycle import run_dialog
+        database = next((card.action.get('LutrisDatabase') for card in self.cards
+                         if card.action.get('LutrisDatabase')), '')
+        dialog = LutrisImportDialog([], database, self)
+        if run_dialog(dialog) == QDialog.DialogCode.Accepted and dialog.selected_entry:
+            entry = dialog.selected_entry
+            self.add(dict(Name=entry['name'], Integration='LutrisIntegration',
+                          GameId=entry['id'], LutrisDatabase=entry['database']))
 
     def add(self, action=None, pending_installation=None):
         card = ActionCard(action or {}, self, pending_installation)
@@ -424,7 +576,6 @@ class PlayActionsEditor(QWidget):
     def save_with_removals(self, save, game=None):
         from contextlib import ExitStack
         original_actions = copy.deepcopy(game['PlayActions']) if game is not None else None
-        committed = []
         backups = []
         removed = set()
         with ExitStack() as registrations:
@@ -434,7 +585,6 @@ class PlayActionsEditor(QWidget):
                         if card.pending_installation is not None:
                             action = registrations.enter_context(card.pending_installation.commit_action(game['PlayActions'][index], self.providers))
                             game['PlayActions'][index] = action
-                            committed.append((card, action))
                 remaining = ({(action['Integration'], action.get('GameId', '')) for action in game['PlayActions']}
                              if game is not None else
                              {(card.integration.currentData(), card.game_id.text().strip()) for card in self.cards})
@@ -457,12 +607,21 @@ class PlayActionsEditor(QWidget):
                 if problems:
                     raise ValueError('Could not restore all launcher entries: ' + '; '.join(problems))
                 raise
-        for card, action in committed:
-            card.game_id.setText(action['GameId'])
-            card.game_id.setReadOnly(False)
-            card.game_id.setPlaceholderText('')
-            card.action.update(action)
-            card.pending_installation = None
+        if game is not None:
+            self.game = copy.deepcopy(game)
+            for card, action in zip(self.cards, game['PlayActions']):
+                card.action = copy.deepcopy(action)
+                card.pending_installation = None
+                settings = card.settings.settings if isinstance(card.settings, ContributedActionSettings) else card.settings
+                if isinstance(settings, LutrisActionSettings):
+                    settings.pending = None
+                    settings.database = action.get('LutrisDatabase') or ''
+                    settings.choose_button.setEnabled(True)
+                card.game_id.setText(action.get('GameId') or '')
+                card.game_id.setReadOnly(True)
+                card.game_id.setPlaceholderText('')
+                if isinstance(settings, LutrisActionSettings):
+                    settings.refresh_details()
         self.pending_removals.clear()
         return result
 

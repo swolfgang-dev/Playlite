@@ -8,7 +8,9 @@ for path in sys.argv[1:]:
     forbidden = ('playlite/plugins/', 'playlite/igdb.py', 'playlite/registration.py',
                  'playlite/archive_transfer.py', 'playlite/steam_artwork.py', 'playlite/steam_runner.py')
     assert not any(entry.startswith(forbidden) for entry in entries), entries
-    assert 'playlite/manual_installation.py' in entries
+    assert 'playlite/installation_fields.py' in entries
+    assert 'playlite/manual_installation.py' not in entries
+    assert 'playlite/manual_launch.py' not in entries
     assert 'playlite/plugin_manager.py' in entries
     assert any(entry.endswith('/Playnite-MIT.txt') for entry in entries), 'Bundled Playnite attribution license missing'
     print(f'{path}: core only; Manual is built in.')

@@ -301,13 +301,13 @@ class MetadataEditor(QDialog):
             providers = [plugin for plugin in discover_plugins().values() if isinstance(plugin, GameProvider)]
             from .play_actions import PlayActionsEditor
             self.play_actions = PlayActionsEditor(game, providers, self)
-            from .manual_installation import ManualInstallation
-            self.installation_widget = ManualInstallation().create_editor(
+            from .installation_fields import InstallationFields
+            self.installation_widget = InstallationFields().create_editor(
                 self, game, field_keys={'InstallDirectory'})
             installation.addRow(self.installation_widget)
             installation.addRow(QLabel('Play actions'))
             installation.addRow(self.play_actions)
-            explanation = QLabel('Each play action has its own launch settings. The installation folder is shared unless an action overrides it. Multiple actions open a chooser when you press Play.')
+            explanation = QLabel('Each play action selects a Lutris entry. Edit launch settings in Lutris. Multiple actions open a chooser when you press Play.')
             explanation.setWordWrap(True)
             set_style(explanation, 'color: #999a9d;')
             installation.addRow(explanation)
@@ -493,25 +493,44 @@ class MetadataEditor(QDialog):
         return self.links.values()
 
     def save_metadata_ids(self, ids):
+        import copy
         import json
-        from .storage import atomic_json
         from .library_storage import library_lock
+        from .lutris_ids import links, rewrite_links
         with library_lock(self.data):
-            path = self.data / 'library.json'
-            games = json.loads(path.read_text())
+            games = json.loads((self.data / 'library.json').read_text())
             game = next((game for game in games if game['Id'] == self.game['Id']), None)
             if game is None:
                 raise ValueError('Save the game to the library first.')
+            before = copy.deepcopy(game)
             game['MetadataIds'] = dict(ids)
-            shutil.copy2(path, self.data / 'library.json.bak')
-            atomic_json(path, games)
+            saved = save_game(self.data, games, game)
+        replacements = []
+        for old, new in zip(links(before), links(game)):
+            if old.get('GameId') != new.get('GameId'):
+                replacements.append({'database': Path(new['LutrisDatabase']),
+                                     'old': old['GameId'], 'new': new['GameId']})
         self.game['MetadataIds'] = dict(ids)
+        rewrite_links(self.game, replacements)
         from .plugin_fields import refresh_fields
         refresh_fields(self.fields, ids)
+        if hasattr(self, 'play_actions'):
+            rewrite_links(self.play_actions.game, replacements)
+            for card in self.play_actions.cards:
+                action = dict(card.action, GameId=card.game_id.text(),
+                              LutrisDatabase=getattr(card.settings, 'database', card.action.get('LutrisDatabase', '')))
+                rewrite_links({'PlayActions': [action]}, replacements)
+                card.action.update(action)
+                card.game_id.setText(action.get('GameId') or '')
         parent = self.parent()
-        for entry in getattr(parent, 'games', []):
-            if entry['Id'] == self.game['Id']:
-                entry['MetadataIds'] = dict(ids)
+        while parent is not None:
+            if hasattr(parent, 'games'):
+                parent.games = saved
+                current = getattr(parent, 'current', None)
+                if current:
+                    parent.current = next((entry for entry in saved if entry['Id'] == current['Id']), current)
+                break
+            parent = parent.parent()
 
     def apply_metadata(self, metadata):
         for key, value in metadata.items():

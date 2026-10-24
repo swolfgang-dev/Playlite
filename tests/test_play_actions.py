@@ -41,6 +41,46 @@ class PlayActionTests(unittest.TestCase):
                 self.assertEqual(form.isRowVisible(extra), expanded)
             wrapper.close()
 
+    def test_advanced_toggle_keeps_primary_controls_stable_and_unclipped(self):
+        from PyQt6.QtCore import QPoint
+        from PyQt6.QtWidgets import QScrollArea, QWidget, QFormLayout
+        from playlite.manual_launch import ManualLaunch
+        with patch('playlite.providers.discover_plugins', return_value={}):
+            editor = PlayActionsEditor(dict(PlayActions=[
+                dict(Name='Manual action', Integration='Manual', Executable='/usr/bin/true')
+                for _ in range(2)]), [ManualLaunch()])
+        content = QWidget()
+        form = QFormLayout(content)
+        form.addRow(editor)
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setWidget(content)
+        area.resize(900, 400)
+        area.show()
+        card = editor.cards[0]
+        settings = card.settings
+        positions = None
+        for expanded in (False, True, False, True, False):
+            settings.advanced_button.setChecked(expanded)
+            for _ in range(5):
+                APP.processEvents()
+            controls = (card.name, card.integration, settings.fields['Executable'],
+                        settings.advanced_button)
+            current = [widget.mapTo(card, QPoint()).y() for widget in controls]
+            if positions is None:
+                positions = current
+            self.assertEqual(current, positions)
+            self.assertGreaterEqual(card.height(), card.minimumSizeHint().height())
+            for widget in (*controls, card.default, card.down):
+                origin = widget.mapTo(card, QPoint())
+                self.assertGreaterEqual(origin.y(), 0)
+                self.assertLessEqual(origin.y() + widget.height(), card.height())
+                self.assertGreaterEqual(widget.height(), widget.minimumHeight())
+            self.assertEqual(settings.fields['Arguments'].isVisible(), expanded)
+            self.assertLess(settings.advanced_button.mapTo(card, QPoint()).y(),
+                            card.default.mapTo(card, QPoint()).y())
+        area.close()
+
     def test_default_toggle_is_exclusive_and_survives_reordering(self):
         actions = [dict(Name=name, Integration='LutrisIntegration', GameId=identity)
                    for name, identity in [('First','42'), ('Second','84')]]

@@ -125,8 +125,7 @@ class IntegrationPlugin(GameProvider):
 
 
 def installation_methods(plugins):
-    from .manual_installation import ManualInstallation
-    methods = {'Manual': ManualInstallation()}
+    methods = {}
     methods.update({key: plugin for key, plugin in plugins.items() if isinstance(plugin, InstallationPlugin)})
     for plugin in plugins.values():
         if isinstance(plugin, IntegrationPlugin):
@@ -305,8 +304,7 @@ def instantiate_plugin(module, manifest, manifest_path):
 def discover_plugins(directory=None, *, include_disabled=False):
     roots = [Path(directory) if directory is not None else
              Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite/plugins']
-    from .manual_launch import ManualLaunch
-    providers = {'Manual': ManualLaunch()}
+    providers = {}
     for root in roots:
         from .plugin_manager import installed_plugins
         installed = installed_plugins(root)

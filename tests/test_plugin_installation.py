@@ -53,13 +53,10 @@ class PluginInstallationTests(unittest.TestCase):
             self.assertFalse(settings.contains('images/defaultFilters/Icon/shape/selected'))
             self.assertFalse(list((root / 'plugin-cleanup').glob('.previous-*')))
 
-    def test_manual_is_built_in_and_application_opens_without_plugins(self):
+    def test_settings_open_without_plugins_and_manual_is_unavailable(self):
         with TemporaryDirectory() as directory, patch.dict(os.environ, {'XDG_DATA_HOME': directory}):
-            self.assertEqual(set(discover_plugins()), {'Manual'})
-            self.assertEqual(set(installation_methods({})), {'Manual'})
-            dialog = AddGameEditor(None, Path(directory))
-            self.assertEqual(dialog.installation_method.currentData(), 'Manual')
-            dialog.reject()
+            self.assertEqual(set(discover_plugins()), set())
+            self.assertEqual(set(installation_methods({})), set())
             settings = SettingsDialog(QSettings(str(Path(directory) / 'settings.ini'), QSettings.Format.IniFormat))
             self.assertEqual(settings.installed_plugins.rowCount(), 0)
             self.assertEqual(settings.plugin_widgets, {})
@@ -73,8 +70,8 @@ class PluginInstallationTests(unittest.TestCase):
             result = install_archive(self.archive(root, version='2.0.0'), plugins, 'owner/repo')
             self.assertFalse(result['enabled'])
             self.assertEqual(result['version'], '2.0.0')
-            self.assertEqual(set(discover_plugins(plugins)), {'Manual'})
-            self.assertEqual(set(discover_plugins(plugins, include_disabled=True)), {'Manual', 'Example'})
+            self.assertEqual(set(discover_plugins(plugins)), set())
+            self.assertEqual(set(discover_plugins(plugins, include_disabled=True)), {'Example'})
             self.assertEqual(installed_plugins(plugins)[0]['repository'], 'owner/repo')
 
     def test_unsafe_archive_does_not_replace_installed_plugin(self):

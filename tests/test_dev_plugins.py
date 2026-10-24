@@ -86,14 +86,14 @@ class DevelopmentPluginTests(unittest.TestCase):
                 return '5.4'
             with patch('importlib.metadata.version',side_effect=version),patch('sys.prefix','/private-venv'),patch('importlib.util.find_spec',return_value=object()),patch('playlite.dev_plugins.subprocess.run') as run:
                 prepare_dependencies(root)
-                self.assertEqual(run.call_args.args[0][-2:],['PyYAML>=6','vdf>=3.4'])
+                self.assertEqual(set(run.call_args.args[0][4:]), {'PyYAML>=6', 'vdf>=3.4', 'PyYAML>=6,<7', 'vdf>=3.4,<4'})
                 run.assert_called_once()
 
     def test_prepare_skips_satisfied_requirements(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);folder=root/'plugin';folder.mkdir()
             (folder/'manifest.json').write_text(json.dumps(dict(requirements=['vdf>=3.4'])))
-            with patch('importlib.metadata.version',side_effect=lambda name: {'PyQt6':'6.6.1','Pillow':'12.0.0','vdf':'3.4'}[name]),patch('playlite.dev_plugins.subprocess.run') as run:
+            with patch('importlib.metadata.version',side_effect=lambda name: {'PyQt6':'6.6.1','Pillow':'12.0.0','PyYAML':'6.0.3','vdf':'3.4'}[name]),patch('playlite.dev_plugins.subprocess.run') as run:
                 prepare_dependencies(root);run.assert_not_called()
 
     def test_sync_updates_installed_code_preserving_enabled_and_settings(self):

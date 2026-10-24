@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from PyQt6.QtCore import QCoreApplication
 from playlite.game_detection import GameDetection
 from playlite.providers import IntegrationPlugin
@@ -73,28 +73,34 @@ class SessionHookTests(unittest.TestCase):
         self.assertNotIn('one', window.launched_actions)
 
     def test_launch_hook_receives_chosen_action(self):
-        action = {'Name': 'Example', 'Integration': 'Example', 'GameId': '42'}
+        action = {'Name': 'Example', 'Integration': 'LutrisIntegration', 'GameId': '42', 'LutrisDatabase': '/fixture/pga.db'}
         game = dict(self.game, PlayActions=[action])
         plugin = Mock(); plugin.before_launch.return_value = True
         provider = self.provider; provider.launch_action = Mock()
         detection = Mock(); detection.status.return_value = 'Stopped'
         window = SimpleNamespace(current=game, games=[game], game_detection=detection,
-            game_providers=[provider], generic_plugins=[plugin], launched_actions={})
-        LibraryWindow.play_game(window)
-        plugin.before_action_launch.assert_called_once_with(window, game, provider.launch_action.call_args.args[1])
+            game_providers=[provider], generic_plugins=[plugin], launched_actions={}, statusBar=Mock())
+        with patch('playlite.installation_health.check_action', return_value={'issues': []}), \
+             patch('playlite.lutris_launch.launch_action') as launch:
+            LibraryWindow.play_game(window)
+        launch.assert_called_once()
+        plugin.before_action_launch.assert_called_once_with(window, game, launch.call_args.args[0])
         plugin.after_launch.assert_called_once()
         self.assertEqual(plugin.after_launch.call_args.args[2]['GameId'], '42')
         self.assertEqual(window.launched_actions['one']['GameId'], '42')
 
     def test_cancelled_action_preflight_prevents_launch(self):
-        action = {'Name': 'Example', 'Integration': 'Example', 'GameId': '42'}
+        action = {'Name': 'Example', 'Integration': 'LutrisIntegration', 'GameId': '42', 'LutrisDatabase': '/fixture/pga.db'}
         game = dict(self.game, PlayActions=[action])
         plugin = Mock(); plugin.before_launch.return_value = True
         plugin.before_action_launch.return_value = False
         provider = self.provider; provider.launch_action = Mock()
         detection = Mock(); detection.status.return_value = 'Stopped'
         window = SimpleNamespace(current=game, games=[game], game_detection=detection,
-            game_providers=[provider], generic_plugins=[plugin], launched_actions={})
-        LibraryWindow.play_game(window)
+            game_providers=[provider], generic_plugins=[plugin], launched_actions={}, statusBar=Mock())
+        with patch('playlite.installation_health.check_action', return_value={'issues': []}), \
+             patch('playlite.lutris_launch.launch_action') as launch:
+            LibraryWindow.play_game(window)
+        launch.assert_not_called()
         provider.launch_action.assert_not_called()
         plugin.after_launch.assert_not_called()

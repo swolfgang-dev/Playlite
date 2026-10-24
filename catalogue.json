@@ -17,11 +17,6 @@
       "repository": "swolfgang-dev/playlite-plugin-steamgriddb"
     },
     {
-      "id": "LutrisIntegration",
-      "name": "Lutris Integration",
-      "repository": "swolfgang-dev/playlite-plugin-lutris-integration"
-    },
-    {
       "id": "GameArchiver",
       "name": "Game Archiver",
       "repository": "swolfgang-dev/playlite-plugin-game-archiver"
@@ -40,11 +35,6 @@
       "id": "SteamDepotDownloader",
       "name": "Steam Downloader",
       "repository": "swolfgang-dev/playlite-plugin-steam-depot-downloader"
-    },
-    {
-      "id": "SteamIntegration",
-      "name": "Steam Integration",
-      "repository": "swolfgang-dev/playlite-plugin-steam-integration"
     },
     {
       "id": "EacToggler",

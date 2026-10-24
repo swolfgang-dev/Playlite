@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 from PyQt6.QtWidgets import QApplication, QDialog
-from playlite.manual_installation import ManualInstallation
+from playlite.installation_fields import InstallationFields as ManualInstallation
 from playlite.plugin_fields import validate_declarations
 
 APP = QApplication.instance() or QApplication([])

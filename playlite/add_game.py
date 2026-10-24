@@ -1,5 +1,5 @@
 from .lifecycle import choose_file
-"""Manual library entries and add-game method selection."""
+"""Library entries and Lutris add-game method selection."""
 import uuid
 from pathlib import Path
 from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
@@ -61,12 +61,16 @@ class AddGameEditor(MetadataEditor):
         from .providers import discover_plugins, installation_methods
         plugins = discover_plugins()
         self.installation_plugins = installation_methods(plugins)
+        if not self.installation_plugins:
+            raise ValueError('Adding games requires the Lutris integration. It is currently unavailable.')
         if installation_method is None:
             from PyQt6.QtCore import QSettings
             settings = QSettings(str(data / 'ui.ini'), QSettings.Format.IniFormat)
-            installation_method = settings.value('installation/defaultMethod', 'Manual', type=str)
+            installation_method = settings.value('installation/defaultMethod', '', type=str)
             if installation_method not in self.installation_plugins:
-                installation_method = 'Manual'
+                installation_method = next(iter(self.installation_plugins))
+        if installation_method not in self.installation_plugins:
+            raise ValueError('This add-game method is unavailable. Games must be associated with Lutris.')
         self.installation_plugin = self.installation_plugins[installation_method]
         super().__init__(game if game is not None else {
             'Id': str(uuid.uuid4()), 'Name': selected.parent.name if selected else '',
@@ -118,8 +122,6 @@ class AddGameEditor(MetadataEditor):
         widget.show()
         self.installation_description.setText(self.installation_plugin.description)
         self.setWindowTitle(f'Add Game — {self.installation_plugin.name}')
-        if self.installation_plugin.id == 'Manual':
-            self.game['GameProvider'] = None
 
     def save(self):
         try:

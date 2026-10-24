@@ -1,6 +1,6 @@
 # Playlite
 
-A native Linux game library for organising games, downloading metadata and artwork, and launching games through configurable play actions.
+A native Linux game library for organising games, downloading metadata and artwork, and launching games through Lutris. Lutris is required, and every game must be associated with a Lutris entry. Manual launching is no longer supported.
 
 ## Install
 
@@ -43,10 +43,20 @@ Exported game folders, manually added untracked files/plugins, the repo version,
 ## Add and play games
 
 1. Open the menu from the Playlite logo and choose **Add Game…**.
-2. Choose **Manual** or an installed integration on the **Installation** tab.
+2. Import a Lutris entry, add a Windows executable, or select an installed Steam game.
 3. Review the installation details, metadata, and images, then **Save**.
 
-Select a game and press **Play**. Right-click a game and choose **Edit…** to change its details. Play actions on the Installation tab define how the game launches; multiple actions open a chooser when you press Play. Compatible integrations can also detect running games and record playtime.
+Use **Add Game** to import an existing Lutris entry or choose **Add from executable…** to create a Wine entry in Lutris. The executable picker starts in the default installation folder from Settings. The Wine prefix defaults to the configured prefix parent folder plus a slug generated from the game folder, including camel-case word boundaries. You can review and change the prefix before saving. **Edit → Installation → Add action → Add from executable…** adds another Lutris entry when you save the game; cancelling leaves Lutris unchanged.
+
+The executable dialog also offers an optional **Steam association**: enter an app ID or use **Choose Steam game…**. The picker lists installed games and can search the Steam catalogue directly; Steam Metadata is optional. Existing game metadata prefills the ID; you can change or clear it. Associated executable entries keep the Wine runner and prefix while using the Steam-based Lutris ID scheme.
+
+Use **Add Game → Add Steam game…** or **Add action → Add Steam game…** to select an installed Steam game. Only games with Steam’s installed flag and an existing installation folder are listed, including games in additional libraries. New entries without a Steam association receive a random seven-digit Lutris ID ending in `0`. Adding a Steam entry or saving a Steam metadata ID migrates matching random entries to Steam-based IDs and updates Playlite action links and Lutris references. Matching uses the game’s associated entries and installation folder, preserving the executable and Wine prefix.
+
+New Steam-linked Lutris IDs use the app ID followed by the first free two-digit entry number (`01`–`99`), matching the former plugin. Executable actions inherit the game’s Steam metadata ID for this allocation when available. This creates a Lutris Steam-runner entry containing the app ID; launches still go through Lutris. Steam files are read-only, and existing Lutris entries are not overwritten.
+
+To import an existing entry, Choose your Lutris library, search its entries, and select **Import selected**. Already imported entries are hidden; importing does not change Lutris.
+
+Select a game and press **Play** to launch its selected Lutris entry. In **Edit → Installation**, add or change play actions by choosing existing Lutris entries. Launch settings are managed in Lutris. Right-click a game and choose **Edit…** to change its details. Play actions on the Installation tab define how the game launches; multiple actions open a chooser when you press Play. Compatible integrations can also detect running games and record playtime.
 
 Use the toolbar to search, sort, filter, and switch between list and grid views. Filter dropdowns use checkboxes: select multiple values to match any of them, choose **None** for missing metadata, or **All** to clear that filter. Different filters combine. **Sources** lists the integrations attached to each game’s play actions, such as Steam or Lutris; a game can match multiple sources. The list also supports a compact view.
 

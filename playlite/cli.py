@@ -13,7 +13,10 @@ def main(argv=None):
     parser.add_argument('--data', type=Path, default=Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'playlite')
     commands = parser.add_subparsers(dest='command', required=True)
     plugins = discover_plugins()
-    for plugin in installation_methods(plugins).values():
+    methods = installation_methods(plugins)
+    if not methods:
+        parser.error('Adding games requires the Lutris integration. It is currently unavailable.')
+    for plugin in methods.values():
         if isinstance(plugin, InstallationPlugin) and hasattr(plugin, 'configure_cli'):
             command = commands.add_parser(plugin.cli_name, help=plugin.description)
             plugin.configure_cli(command)

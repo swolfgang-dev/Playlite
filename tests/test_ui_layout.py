@@ -161,12 +161,11 @@ class LayoutWorkflowTests(unittest.TestCase):
         with TemporaryDirectory() as directory, patch('playlite.providers.discover_plugins',return_value={}):
             settings=QSettings(str(Path(directory)/'ui.ini'),QSettings.Format.IniFormat)
             dialog=SettingsDialog(settings)
-            dialog.plugin_search.setText('Manual')
+            dialog.plugin_search.setText('Installed plugins')
             selected=dialog.plugin_list.currentItem()
-            self.assertEqual(selected.text(),'Manual')
-            self.assertEqual(dialog.plugin_tabs.currentIndex(),4)
-            header,content=dialog.plugin_sections['Manual']
-            self.assertFalse(content.isHidden())
+            self.assertEqual(selected.text(),'Installed plugins')
+            self.assertEqual(dialog.plugin_tabs.currentIndex(),0)
+            self.assertFalse(dialog.installed_plugins.isHidden())
             dialog.plugin_search.clear()
             self.assertEqual(dialog.plugin_list.currentItem(),selected)
             dialog.reject()
@@ -179,3 +178,32 @@ class LayoutWorkflowTests(unittest.TestCase):
         self.assertTrue(button.text().endswith('Game Folder'))
         self.assertNotEqual(button.text(),path)
         button.close()
+
+    def test_confirmation_sizes_for_themed_buttons_and_wrapped_text_before_show(self):
+        from PyQt6.QtWidgets import QDialogButtonBox, QCheckBox
+        from playlite.app import STYLE
+        previous_style = APP.styleSheet()
+        dialog = QDialog()
+        try:
+            APP.setStyleSheet(STYLE)
+            root = QVBoxLayout(dialog)
+            message = QLabel('Remove “Hollow Knight: Silksong - Direct” from Playlite?')
+            message.setWordWrap(True)
+            root.addWidget(message)
+            root.addWidget(QCheckBox('Also delete associated launcher entries'))
+            root.addWidget(QLabel('Game files, archives, and Wine prefixes will be kept.'))
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+            buttons.addButton('Delete', QDialogButtonBox.ButtonRole.AcceptRole)
+            root.addWidget(buttons)
+            dialog.resize(420, 160)
+            configure_dialog(dialog)
+            self.assertGreaterEqual(dialog.height(), dialog.minimumSizeHint().height())
+            dialog.show()
+            for _ in range(3):
+                APP.processEvents()
+            for button in buttons.buttons():
+                self.assertGreaterEqual(button.height(), button.sizeHint().height())
+            self.assertGreaterEqual(message.height(), message.heightForWidth(message.width()))
+        finally:
+            dialog.close()
+            APP.setStyleSheet(previous_style)

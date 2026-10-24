@@ -15,10 +15,10 @@ def prepare_dependencies(destination):
     pending = set()
     # The desktop may have core dependencies installed only in its user site,
     # which the isolated development profile deliberately excludes.
-    for name, requirement in [('PyQt6', 'PyQt6>=6.6,<7'), ('Pillow', 'Pillow>=10,<13')]:
+    for name, requirement in [('PyQt6', 'PyQt6>=6.6,<7'), ('Pillow', 'Pillow>=10,<13'), ('PyYAML', 'PyYAML>=6,<7'), ('vdf', 'vdf>=3.4,<4')]:
         try:
             installed = tuple(map(int, version(name).split('.')))
-            minimum, maximum = ((6, 6), (7,)) if name == 'PyQt6' else ((10,), (13,))
+            minimum, maximum = {'PyQt6': ((6, 6), (7,)), 'Pillow': ((10,), (13,)), 'PyYAML': ((6,), (7,)), 'vdf': ((3, 4), (4,))}[name]
             if not minimum <= installed < maximum:
                 pending.add(requirement)
         except (PackageNotFoundError, ValueError):

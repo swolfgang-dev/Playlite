@@ -1066,8 +1066,8 @@ class LibraryWindow(QMainWindow):
 
     def has_play_actions(self, game):
         from .play_actions import actions_for
-        available = {provider.id for provider in self.game_providers}
-        return any(action.get('Integration') in available for action in actions_for(game, self.game_providers))
+        return any(action.get('Integration') == 'LutrisIntegration' and action.get('GameId')
+                   for action in actions_for(game, self.game_providers))
 
     def play_game_entry(self, item):
         if item is not self.list.currentItem():
@@ -1105,10 +1105,8 @@ class LibraryWindow(QMainWindow):
                 if run_dialog(picker) != QDialog.DialogCode.Accepted:
                     return
                 action = picker.selected_method
-            provider = next((provider for provider in self.game_providers
-                             if provider.id == action['Integration']), None)
-            if provider is None:
-                raise ValueError(f'The integration for “{action["Name"]}” is unavailable.')
+            if action.get('Integration') != 'LutrisIntegration':
+                raise ValueError('Choose a Lutris entry for this play action.')
             from .installation_health import check_action
             health = check_action(game, action, self.game_providers, getattr(self, "download_queue", None))
             if health['issues']:
@@ -1121,10 +1119,6 @@ class LibraryWindow(QMainWindow):
                     return
             game = copy.deepcopy(next(entry for entry in self.games if entry['Id'] == game['Id']))
             automation_action = copy.deepcopy(action)
-            if automation is not None and action.get('Integration') == 'LutrisIntegration' and callable(getattr(provider, 'launch_configuration', None)) and (action.get('Prefix') or str(action.get('Executable', '')).lower().endswith('.exe')):
-                configuration = provider.launch_configuration(action.get('GameId')).get('game') or {}
-                automation_action['Prefix'] = configuration.get('prefix') or action.get('Prefix') or ''
-                automation_action['InstallDirectory'] = configuration.get('working_dir') or action.get('InstallDirectory') or game.get('InstallDirectory') or ''
             def launch():
                 try:
                     if not any(entry['Id'] == game['Id'] for entry in self.games):
@@ -1132,10 +1126,9 @@ class LibraryWindow(QMainWindow):
                     health = check_action(game, action, self.game_providers, getattr(self, 'download_queue', None))
                     if health['issues']:
                         raise ValueError('Installation needs attention:\n' + '\n'.join(health['issues']))
-                    from .providers import IntegrationPlugin
-                    if isinstance(provider, IntegrationPlugin):
-                        self.game_detection.launching(game['Id'])
-                    provider.launch_action(game, action)
+                    from .lutris_launch import launch_action
+                    launch_action(action)
+                    self.statusBar().showMessage('Launch sent to Lutris.', 5000)
                     self.launched_actions[game['Id']] = copy.deepcopy(action)
                     for plugin in self.generic_plugins:
                         try:
@@ -1530,7 +1523,80 @@ class LibraryWindow(QMainWindow):
                 self.game_scroll.verticalScrollBar().setValue(position)
 
     def add_game(self):
-        self.add_manual_game()
+        from .lutris_import import LutrisImportDialog
+        from .lutris_library import import_entry
+        active = next((dialog for dialog in self.findChildren(QDialog) if dialog.isVisible()), None)
+        if active:
+            active.raise_()
+            active.activateWindow()
+            return
+        from .add_game import AddGameMethods
+        methods = AddGameMethods([('Import an existing Lutris entry', 'import'),
+                                  ('Add from executable…', 'exe'),
+                                  ('Add Steam game…', 'steam')], self)
+        if run_dialog(methods) != QDialog.DialogCode.Accepted:
+            return
+        if methods.selected_method == 'steam':
+            self.add_steam_game()
+            return
+        if methods.selected_method == 'exe':
+            self.add_executable_game()
+            return
+        dialog = LutrisImportDialog(self.games, self.settings.value('lutris/libraryDatabase', '', type=str), self)
+        while run_dialog(dialog) == QDialog.DialogCode.Accepted:
+            entry = dialog.selected_entry
+            if entry is None:
+                return
+            try:
+                self.games, identity = import_entry(self.data, self.games, entry['database'], entry['id'])
+            except (OSError, ValueError) as error:
+                dialog.status.setText(str(error))
+                continue
+            self.settings.setValue('lutris/libraryDatabase', entry['database'])
+            self.focus_added_game(identity)
+            self.statusBar().showMessage('Imported from Lutris.', 5000)
+            return
+
+    def add_executable_game(self):
+        import sqlite3
+        from .lutris_add_dialog import choose_executable_entry
+        from .lutris_add import register_executable
+        from .lutris_library import import_entry
+        try:
+            plan = choose_executable_entry(self, self.data, self.settings.value('lutris/libraryDatabase', '', type=str))
+            if plan is None:
+                return
+            with register_executable(plan) as action:
+                ids = {'SteamMetadata': plan.steam_id} if plan.steam_id else None
+                self.games, identity = import_entry(self.data, self.games, action['LutrisDatabase'], action['GameId'], metadata_ids=ids)
+            self.settings.setValue('lutris/libraryDatabase', action['LutrisDatabase'])
+            self.focus_added_game(identity)
+            self.statusBar().showMessage('Added to Lutris and Playlite.', 5000)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            show_warning(self, 'Cannot add executable', str(error))
+
+    def add_steam_game(self):
+        import sqlite3
+        import uuid
+        from .lutris_steam_dialog import AddSteamDialog
+        from .lutris_steam import register_steam
+        try:
+            dialog = AddSteamDialog(self.settings.value('lutris/libraryDatabase', '', type=str), self)
+            if run_dialog(dialog) != QDialog.DialogCode.Accepted or dialog.result_plan is None:
+                return
+            plan = dialog.result_plan
+            with register_steam(plan) as action:
+                identity = str(uuid.uuid4())
+                game = {'Id': identity, 'Name': plan.name, 'Platforms': [], 'IsInstalled': True,
+                        'Source': 'Lutris', 'GameProvider': 'LutrisIntegration',
+                        'InstallDirectory': str(plan.directory), 'MetadataIds': {'SteamMetadata': plan.app_id},
+                        'PlayActions': [action]}
+                self.games = save_game(self.data, self.games, game)
+            self.settings.setValue('lutris/libraryDatabase', action['LutrisDatabase'])
+            self.focus_added_game(identity)
+            self.statusBar().showMessage('Steam game added through Lutris.', 5000)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            show_warning(self, 'Cannot add Steam game', str(error))
 
     def focus_added_game(self, identity):
         self.search.clear()
@@ -1748,6 +1814,13 @@ def main():
     parser.add_argument('--screenshot', type=Path, help='Render an offscreen preview and exit.')
     args = parser.parse_args()
     app = QApplication(['playlite'])
+    from .lutris_requirement import require_lutris
+    try:
+        require_lutris()
+    except ValueError as error:
+        from .lifecycle import show_warning
+        show_warning(None, 'Lutris required', str(error))
+        return 1
     from .native_style import configure
     configure(app)
     app.setApplicationName('playlite')

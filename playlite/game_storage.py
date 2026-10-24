@@ -7,14 +7,18 @@ from .artwork import repair_artwork
 from .storage import atomic_bytes, atomic_json
 
 def save_game(data, games, updated):
+    from .lutris_requirement import validate_lutris_association
+    validate_lutris_association(updated)
     from .artwork import artwork_directory
     artwork_directory(data, updated.get('Id'))
     from .library_storage import library_lock
     with library_lock(data):
-        return _save_game(data, games, updated)
+        from .lutris_ids import migrate_steam_ids
+        with migrate_steam_ids(updated) as id_changes:
+            return _save_game(data, games, updated, id_changes=id_changes)
 
 
-def _save_game(data, games, updated):
+def _save_game(data, games, updated, *, id_changes=()):
     """Commit integration settings with the library save, rolling back on failure."""
     from contextlib import ExitStack
     from .providers import discover_plugins, GameProvider, GenericPlugin
@@ -23,10 +27,10 @@ def _save_game(data, games, updated):
             save_settings = getattr(provider, 'save_action_settings', None)
             if isinstance(provider, (GameProvider, GenericPlugin)) and callable(save_settings):
                 pending.enter_context(save_settings(updated))
-        return _persist_game(data, games, updated)
+        return _persist_game(data, games, updated, id_changes=id_changes)
 
 
-def _persist_game(data, games, updated):
+def _persist_game(data, games, updated, *, id_changes=()):
     """Copy new artwork and atomically persist an edited game without mutating the input."""
     import json
     result = repair_artwork(updated, data)
@@ -34,6 +38,9 @@ def _persist_game(data, games, updated):
     if (data / 'library.json').exists():
         games = json.loads((data / 'library.json').read_text())
     games = [repair_artwork(game, data) for game in games]
+    from .lutris_ids import rewrite_links
+    for game in games:
+        rewrite_links(game, id_changes)
     backups = {}
     obsolete = set()
     names = {'Icon': 'icon', 'HeaderImage': 'header', 'CoverImage': 'cover-art', 'BackgroundImage': 'background'}

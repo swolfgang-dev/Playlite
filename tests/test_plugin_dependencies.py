@@ -44,7 +44,7 @@ class DependencyTests(unittest.TestCase):
             self.assertEqual(json.loads((plugin / 'manifest.json').read_text()), original)
             (plugin / 'manifest.json').write_text(json.dumps(incompatible))
             with self.assertLogs(level='ERROR') as log:
-                self.assertEqual(set(discover_plugins(root / 'plugins')), {'Manual'})
+                self.assertEqual(set(discover_plugins(root / 'plugins')), set())
             self.assertIn('requires Playlite 999.0', '\n'.join(log.output))
             self.assertNotIn('RuntimeError: must not import', '\n'.join(log.output))
 

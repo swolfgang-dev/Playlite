@@ -1,16 +1,11 @@
 from pathlib import Path
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtWidgets import QWidget, QFormLayout, QLineEdit, QPushButton, QHBoxLayout
-from playlite.providers import InstallationPlugin
 from playlite.lifecycle import choose_file, choose_directory
 
 
-class ManualInstallation(InstallationPlugin):
-    id = "Manual"
-    name = "Manual"
-    type = "installation"
-    version = "0.2.0"
-    description = 'Creates only a Playlite entry. Installation details are optional.'
+class InstallationFields:
+    """Shared path and metadata controls; not an add or launch method."""
     def create_editor(self, editor, game, field_keys=None, directory_defaults=None, extra_fields=None):
         widget = QWidget()
         form = QFormLayout(widget)
@@ -105,29 +100,5 @@ class ManualInstallation(InstallationPlugin):
                 game[key] = value
         from .plugin_fields import collect_fields
         collect_fields(widget.fields, game)
-        game.setdefault('GameProvider', None)
-        game['InstallationMethod'] = self.id
         return game
 
-    cli_name = 'manual'
-
-    def configure_cli(self, parser):
-        parser.add_argument('--name')
-        parser.add_argument('--exe', default='')
-        parser.add_argument('--folder', default='')
-        parser.add_argument('--prefix', default='')
-        parser.add_argument('--arguments', default='')
-
-
-    def cli_game(self, args, plugins):
-        folder = args.folder or (str(Path(args.exe).parent) if args.exe else '')
-        game = {'Name': args.name or (Path(folder).name if folder else ''),
-                'Executable': args.exe, 'InstallDirectory': folder, 'Prefix': args.prefix,
-                'LaunchArguments': args.arguments,
-                'Platforms': [], 'IsInstalled': bool(args.exe), 'InstallationMethod': self.id, 'GameProvider': None}
-        if not game['Name'].strip():
-            raise ValueError('Enter --name or provide an installation folder.')
-        for key in ('Executable', 'InstallDirectory', 'Prefix'):
-            if game[key] and not Path(game[key]).is_absolute():
-                raise ValueError(f'{key} must be an absolute path.')
-        return game

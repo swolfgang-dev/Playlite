@@ -353,9 +353,9 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
         self.default_method_owners = {}
         from .providers import installation_methods
         methods = installation_methods(self.plugins)
-        default_method = settings.value('installation/defaultMethod', 'Manual', type=str)
+        default_method = settings.value('installation/defaultMethod', '', type=str)
         if default_method not in methods:
-            default_method = 'Manual'
+            default_method = next(iter(methods), '')
         self.image_sources = {}
         self.image_filter_defaults = {}
         for kind, kind_title in [('generic', 'General'), ('metadata', 'Metadata'),
@@ -416,14 +416,12 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             else:
                 shared.hide()
             sections.addWidget(shared)
-            from .manual_installation import ManualInstallation
-            candidates = list(self.plugins.values()) + ([ManualInstallation()] if kind == 'installation' else [])
+            candidates = list(self.plugins.values())
             for plugin in sorted((plugin for plugin in candidates
                                   if ('installation' if getattr(plugin, 'settings_group', plugin.type)
                                       in ('installation', 'integration', 'game')
                                       else getattr(plugin, 'settings_group', plugin.type)) == kind),
-                                 key=lambda plugin: (0 if plugin.id == 'Manual' else 1,
-                                                     plugin.name)):
+                                 key=lambda plugin: plugin.name):
                 widget = plugin.create_settings(page)
                 from .providers import IntegrationPlugin
                 targets = [plugin] + (plugin.installation_methods() if isinstance(plugin, IntegrationPlugin) else [])
@@ -1231,7 +1229,7 @@ QScrollArea#settingsScroll QScrollBar::sub-page { background: transparent; }
             self.error.setText(str(error))
             return
         default_method = next((identity for identity, checkbox in self.default_method_checks.items()
-                               if checkbox.isChecked() and self.default_method_owners[identity] not in self.deleted_plugin_ids), 'Manual')
+                               if checkbox.isChecked() and self.default_method_owners[identity] not in self.deleted_plugin_ids), '')
         self.settings.setValue('installation/defaultMethod', default_method)
         self.settings.setValue('installation/defaultPrefixFolder', str(Path(prefix_folder).expanduser()) if prefix_folder else '')
         self.settings.setValue('installation/defaultFolder',str(Path(install_folder).expanduser()) if install_folder else '')

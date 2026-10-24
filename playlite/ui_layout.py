@@ -70,8 +70,22 @@ def configure_dialog(dialog):
     # Keep first-show dimensions within the available desktop, also at 200% scale.
     available = dialog.screen().availableGeometry()
     width, height = max(320, available.width() - 48), max(240, available.height() - 48)
-    dialog.setMinimumSize(min(dialog.minimumWidth(), width), min(dialog.minimumHeight(), height))
-    dialog.resize(min(dialog.width(), width), min(dialog.height(), height))
+    # Margins and themed padding can grow after Qt chooses its first-show size.
+    # Recompute the natural minimum before fitting the window to the desktop.
+    dialog.ensurePolished()
+    if root is not None:
+        root.invalidate()
+        root.activate()
+    minimum = dialog.minimumSizeHint()
+    target_width = min(max(dialog.width(), minimum.width()), width)
+    required_height = minimum.height()
+    if root is not None and root.hasHeightForWidth():
+        required_height = max(required_height, root.totalHeightForWidth(target_width))
+    dialog.setMinimumSize(min(max(dialog.minimumWidth(), minimum.width()), width),
+                          min(max(dialog.minimumHeight(), required_height), height))
+    dialog.resize(target_width, min(max(dialog.height(), required_height), height))
+    if root is not None:
+        root.activate()
 
 
 class DialogLayouts(QObject):
